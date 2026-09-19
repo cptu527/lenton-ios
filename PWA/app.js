@@ -417,8 +417,10 @@ function shell(title,body,opts={}){
   const avatar=av? `<img src="${esc(av)}" alt="">` : '<span class="fallback">○</span>';
   const view=opts.view||state.view;
   let right="";
-  if(view==="home"||view==="search"||view==="settings"){
+  if(view==="home"||view==="search"){
     right=`<button class="top-icon search" data-view="search" aria-label="검색">${lentonIcon("search")}</button><button class="top-icon" data-action="topmenu" aria-label="더보기">${lentonIcon("more")}</button>`;
+  }else if(view==="settings"){
+    right=`<button class="top-icon" data-action="topmenu" aria-label="더보기">${lentonIcon("more")}</button>`;
   }else if(view==="notifications"){
     right=`<button class="top-icon" data-action="notificationMenu" aria-label="알림 메뉴">${lentonIcon("more")}</button>`;
   }
@@ -1628,6 +1630,217 @@ async function updateHistoryScreen(){
     '</div></div>';
   $("#app").innerHTML=standaloneShell("앱 업데이트",body);bind();
 }
+
+function accountSource(){
+  return state.me?.source||{};
+}
+function privacyLabel(v){
+  return ({public:"공개",unlisted:"조용한 공개",private:"팔로워만",direct:"멘션한 사람만"})[v]||v||"공개";
+}
+function quotePolicyLabel(v){
+  return ({public:"누구나",followers:"팔로워만",nobody:"나만"})[v]||"누구나";
+}
+function replyVisibilityPref(){
+  const v=store.get(scopedKey("reply_visibility"),"match");
+  return ["match","public","unlisted","private"].includes(v)?v:"match";
+}
+function replyVisibilityLabel(v){
+  return ({match:"답장 대상 게시물과 맞춤",public:"공개",unlisted:"조용한 공개",private:"팔로워만"})[v]||"답장 대상 게시물과 맞춤";
+}
+function composeDefaultVisibility(reply,forced){
+  if(forced)return forced;
+  if(reply){
+    if(reply.visibility==="direct")return "direct";
+    const pref=replyVisibilityPref();
+    return pref==="match"?(reply.visibility||"public"):pref;
+  }
+  return accountSource().privacy||"public";
+}
+async function refreshCredentialAccount(){
+  state.me=await api("/api/v1/accounts/verify_credentials");
+  saveCurrentAccount();
+  return state.me;
+}
+async function updateAccountCredential(key,value,{quiet=false}={}){
+  try{
+    const form=new URLSearchParams();form.append(key,String(value));
+    state.me=await api("/api/v1/accounts/update_credentials",{method:"PATCH",form});
+    saveCurrentAccount();
+    if(!quiet)toast("계정 설정을 저장했어요.");
+    return true;
+  }catch(e){
+    toast("설정 저장 실패: "+e.message);
+    return false;
+  }
+}
+function accountSettingsRow(action,title,sub="",value=""){
+  return '<button class="account-setting-link" data-action="'+esc(action)+'"><span><b>'+esc(title)+'</b>'+(sub?'<small>'+esc(sub)+'</small>':"")+'</span>'+(value?'<span class="account-setting-value">'+esc(value)+'</span>':'<span class="account-setting-chevron">›</span>')+'</button>';
+}
+async function accountSettingsScreen(){
+  $("#app").innerHTML=standaloneShell("계정 설정",'<div class="center">불러오는 중…</div>');bind();
+  let prefs={};
+  try{
+    const [me,p]=await Promise.all([refreshCredentialAccount(),api("/api/v1/preferences").catch(()=>({}))]);
+    prefs=p||{};
+  }catch(e){toast(e.message)}
+  const src=accountSource();
+  const privacy=src.privacy||prefs["posting:default:visibility"]||"public";
+  const language=src.language||prefs["posting:default:language"]||"";
+  const quote=src.quote_policy||prefs["posting:default:quote_policy"]||prefs["posting:default:quoted_policy"]||"public";
+  const sensitive=src.sensitive===true||prefs["posting:default:sensitive"]===true;
+  const body='<div class="settings account-settings-screen">'+
+    '<div class="section account-settings-group"><h3>계정</h3>'+
+      accountSettingsRow("profileEditOwn","프로필 편집","이름 · 소개 · 프로필 사진 · 헤더 · 프로필 필드")+
+      accountSettingsRow("loginEmailSettings","로그인 이메일","Mastodon 서버 웹 설정에서 변경")+
+      accountSettingsRow("accountNotificationSettings","알림","휴대폰 알림 · 유형별 알림 필터")+
+      accountSettingsRow("followedTagsSettings","팔로우한 해시태그","팔로우 중인 해시태그 관리")+
+      accountSettingsRow("mutedAccountsSettings","뮤트한 유저","뮤트한 계정 목록과 해제")+
+      accountSettingsRow("blockedAccountsSettings","블록한 유저","차단한 계정 목록과 해제")+
+      accountSettingsRow("domainBlocksSettings","숨긴 도메인","차단한 도메인 관리")+
+      accountSettingsRow("filtersSettings","필터","서버에 저장된 콘텐츠 필터 관리")+
+    '</div>'+
+    '<div class="section account-settings-group"><h3>게시글 기본값</h3>'+
+      accountSettingsRow("privacySettings","공개 범위","새 게시물의 기본 공개 범위",privacyLabel(privacy))+
+      accountSettingsRow("replyVisibilitySettings","답장 공개 범위","답장 대상 게시물과 맞춤 · 이 앱에만 저장",replyVisibilityLabel(replyVisibilityPref()))+
+      accountSettingsRow("quotePolicySettings","인용 허용 범위","새 게시물의 기본 인용 허용 범위",quotePolicyLabel(quote))+
+      accountSettingsRow("languageSettings","게시글 언어","새 게시물에 사용할 기본 언어",language?language.toUpperCase():"서버 기본값")+
+      '<label class="account-toggle-row"><span><b>미디어를 항상 민감함으로 표시</b><small>새 게시물에 첨부한 미디어를 기본적으로 민감함 처리합니다.</small></span><input type="checkbox" class="lenton-switch" data-account-toggle="sensitive" '+(sensitive?"checked":"")+'></label>'+
+      '<label class="account-toggle-row"><span><b>계정 잠금</b><small>새 팔로워를 자동 승인하지 않고 요청으로 받습니다.</small></span><input type="checkbox" class="lenton-switch" data-account-toggle="locked" '+(state.me?.locked?"checked":"")+'></label>'+
+    '</div>'+
+  '</div>';
+  $("#app").innerHTML=standaloneShell("계정 설정",body);bind();
+  document.querySelectorAll("[data-account-toggle]").forEach(x=>x.onchange=async()=>{
+    const kind=x.dataset.accountToggle,key=kind==="sensitive"?"source[sensitive]":"locked";
+    const ok=await updateAccountCredential(key,x.checked,{quiet:true});
+    if(!ok)x.checked=!x.checked;else toast("계정 설정을 저장했어요.");
+  });
+}
+async function accountNotificationSettingsScreen(){
+  const d=await pushDiagnostics(),push=pushAlertPrefs(),filter=notificationFilterPrefs();
+  const notif=("Notification"in window)?Notification.permission:"unsupported";
+  const permissionText=notif==="granted"?"허용됨":notif==="denied"?"차단됨":notif==="default"?"아직 묻지 않음":"지원 안 됨";
+  const pushRows=[
+    ["dm","DM","비공개 직접 메시지가 왔을 때"],
+    ["mention","멘션과 답글","내 아이디가 언급되거나 내 게시물에 답글이 달릴 때"],
+    ["status","계정 새 게시물","프로필에서 게시물 알림을 켠 계정이 새 글을 올릴 때"],
+    ["interactions","좋아요와 부스트","내 게시물에 좋아요 또는 부스트가 생겼을 때"],
+    ["follow","팔로우","새 팔로워나 팔로우 요청이 왔을 때"]
+  ];
+  const body='<div class="settings account-notification-settings">'+
+    '<div class="section account-settings-group"><h3>휴대폰 알림</h3>'+
+      pushRows.map(x=>'<label class="account-toggle-row"><span><b>'+esc(x[1])+'</b><small>'+esc(x[2])+'</small></span><input type="checkbox" class="lenton-switch" data-account-push="'+esc(x[0])+'" '+(push[x[0]]?"checked":"")+'></label>').join("")+
+      '<div class="setting-note">DM과 멘션은 Mastodon 서버에 따라 같은 ‘멘션’ Push 유형으로 전달될 수 있습니다.</div>'+
+      '<div class="push-summary"><div><span>현재 알림 상태</span><b class="'+(d.regd?"ok":"bad")+'">'+(d.regd?"켜짐":"꺼짐")+'</b></div><div><span>알림 권한</span><b>'+esc(permissionText)+'</b></div></div>'+
+      '<div class="setting-row"><button class="primary settings-push-button" data-action="enablepush">'+(d.regd?"알림 다시 등록":"휴대폰 알림 켜기")+'</button></div>'+
+    '</div>'+
+    '<div class="section account-settings-group"><h3>알림 목록 필터</h3>'+
+      '<div class="setting-intro"><b>알림 화면에 표시할 유형</b><p>체크를 끈 유형은 렌톤 알림 목록에서 숨깁니다.</p></div>'+
+      NOTIFICATION_FILTER_DEFS.map(([key,label])=>'<label class="account-toggle-row compact"><span><b>'+esc(label)+'</b></span><input type="checkbox" class="lenton-switch" data-account-filter="'+esc(key)+'" '+(filter[key]!==false?"checked":"")+'></label>').join("")+
+    '</div></div>';
+  $("#app").innerHTML=standaloneShell("알림",body);bind();
+  document.querySelectorAll("[data-account-push]").forEach(x=>x.onchange=async()=>{
+    const p=pushAlertPrefs();p[x.dataset.accountPush]=x.checked;savePushAlertPrefs(p);
+    const ok=await syncPushPreferences({quiet:true});
+    toast(ok?"휴대폰 알림 설정을 저장했어요.":"설정을 저장했어요. 알림을 켜면 적용됩니다.");
+  });
+  document.querySelectorAll("[data-account-filter]").forEach(x=>x.onchange=()=>{
+    const p=notificationFilterPrefs();p[x.dataset.accountFilter]=x.checked;saveNotificationFilterPrefs(p);toast("알림 필터를 저장했어요.");
+  });
+}
+function accountListRow(a,action,label){
+  return '<div class="managed-account-row"><button class="managed-account-main" data-profile="'+esc(a.id||"")+'"><img src="'+esc(a.avatar_static||a.avatar||"")+'" alt=""><span><b>'+renderEmojiText(a.display_name||a.username||"",a.emojis||[])+'</b><small>@'+esc(a.acct||"")+'</small></span></button><button class="outline-btn small" data-managed-account-action="'+esc(action)+'" data-id="'+esc(a.id||"")+'">'+esc(label)+'</button></div>';
+}
+async function followedTagsSettingsScreen(){
+  $("#app").innerHTML=standaloneShell("팔로우한 해시태그",'<div class="center">불러오는 중…</div>');bind();
+  try{
+    const items=await api("/api/v1/followed_tags",{query:{limit:"200"}});
+    const body='<div class="account-manage-tools"><input id="followTagInput" class="field" placeholder="팔로우할 해시태그 이름"><button class="primary" id="followTagBtn">팔로우</button></div>'+
+      '<div class="managed-list">'+(items?.length?items.map(t=>'<div class="managed-simple-row"><span><b>#'+esc(t.name||"")+'</b><small>홈 타임라인에서 이 해시태그의 게시물을 받습니다.</small></span><button class="outline-btn small" data-unfollow-tag="'+esc(t.name||"")+'">해제</button></div>').join(""):'<div class="center">팔로우한 해시태그가 없어요.</div>')+'</div>';
+    $("#app").innerHTML=standaloneShell("팔로우한 해시태그",body);bind();
+    $("#followTagBtn").onclick=async()=>{
+      const raw=$("#followTagInput")?.value.trim().replace(/^#/,"");if(!raw)return;
+      try{await api("/api/v1/tags/"+encodeURIComponent(raw)+"/follow",{method:"POST",form:{}});toast("#"+raw+" 팔로우를 시작했어요.");followedTagsSettingsScreen()}catch(e){toast(e.message)}
+    };
+    document.querySelectorAll("[data-unfollow-tag]").forEach(b=>b.onclick=async()=>{
+      try{await api("/api/v1/tags/"+encodeURIComponent(b.dataset.unfollowTag)+"/unfollow",{method:"POST",form:{}});toast("해시태그 팔로우를 해제했어요.");followedTagsSettingsScreen()}catch(e){toast(e.message)}
+    });
+  }catch(e){$("#app").innerHTML=standaloneShell("팔로우한 해시태그",'<div class="center">'+esc(e.message)+'</div>');bind()}
+}
+async function managedAccountsSettingsScreen(kind){
+  const cfg=kind==="mute"?{title:"뮤트한 유저",path:"/api/v1/mutes",action:"unmute",label:"뮤트 해제"}:{title:"블록한 유저",path:"/api/v1/blocks",action:"unblock",label:"차단 해제"};
+  $("#app").innerHTML=standaloneShell(cfg.title,'<div class="center">불러오는 중…</div>');bind();
+  try{
+    const items=await api(cfg.path,{query:{limit:"80"}});
+    const body='<div class="managed-list">'+(items?.length?items.map(a=>accountListRow(a,cfg.action,cfg.label)).join(""):'<div class="center">표시할 계정이 없어요.</div>')+'</div>';
+    $("#app").innerHTML=standaloneShell(cfg.title,body);bind();
+    document.querySelectorAll("[data-managed-account-action]").forEach(b=>b.onclick=async()=>{
+      try{await api("/api/v1/accounts/"+encodeURIComponent(b.dataset.id)+"/"+b.dataset.managedAccountAction,{method:"POST",form:{}});toast(cfg.label+"했어요.");managedAccountsSettingsScreen(kind)}catch(e){toast(e.message)}
+    });
+  }catch(e){$("#app").innerHTML=standaloneShell(cfg.title,'<div class="center">'+esc(e.message)+'</div>');bind()}
+}
+async function domainBlocksSettingsScreen(){
+  $("#app").innerHTML=standaloneShell("숨긴 도메인",'<div class="center">불러오는 중…</div>');bind();
+  try{
+    const items=await api("/api/v1/domain_blocks",{query:{limit:"200"}});
+    const body='<div class="account-manage-tools"><input id="domainBlockInput" class="field" inputmode="url" autocapitalize="none" placeholder="example.com"><button class="primary" id="domainBlockBtn">차단</button></div>'+
+      '<div class="managed-list">'+(items?.length?items.map(d=>'<div class="managed-simple-row"><span><b>'+esc(d)+'</b><small>이 도메인의 공개 게시물과 알림을 숨깁니다.</small></span><button class="outline-btn small" data-unblock-domain="'+esc(d)+'">해제</button></div>').join(""):'<div class="center">숨긴 도메인이 없어요.</div>')+'</div>';
+    $("#app").innerHTML=standaloneShell("숨긴 도메인",body);bind();
+    $("#domainBlockBtn").onclick=async()=>{
+      const domain=$("#domainBlockInput")?.value.trim().replace(/^https?:\/\//i,"").split("/")[0];if(!domain)return;
+      try{await api("/api/v1/domain_blocks",{method:"POST",form:{domain}});toast(domain+" 도메인을 숨겼어요.");domainBlocksSettingsScreen()}catch(e){toast(e.message)}
+    };
+    document.querySelectorAll("[data-unblock-domain]").forEach(b=>b.onclick=async()=>{
+      try{await api("/api/v1/domain_blocks",{method:"DELETE",form:{domain:b.dataset.unblockDomain}});toast("도메인 차단을 해제했어요.");domainBlocksSettingsScreen()}catch(e){toast(e.message)}
+    });
+  }catch(e){$("#app").innerHTML=standaloneShell("숨긴 도메인",'<div class="center">'+esc(e.message)+'</div>');bind()}
+}
+function filterActionLabel(v){return ({warn:"경고 표시",hide:"완전히 숨김",blur:"미디어 흐리기"})[v]||v||"경고 표시"}
+async function filtersSettingsScreen(){
+  $("#app").innerHTML=standaloneShell("필터",'<div class="center">불러오는 중…</div>');bind();
+  try{
+    const items=await api("/api/v2/filters");
+    const body='<div class="filter-create-card"><h3>새 필터</h3><input id="filterTitle" class="field" placeholder="필터 이름"><input id="filterKeyword" class="field" placeholder="필터할 단어"><select id="filterAction" class="field"><option value="warn">경고 표시</option><option value="hide">완전히 숨김</option><option value="blur">미디어 흐리기</option></select><div class="filter-contexts">'+
+      [["home","홈"],["notifications","알림"],["public","공개 타임라인"],["thread","대화"],["account","프로필"]].map(x=>'<label><input type="checkbox" data-filter-context="'+x[0]+'" '+(x[0]==="home"||x[0]==="notifications"?"checked":"")+'> '+x[1]+'</label>').join("")+
+      '</div><button class="primary" id="createFilterBtn">필터 추가</button></div>'+
+      '<div class="managed-list">'+(items?.length?items.map(f=>'<div class="filter-managed-row"><div><b>'+esc(f.title||"필터")+'</b><small>'+esc(filterActionLabel(f.filter_action))+' · '+esc((f.context||[]).join(", "))+'</small><small>'+esc((f.keywords||[]).map(k=>k.keyword).join(" · "))+'</small></div><button class="danger-text" data-delete-filter="'+esc(f.id||"")+'">삭제</button></div>').join(""):'<div class="center">필터가 없어요.</div>')+'</div>';
+    $("#app").innerHTML=standaloneShell("필터",body);bind();
+    $("#createFilterBtn").onclick=async()=>{
+      const title=$("#filterTitle")?.value.trim(),keyword=$("#filterKeyword")?.value.trim();if(!title||!keyword){toast("필터 이름과 단어를 입력해주세요.");return}
+      const contexts=[...document.querySelectorAll("[data-filter-context]:checked")].map(x=>x.dataset.filterContext);if(!contexts.length){toast("필터가 적용될 위치를 하나 이상 선택해주세요.");return}
+      const form=new URLSearchParams();form.append("title",title);contexts.forEach(x=>form.append("context[]",x));form.append("filter_action",$("#filterAction")?.value||"warn");form.append("keywords_attributes[][keyword]",keyword);form.append("keywords_attributes[][whole_word]","false");
+      try{await api("/api/v2/filters",{method:"POST",form});toast("필터를 추가했어요.");filtersSettingsScreen()}catch(e){toast(e.message)}
+    };
+    document.querySelectorAll("[data-delete-filter]").forEach(b=>b.onclick=async()=>{
+      if(!confirm("이 필터를 삭제할까요?"))return;
+      try{await api("/api/v2/filters/"+encodeURIComponent(b.dataset.deleteFilter),{method:"DELETE"});toast("필터를 삭제했어요.");filtersSettingsScreen()}catch(e){toast(e.message)}
+    });
+  }catch(e){$("#app").innerHTML=standaloneShell("필터",'<div class="center">'+esc(e.message)+'</div>');bind()}
+}
+function accountChoiceScreen(type){
+  const src=accountSource();
+  let title="",options=[],current="";
+  if(type==="privacy"){title="공개 범위";current=src.privacy||"public";options=[["public","공개","누구나 볼 수 있으며 공개 타임라인에도 표시"],["unlisted","조용한 공개","프로필과 홈에는 보이지만 공개 타임라인에서는 숨김"],["private","팔로워만","팔로워와 멘션된 계정만 볼 수 있음"]]}
+  else if(type==="reply"){title="답장 공개 범위";current=replyVisibilityPref();options=[["match","답장 대상 게시물과 맞춤","원글의 공개 범위를 그대로 사용"],["public","공개","답글을 공개로 작성"],["unlisted","조용한 공개","답글을 조용한 공개로 작성"],["private","팔로워만","답글을 팔로워 전용으로 작성"]]}
+  else if(type==="quote"){title="인용 허용 범위";current=src.quote_policy||"public";options=[["public","누구나","차단된 계정을 제외하고 누구나 인용 가능"],["followers","팔로워만","팔로워와 작성자만 인용 가능"],["nobody","나만","다른 계정의 인용을 허용하지 않음"]]}
+  else if(type==="language"){title="게시글 언어";current=src.language||"";options=[["","서버 기본값","서버 또는 자동 감지 설정 사용"],["ko","한국어","한국어로 게시"],["ja","日本語","일본어로 게시"],["en","English","영어로 게시"],["zh","中文","중국어로 게시"],["es","Español","스페인어로 게시"],["fr","Français","프랑스어로 게시"],["de","Deutsch","독일어로 게시"],["ru","Русский","러시아어로 게시"]]}
+  const body='<div class="account-choice-list">'+options.map(x=>'<button data-account-choice="'+esc(type)+'" data-value="'+esc(x[0])+'" class="'+(String(current)===String(x[0])?"selected":"")+'"><span><b>'+esc(x[1])+'</b><small>'+esc(x[2])+'</small></span><strong>'+(String(current)===String(x[0])?"✓":"")+'</strong></button>').join("")+'</div>';
+  $("#app").innerHTML=standaloneShell(title,body);bind();
+}
+async function applyAccountChoice(type,value){
+  if(type==="reply"){
+    store.set(scopedKey("reply_visibility"),value);toast("답장 기본값을 저장했어요.");
+  }else{
+    const key=type==="privacy"?"source[privacy]":type==="quote"?"source[quote_policy]":"source[language]";
+    const ok=await updateAccountCredential(key,value,{quiet:true});if(!ok)return;
+    toast("계정 설정을 저장했어요.");
+  }
+  if(state.navStack.length)state.navStack.pop();
+  accountSettingsScreen();
+}
+function openLoginEmailSettings(){
+  try{window.open("https://"+state.session.host+"/auth/edit","_blank","noopener")}catch{toast("서버 계정 설정을 열지 못했어요.")}
+}
+
 async function settingsView(){
   const d=await pushDiagnostics();
   const notif=("Notification"in window)?Notification.permission:"unsupported";
@@ -1651,7 +1864,6 @@ async function settingsView(){
         <div class="setting-titleline"><div><b>UI 크기</b><small>글자·아이콘·버튼 크기를 함께 조절합니다.</small></div><strong id="uiScaleValue">${Math.round(state.uiScale*100)}%</strong></div>
         <div class="ui-scale-control"><span>가</span><input id="uiScaleRange" type="range" min="80" max="120" step="5" value="${Math.round(state.uiScale*100)}"><span class="large">가</span></div>
       </div>
-      <div class="setting-row"><button class="settings-link" data-action="layoutSettings"><span><b>화면 구성 편집</b><small>하단 메뉴의 순서와 표시 여부를 바꿉니다.</small></span><span>›</span></button></div>
     </div>
 
     <div class="section settings-group"><h3>알림</h3>
@@ -1679,7 +1891,7 @@ async function settingsView(){
     </div>
 
     <div class="section settings-group"><h3>계정</h3>
-      <div class="setting-row"><button class="settings-link" data-action="accountManager"><span><b>계정 추가 / 전환</b><small>렌톤에 연결된 계정을 관리합니다.</small></span><span>›</span></button></div>
+      <div class="setting-row"><button class="settings-link" data-action="accountSettings"><span><b>계정 설정</b><small>프로필 · 알림 · 뮤트 · 차단 · 필터 · 게시글 기본값</small></span><span>›</span></button></div>
       <div class="setting-row setting-split"><div><b>서버</b><small>현재 로그인한 Mastodon 서버</small></div><span>${esc(state.session.host)}</span></div>
       <div class="setting-row"><button class="danger settings-logout" data-action="logout">현재 계정 로그아웃</button></div>
     </div>
@@ -1899,7 +2111,7 @@ function composeToolMarkup(ct={},replyMode=false){
 function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyContext=[]){
   let historyPushed=false;
   let parts=[{text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[],poll:null}];
-  let visibility=forcedVisibility||reply?.visibility||"public",activePart=0,uploading=false;
+  let visibility=composeDefaultVisibility(reply,forcedVisibility),activePart=0,uploading=false;
   const recips=[];
   const addRecipient=a=>{if(a&&a.id!==state.me?.id&&!recips.some(x=>String(x.id)===String(a.id)))recips.push({...a,on:true})};
   for(const a of initialRecipients||[])addRecipient(a);
@@ -2033,6 +2245,8 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
           form.append("status",(i===0&&prefix?prefix+" ":"")+p.text.trim());
           form.append("visibility",visibility);
           form.append("spoiler_text",p.cw?p.spoiler.trim():"");
+          const defaultLanguage=accountSource().language||"";if(defaultLanguage)form.append("language",defaultLanguage);
+          if(accountSource().sensitive===true)form.append("sensitive","true");
           if(replyId)form.append("in_reply_to_id",replyId);
           for(const media of p.media)if(media.id)form.append("media_ids[]",media.id);
           if(p.poll){
@@ -2420,6 +2634,18 @@ function bind(){
     else if(a==="newdm"){pushNavSnapshot();newDmScreen()}
     else if(a==="backScreen"||a==="backMain")goBackScreen()
     else if(a==="accountManager"){pushNavSnapshot();accountManagerScreen()}
+    else if(a==="accountSettings"){pushNavSnapshot();accountSettingsScreen()}
+    else if(a==="accountNotificationSettings"){pushNavSnapshot();accountNotificationSettingsScreen()}
+    else if(a==="followedTagsSettings"){pushNavSnapshot();followedTagsSettingsScreen()}
+    else if(a==="mutedAccountsSettings"){pushNavSnapshot();managedAccountsSettingsScreen("mute")}
+    else if(a==="blockedAccountsSettings"){pushNavSnapshot();managedAccountsSettingsScreen("block")}
+    else if(a==="domainBlocksSettings"){pushNavSnapshot();domainBlocksSettingsScreen()}
+    else if(a==="filtersSettings"){pushNavSnapshot();filtersSettingsScreen()}
+    else if(a==="privacySettings"){pushNavSnapshot();accountChoiceScreen("privacy")}
+    else if(a==="replyVisibilitySettings"){pushNavSnapshot();accountChoiceScreen("reply")}
+    else if(a==="quotePolicySettings"){pushNavSnapshot();accountChoiceScreen("quote")}
+    else if(a==="languageSettings"){pushNavSnapshot();accountChoiceScreen("language")}
+    else if(a==="loginEmailSettings")openLoginEmailSettings()
     else if(a==="addAccount")addAccountFlow()
     else if(a==="inquiry"){pushNavSnapshot();inquiryScreen(b.dataset.inquiryType||"")}
     else if(a==="sendInquiry")sendInquiry()
@@ -2455,7 +2681,8 @@ function bind(){
     else if(a==="profileNotify")toggleProfileNotify()
     else if(a==="followProfile")toggleFollowProfile()
   });
-  document.querySelectorAll("[data-home-mode]").forEach(b=>b.onclick=()=>{if(document.querySelector("[data-home-pager]"))setHomePagerMode(b.dataset.homeMode,true);else{state.homeMode=b.dataset.homeMode;state.listId=null;render()}});
+  document.querySelectorAll("[data-account-choice]").forEach(b=>b.onclick=()=>applyAccountChoice(b.dataset.accountChoice,b.dataset.value||""));
+    document.querySelectorAll("[data-home-mode]").forEach(b=>b.onclick=()=>{if(document.querySelector("[data-home-pager]"))setHomePagerMode(b.dataset.homeMode,true);else{state.homeMode=b.dataset.homeMode;state.listId=null;render()}});
   document.querySelectorAll("[data-list]").forEach(b=>b.onclick=()=>{state.listId=state.listId===b.dataset.list?null:b.dataset.list;render()});
   document.querySelectorAll("[data-conv]").forEach(b=>b.onclick=()=>{pushNavSnapshot();openConversation(b.dataset.conv)});
   document.querySelectorAll("[data-dm-previous]").forEach(b=>b.onclick=()=>{pushNavSnapshot();openConversation(b.dataset.dmPrevious)});
