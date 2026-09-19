@@ -402,6 +402,19 @@ def main():
     main_text = main_source.read_text(encoding="utf-8", errors="ignore")
     spec = build_spec(main_text, latest, apk_sha, str(main_source.relative_to(sources)))
 
+    # Emit APK-derived marker contexts for parity debugging. This runs against the
+    # exact published APK after JADX, so it replaces visual guesswork.
+    debug_markers=[
+      "시간순","퍼블릭","화면 구성 편집","프로필 편집","비밀 메모","답장할멘션",
+      "게시물과 답글","고정","미디어","GIF","CW","타래","이전 대화 보기",
+      "문의 유형","이메일로 보내기","계정 추가","앱 업데이트","업데이트 내역"
+    ]
+    contexts={}
+    for marker in debug_markers:
+        pos=main_text.find(marker)
+        contexts[marker]=None if pos<0 else re.sub(r"\s+"," ",main_text[max(0,pos-600):pos+1200])
+    spec["apkMarkerPresence"]={m:(main_text.find(m)>=0) for m in debug_markers}
+
     required = ["시간순", "퍼블릭", "me_id", "/api/v1/timelines/home", "/api/v1/timelines/public", "in_reply_to_id"]
     missing = [x for x in required if x not in main_text]
     if missing:
@@ -424,6 +437,8 @@ def main():
         "drawerRows": spec["renderer"]["drawerRows"],
         "compose": spec["renderer"]["compose"],
         "features": spec["features"],
+        "markerPresence": spec.get("apkMarkerPresence",{}),
+        "contexts": contexts,
     }, ensure_ascii=False, indent=2))
 
 if __name__ == "__main__":
