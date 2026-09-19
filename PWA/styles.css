@@ -1307,17 +1307,14 @@ img{display:block}
 .main-swipe-preview,
 .home-swipe-preview,
 .profile-swipe-preview{
-  width:100vw!important;
-  min-width:100vw!important;
-  max-width:100vw!important;
   box-sizing:border-box;
 }
 .main-swipe-preview>.app,
 .home-swipe-preview>.main,
 .profile-swipe-preview>.main{
-  width:100vw!important;
-  min-width:100vw!important;
-  max-width:100vw!important;
+  width:100%;
+  min-width:100%;
+  max-width:100%;
 }
 .swipe-moving{
   overflow:hidden;
@@ -1544,7 +1541,7 @@ img{display:block}
 
 
 /* Authoritative v0.25.17 APK parity */
-.profile-tabs-4{display:none!important}
+.profile-tabs-4{display:grid!important}
 .profile-tabs-2{
   display:grid;
   grid-template-columns:repeat(2,1fr);
