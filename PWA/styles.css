@@ -1888,3 +1888,41 @@ img{display:block}
   max-width:100%;
   box-sizing:border-box;
 }
+
+
+/* True home ViewPager: fixed tabs, content-only finger tracking */
+.home-tabs{position:relative;overflow:hidden}
+.home-tabs .home-tab-indicator{
+  position:absolute;
+  left:0;
+  bottom:0;
+  width:36px;
+  height:3px;
+  border-radius:2px;
+  background:var(--accent);
+  transform:translate3d(0,0,0);
+  will-change:transform;
+}
+.home-tabs button.active::after{display:none!important}
+.home-pager{
+  position:relative;
+  width:100%;
+  overflow:hidden;
+  touch-action:pan-y;
+  transition:height 150ms ease;
+}
+.home-pager-track{
+  display:flex;
+  width:100%;
+  align-items:flex-start;
+  will-change:transform;
+  backface-visibility:hidden;
+  -webkit-backface-visibility:hidden;
+}
+.home-pager-page{
+  flex:0 0 100%;
+  width:100%;
+  min-width:100%;
+  max-width:100%;
+  box-sizing:border-box;
+}
