@@ -610,13 +610,36 @@ function bind(){
   $("#accentSel")?.addEventListener("input",e=>{state.accent=e.target.value;store.set("lenton_accent",state.accent);document.documentElement.style.setProperty("--accent",state.accent)});
 }
 
+let pendingAutomaticUpdate=false;
+function composeIsOpen(){return !!document.querySelector(".sheet,#composeSheet,[data-compose-root]")}
+async function applyAutomaticUpdate(){
+  try{
+    const local=window.LENTON_ANDROID_CONTRACT?.android_apk_sha256||"";
+    const r=await fetch("./generated/android-contract.json?ts="+Date.now(),{cache:"no-store"});
+    if(!r.ok)return;
+    const remote=await r.json();
+    const next=remote?.android_apk_sha256||"";
+    if(!local||!next||local===next)return;
+    if(composeIsOpen()){pendingAutomaticUpdate=true;return}
+    const key="lenton_auto_update_"+next;
+    if(sessionStorage.getItem(key))return;
+    sessionStorage.setItem(key,"1");
+    const reg=await navigator.serviceWorker.getRegistration("./");
+    await reg?.update().catch(()=>{});
+    location.reload();
+  }catch{}
+}
 async function registerSW(){
   if("serviceWorker"in navigator){
-    const reg=await navigator.serviceWorker.register("./sw.js",{scope:"./"});
+    const reg=await navigator.serviceWorker.register("./sw.js",{scope:"./",updateViaCache:"none"});
     navigator.serviceWorker.addEventListener("message",e=>{if(e.data?.type==="push"){toast("새 알림이 도착했어요.");if(state.view==="notifications")notificationsView()}});
-    reg.addEventListener("updatefound",()=>{const w=reg.installing;if(w)w.addEventListener("statechange",()=>{if(w.state==="installed"&&navigator.serviceWorker.controller){toast("새 버전이 준비됐어요. 다음 실행에 적용됩니다.")}})});
+    navigator.serviceWorker.addEventListener("controllerchange",()=>{if(!composeIsOpen())location.reload()});
+    await reg.update().catch(()=>{});
   }
 }
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")applyAutomaticUpdate()});
+window.addEventListener("focus",applyAutomaticUpdate);
+setInterval(()=>{if(document.visibilityState==="visible")applyAutomaticUpdate()},60000);
 window.addEventListener("beforeinstallprompt",e=>e.preventDefault());
 window.addEventListener("popstate",()=>{});
 (async()=>{
@@ -624,4 +647,5 @@ window.addEventListener("popstate",()=>{});
   if(state.session){try{state.me=await api("/api/v1/accounts/verify_credentials")}catch{store.del("lenton_session");state.session=null}}
   const q=new URLSearchParams(location.search);const deep=q.get("view");if(["home","notifications","dm","profile","settings"].includes(deep))state.view=deep;
   render();
+  applyAutomaticUpdate();
 })();
