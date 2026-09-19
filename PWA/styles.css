@@ -1741,3 +1741,51 @@ img{display:block}
   text-align:left;
   font-size:15px;
 }
+
+
+/* User-reported parity fixes */
+.drawer-profile-avatar-button,
+.drawer-profile-summary{
+  border:0;
+  background:transparent;
+  color:inherit;
+  padding:0;
+  margin:0;
+  text-align:left;
+}
+.drawer-profile-avatar-button{display:block;border-radius:50%}
+.drawer-profile-summary{display:block;width:100%}
+.drawer-profile-summary .drawer-name,
+.drawer-profile-summary .drawer-handle,
+.drawer-profile-summary .drawer-counts{pointer-events:none}
+
+.profile-tabs-4{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  height:50px;
+  border-bottom:1px solid var(--line);
+  background:var(--bg);
+}
+.profile-tabs-4 button{
+  position:relative;
+  border:0;
+  background:none;
+  color:var(--sub);
+  font-size:14px;
+  padding:0 4px;
+}
+.profile-tabs-4 button.active{color:var(--fg);font-weight:700}
+.profile-tabs-4 button.active::after{
+  content:"";
+  position:absolute;
+  width:36px;
+  height:3px;
+  bottom:0;
+  left:50%;
+  transform:translateX(-50%);
+  border-radius:2px;
+  background:var(--accent);
+}
+
+.settings-link small{display:block;color:var(--sub);font-size:13px;font-weight:400;margin-top:3px}
+.current-release{padding:18px}
