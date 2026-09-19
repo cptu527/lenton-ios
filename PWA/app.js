@@ -756,7 +756,8 @@ function profileMarkup(a,opts={}){
   const privateNote=own?"":'<div class="private-note-card" data-action="editPrivateNote" style="color:'+noteColor+'"><div class="label">비밀 메모</div><div class="note">'+esc(note.trim()?note:"메모를 추가하려면 탭하세요.")+'</div></div>';
   const header=a.header_static||a.header||"",avatar=a.avatar_static||a.avatar||"";
   const fields=(a.fields||[]).map(f=>'<div class="profile-field"><span>'+renderRichText(f.name||"")+'</span><b>'+renderRichText(f.value||"")+'</b></div>').join("");
-  const tabs=[["posts","게시물","profilePosts"],["replies","답글","profileReplies"]];
+  const profileLabels=ANDROID?.renderer?.profileTabs||["게시물","답글"];
+  const tabs=[["posts",profileLabels[0]||"게시물","profilePosts"],["replies",profileLabels[1]||"답글","profileReplies"]];
   return '<div class="profile-hero">'+
     (header?'<button class="profile-header-button" data-media-url="'+esc(header)+'" data-media-alt="프로필 헤더"><img class="profile-header" src="'+esc(header)+'" alt=""></button>':'<div class="profile-header"></div>')+
     (avatar?'<button class="profile-avatar-button" data-media-url="'+esc(avatar)+'" data-media-alt="프로필 사진"><img class="profile-avatar" src="'+esc(avatar)+'" alt=""></button>':"")+
