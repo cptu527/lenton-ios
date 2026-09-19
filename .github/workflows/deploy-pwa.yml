@@ -2,10 +2,9 @@ name: Deploy Lenton PWA
 
 on:
   push:
-    branches: [ main, pwa/android-ui-v02517 ]
+    branches: [ main, pwa/exact-android-v02517 ]
     paths:
       - 'PWA/**'
-      - 'LentonIOS/Resources/AppIconSource/**'
       - '.github/workflows/deploy-pwa.yml'
   workflow_dispatch:
 
@@ -27,40 +26,84 @@ jobs:
           node --check PWA/app.js
           node --check PWA/sw.js
 
-      - name: Build static PWA
+      - name: Extract launcher from published Android APK
         run: |
           rm -rf dist-pwa
           cp -R PWA dist-pwa
           python3 - <<'PY'
-          import base64
           from pathlib import Path
-          root = Path("LentonIOS/Resources/AppIconSource")
-          parts = [
-              "chunk00.txt","chunk01.txt","chunk02.txt","chunk03.txt",
-              "chunk04a.txt","chunk04b.txt","chunk04c.txt","chunk04d.txt","fixed04e.txt",
-              "chunk05a.txt","chunk05b.txt","chunk05c.txt","chunk05d.txt","chunk05e.txt",
-          ]
-          encoded = "".join((root / n).read_text().strip() for n in parts)
-          encoded += "=" * (-len(encoded) % 4)
-          data = base64.b64decode(encoded, validate=True)
-          out = Path("dist-pwa/icon-1024.png")
-          out.write_bytes(data)
-          print("Wrote original", out, len(data), "bytes")
+          from urllib.request import urlretrieve
+          import zipfile
+
+          apk = Path("/tmp/Lenton-v0.25.17-test.apk")
+          urlretrieve(
+              "https://raw.githubusercontent.com/cptu527/lenton-updates/main/Lenton-v0.25.17-test.apk",
+              apk,
+          )
+          print("APK bytes:", apk.stat().st_size)
+
+          with zipfile.ZipFile(apk) as z:
+              names = z.namelist()
+              images = [
+                  n for n in names
+                  if ("launcher" in n.lower() or "mipmap" in n.lower()
+                      or n.lower().endswith(".png") or n.lower().endswith(".webp"))
+              ]
+              print("Packaged image/resource candidates:")
+              for n in images[:300]:
+                  print(n)
+
+              import struct
+              pngs = []
+              for n in names:
+                  if not n.lower().endswith(".png") or ".9.png" in n.lower():
+                      continue
+                  data = z.read(n)
+                  if not data.startswith(bytes([137,80,78,71,13,10,26,10])) or len(data) < 24:
+                      continue
+                  width, height = struct.unpack(">II", data[16:24])
+                  pngs.append((n, width, height, len(data)))
+                  print("PNG", n, width, height, len(data))
+
+              legacy = [x for x in pngs if x[1] == 192 and x[2] == 192]
+              if not legacy:
+                  legacy = [x for x in pngs if x[1] == x[2] and x[1] in (48,72,96,144,192)]
+              if not legacy:
+                  legacy = [x for x in pngs if x[1] == x[2]]
+
+              if not legacy:
+                  raise SystemExit("No square PNG launcher candidate found in APK")
+
+              launcher = sorted(legacy, key=lambda x: (x[1] == 192, x[3], x[1]))[-1]
+              print("Using Android launcher candidate:", launcher)
+              Path("/tmp/lenton-android-launcher.png").write_bytes(z.read(launcher[0]))
           PY
-          test "$(sips -g pixelWidth dist-pwa/icon-1024.png | awk '/pixelWidth/{print $2}')" = "1024"
-          test "$(sips -g pixelHeight dist-pwa/icon-1024.png | awk '/pixelHeight/{print $2}')" = "1024"
-          cp dist-pwa/icon-1024.png dist-pwa/icon-512.png
-          cp dist-pwa/icon-1024.png dist-pwa/icon-192.png
-          sips -z 512 512 dist-pwa/icon-512.png >/dev/null
+
+          test -s /tmp/lenton-android-launcher.png
+          cp /tmp/lenton-android-launcher.png dist-pwa/icon-192.png
+          cp /tmp/lenton-android-launcher.png dist-pwa/icon-512.png
+          cp /tmp/lenton-android-launcher.png dist-pwa/icon-1024.png
           sips -z 192 192 dist-pwa/icon-192.png >/dev/null
-          test "$(sips -g pixelWidth dist-pwa/icon-512.png | awk '/pixelWidth/{print $2}')" = "512"
-          test "$(sips -g pixelHeight dist-pwa/icon-512.png | awk '/pixelHeight/{print $2}')" = "512"
-          test "$(sips -g pixelWidth dist-pwa/icon-192.png | awk '/pixelWidth/{print $2}')" = "192"
-          test "$(sips -g pixelHeight dist-pwa/icon-192.png | awk '/pixelHeight/{print $2}')" = "192"
+          sips -z 512 512 dist-pwa/icon-512.png >/dev/null
+          sips -z 1024 1024 dist-pwa/icon-1024.png >/dev/null
+          rm -f dist-pwa/lenton-official-icon.b64
           printf '%s\n' '' > dist-pwa/.nojekyll
-          test -s dist-pwa/icon-192.png
-          test -s dist-pwa/icon-512.png
-          test -s dist-pwa/icon-1024.png
+
+      - name: Verify generated icon sizes
+        run: |
+          python3 - <<'PY'
+          import struct
+          from pathlib import Path
+          for size in (192, 512, 1024):
+              p = Path(f"dist-pwa/icon-{size}.png")
+              data = p.read_bytes()
+              if data[:8] != b"\x89PNG\r\n\x1a\n":
+                  raise SystemExit(f"{p} is not PNG")
+              w, h = struct.unpack(">II", data[16:24])
+              if (w, h) != (size, size):
+                  raise SystemExit(f"{p}: {(w,h)}")
+              print(p, w, h, len(data))
+          PY
 
       - name: Publish gh-pages branch
         if: github.ref == 'refs/heads/main'
