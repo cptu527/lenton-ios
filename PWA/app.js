@@ -883,6 +883,12 @@ function drawerMenuRows(){
   ];
   let rows=Array.isArray(ANDROID?.renderer?.drawerRows)&&ANDROID.renderer.drawerRows.length?ANDROID.renderer.drawerRows:fallback;
   rows=rows.filter(x=>x?.id&&x.id!=="realtime");
+  if(ANDROID?.features?.lists&&!rows.some(x=>x.id==="lists")){
+    const settingsIndex=rows.findIndex(x=>x.id==="settings"||x.id==="update");
+    const listRow={id:"lists",label:"리스트"};
+    if(settingsIndex>=0)rows=[...rows.slice(0,settingsIndex),listRow,...rows.slice(settingsIndex)];
+    else rows=[...rows,listRow];
+  }
   const mapped=rows.map(x=>{
     let label=x.label||x.id;
     if(x.id==="theme")label=(state.theme==="dark"?"라이트 모드":"다크 모드");
