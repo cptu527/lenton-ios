@@ -14,7 +14,7 @@ const state = {
   session: store.get("lenton_session"),
   me:null, view:"home", homeMode:"home", listId:null, lists:[], busy:false,
   theme:store.get("lenton_theme","system"), accent:store.get("lenton_accent",ANDROID?.theme?.accent||"#1d9bf0"),
-  pushError:"", toast:"", currentConversation:null, profileReplies:false, profileAccount:null, profileRelationship:null, returnView:"home"
+  pushError:"", toast:"", currentConversation:null, profileReplies:false, profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}
 };
 
 function accountScope(){
@@ -381,11 +381,36 @@ async function homeView(){
     const chronologicalLabel=ANDROID?.homeTabs?.chronological||"시간순", publicLabel=ANDROID?.homeTabs?.public||"퍼블릭";
     const tabs=`<div class="home-tabs"><button data-home-mode="home" class="${state.homeMode==="home"&&!state.listId?"active":""}">${esc(chronologicalLabel)}</button><button data-home-mode="public" class="${state.homeMode==="public"&&!state.listId?"active":""}">${esc(publicLabel)}</button></div>`;
     const visibleLists=state.lists.filter(x=>!hiddenListIds().has(x.id)); const chips=(visibleLists.length||state.lists.length)?`<div class="chips">${visibleLists.map(x=>`<button class="chip ${state.listId===x.id?"active":""}" data-list="${x.id}">${esc(x.title)}</button>`).join("")}<button class="chip" data-action="newlist">＋ 리스트</button></div>`:"";
-    $("#app").innerHTML=shell(state.listId?(state.lists.find(x=>x.id===state.listId)?.title||"리스트"):"홈",tabs+chips+(data.length?data.map(statusCard).join(""):'<div class="center">표시할 게시물이 없어요.</div>'),{fab:true});
+    state.timelineItems=data; $("#app").innerHTML=shell(state.listId?(state.lists.find(x=>x.id===state.listId)?.title||"리스트"):"홈",tabs+chips+(data.length?data.map(statusCard).join(""):'<div class="center">표시할 게시물이 없어요.</div>')+'<button class="load-more" data-action="loadmorehome">더 불러오기</button>',{fab:true});
   }catch(e){$("#app").innerHTML=shell("홈",`<div class="center">타임라인을 불러오지 못했어요.<br><br>${esc(e.message)}<br><br><button class="primary" data-action="reload">다시 시도</button></div>`,{fab:true})}
   state.busy=false; bind();
 }
 
+async function loadMoreHome(){
+  if(state.timelineLoadingMore)return;
+  const last=state.timelineItems[state.timelineItems.length-1];const maxId=statusId(last);
+  if(!maxId){toast("더 불러올 게시물이 없어요.");return}
+  const btn=document.querySelector('[data-action="loadmorehome"]');state.timelineLoadingMore=true;if(btn){btn.disabled=true;btn.textContent="불러오는 중…"}
+  try{
+    let more=[];
+    if(state.listId){
+      more=await api(`/api/v1/timelines/list/${state.listId}`,{query:{limit:"40",max_id:maxId}});
+    }else{
+      more=await api("/api/v1/timelines/home",{query:{limit:"40",max_id:maxId}});
+      if(state.homeMode==="public")more=more.filter(lentonPublicStatus);
+    }
+    const seen=new Set(state.timelineItems.map(statusId));
+    more=more.filter(x=>{const id=statusId(x);if(!id||seen.has(id))return false;seen.add(id);return true});
+    if(!more.length){if(btn)btn.textContent="더 불러올 게시물이 없어요.";return}
+    state.timelineItems.push(...more);
+    if(btn){btn.insertAdjacentHTML("beforebegin",more.map(statusCard).join(""));btn.disabled=false;btn.textContent="더 불러오기"}
+    bind();
+  }catch(e){toast(e.message);if(btn){btn.disabled=false;btn.textContent="다시 시도"}}
+  finally{state.timelineLoadingMore=false}
+}
+function scrollKey(){return state.view+(state.view==="home"?":"+state.homeMode+":"+(state.listId||""):"")}
+function rememberScroll(){state.scrolls[scrollKey()]=window.scrollY||document.documentElement.scrollTop||0}
+function restoreScroll(){const y=state.scrolls[scrollKey()];if(typeof y==="number")requestAnimationFrame(()=>window.scrollTo(0,y))}
 function renderLoadingShell(title){$("#app").innerHTML=shell(title,'<div class="center">불러오는 중…</div>',{fab:title==="홈"});bind()}
 
 async function notificationsView(replyMentions=false){
@@ -1073,6 +1098,7 @@ function attachSwipe(el,{onLeft,onRight,edgeOnly=false,threshold=40,ratio=1.25,s
   el.addEventListener("touchcancel",()=>{start=null;tracking=false},{passive:true});
 }
 function moveMainView(dir){
+  rememberScroll();
   const order=visibleNavItems().map(x=>x.id);
   const i=order.indexOf(state.view);
   if(i<0)return;
@@ -1123,7 +1149,7 @@ function bind(){
   document.querySelectorAll("[data-layout-up]").forEach(b=>b.onclick=()=>mutateLayout(b.dataset.layoutUp,-1));
   document.querySelectorAll("[data-layout-down]").forEach(b=>b.onclick=()=>mutateLayout(b.dataset.layoutDown,1));
   document.querySelectorAll("[data-layout-toggle]").forEach(b=>b.onclick=()=>mutateLayout(b.dataset.layoutToggle,0));
-  document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{state.view=b.dataset.view;state.listId=null;render()});
+  document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{rememberScroll();state.view=b.dataset.view;state.listId=null;render()});
   document.querySelectorAll("[data-action]").forEach(b=>b.onclick=async()=>{
     const a=b.dataset.action;
     if(a==="settings"){state.view="settings";render()}
@@ -1138,6 +1164,7 @@ function bind(){
     else if(a==="statusmenu")openStatusMenu(b.dataset.id)
     else if(a==="newlist")newList()
     else if(a==="resetLayout")resetMainTabLayout()
+    else if(a==="loadmorehome")loadMoreHome()
     else if(a==="runsearch")runSearch()
     else if(a==="togglecw"){const body=b.closest(".status-main").querySelector("[data-cwbody]");body.style.display=body.style.display==="none"?"block":"none"}
     else if(a==="reply")replyById(b.dataset.id)
@@ -1161,6 +1188,7 @@ function bind(){
   $("#themeSel")?.addEventListener("change",e=>{state.theme=e.target.value;store.set("lenton_theme",state.theme);if(state.theme==="system")delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=state.theme});
   $("#accentSel")?.addEventListener("input",e=>{state.accent=e.target.value;store.set("lenton_accent",state.accent);document.documentElement.style.setProperty("--accent",state.accent)});
   attachLentonGestures();
+  restoreScroll();
 }
 
 let pendingAutomaticUpdate=false;
