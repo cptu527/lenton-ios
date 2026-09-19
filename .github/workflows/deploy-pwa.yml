@@ -122,7 +122,8 @@ jobs:
               for size in (192,512,1024):
                   Path(f"dist-pwa/icon-{size}.png").write_bytes(icon)
 
-          token=f"android-{latest['versionCode']}-{str(latest['sha256'])[:12]}"
+          revision=os.environ.get("GITHUB_SHA","")[:10] or "local"
+          token=f"pwa-{revision}-android-{latest['versionCode']}-{str(latest['sha256'])[:12]}"
           index=Path("dist-pwa/index.html")
           html=index.read_text(encoding="utf-8")
           for name in ("icon-192.png","styles.css","generated/android-spec.js","app.js"):
@@ -132,7 +133,7 @@ jobs:
           sw=Path("dist-pwa/sw.js")
           text=sw.read_text(encoding="utf-8")
           text=re.sub(r'const CACHE="[^"]+";',f'const CACHE="lenton-pwa-{token}";',text,count=1)
-          for name in ("index.html","styles.css","app.js","manifest.webmanifest","generated/android-spec.js","icon-192.png","icon-512.png","icon-1024.png"):
+          for name in ("index.html","styles.css","app.js","manifest.webmanifest","generated/android-spec.js","changelog.json","icon-192.png","icon-512.png","icon-1024.png"):
               text=text.replace(f'"./{name}"',f'"./{name}?v={token}"')
           sw.write_text(text,encoding="utf-8")
 
@@ -148,6 +149,7 @@ jobs:
               "versionCode":latest["versionCode"],
               "versionName":latest["versionName"],
               "apkSha256":latest["sha256"],
+              "pwaRevision":revision,
               "cacheToken":token,
           },ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
           PY
