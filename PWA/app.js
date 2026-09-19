@@ -698,23 +698,56 @@ async function newDmScreen(){
   };
   drawSelected();
 }
+function dmBubble(st){
+  const own=String(st.account?.id||"")===String(state.me?.id||"");
+  const media=(st.media_attachments||[]).map(m=>'<button class="dm-bubble-media" data-media-url="'+esc(m.url||m.preview_url||"")+'" data-media-alt="'+esc(m.description||"DM 이미지")+'"><img src="'+esc(m.preview_url||m.url||"")+'" alt=""></button>').join("");
+  return '<div class="dm-bubble-row '+(own?"mine":"theirs")+'">'+
+    (own?"":'<img class="dm-bubble-avatar" src="'+esc(st.account?.avatar_static||st.account?.avatar||"")+'" alt="">')+
+    '<div class="dm-bubble-wrap">'+
+    (own?"":'<div class="dm-bubble-name">'+renderEmojiText(st.account?.display_name||st.account?.username||"",st.account?.emojis||[])+'</div>')+
+    '<div class="dm-bubble">'+renderRichText(st.content||"")+media+'</div>'+
+    '<div class="dm-bubble-time">'+fmtTime(st.created_at)+'</div></div></div>';
+}
+async function sendInlineDm(conversation){
+  const input=$("#dmInlineInput"),send=$("#dmInlineSend"),file=$("#dmInlineFile");
+  if(!input||!send)return;
+  const text=input.value.trim(),files=[...(file?.files||[])].slice(0,4);
+  if(!text&&!files.length)return;
+  send.disabled=true;send.textContent="전송 중…";
+  try{
+    const media=[];for(const f of files)media.push(await uploadComposerFile(f));
+    const recipient=(conversation.accounts||[]).filter(a=>String(a.id)!==String(state.me?.id))[0];
+    const form=new URLSearchParams();
+    form.append("status",(recipient?.acct?"@"+recipient.acct+" ":"")+text);
+    form.append("visibility","direct");
+    if(conversation.last_status?.id)form.append("in_reply_to_id",conversation.last_status.id);
+    for(const m of media)if(m.id)form.append("media_ids[]",m.id);
+    await api("/api/v1/statuses",{method:"POST",form});
+    input.value="";if(file)file.value="";
+    await dmView();const refreshed=state._conversations?.find(x=>String(x.id)===String(conversation.id))||state._conversations?.find(x=>dmConversationKey(x)===dmConversationKey(conversation));
+    if(refreshed)await openConversation(refreshed.id);
+  }catch(e){toast(e.message);send.disabled=false;send.textContent="보내기"}
+}
 async function openConversation(id){
-  const c=state._conversations?.find(x=>x.id===id); if(!c?.last_status)return;
+  const c=state._conversations?.find(x=>String(x.id)===String(id)); if(!c?.last_status)return;
   state.currentConversation=c;
   try{
-    const sources=c._sourceConversations?.length?c._sourceConversations:[c];
-    const chunks=await Promise.all(sources.filter(x=>x.last_status?.id).map(async x=>{
-      try{
-        const ctx=await api(`/api/v1/statuses/${x.last_status.id}/context`);
-        return [...(ctx.ancestors||[]),x.last_status,...(ctx.descendants||[])].filter(s=>s.visibility==="direct");
-      }catch{return [x.last_status].filter(Boolean)}
-    }));
-    const byId=new Map();
-    for(const st of chunks.flat())if(st?.id)byId.set(String(st.id),st);
-    const all=[...byId.values()].sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")));
-    const body=`<div class="dm-thread">${all.map(statusCard).join("")}</div><div class="dm-reply-dock"><button class="primary" data-action="replydm">답장</button></div>`;
-    $("#app").innerHTML=standaloneShell(c.accounts?.[0]?.display_name||"DM",body);bind();
-    for(const cid of c._conversationIds||[id])api(`/api/v1/conversations/${cid}/read`,{method:"POST",form:{}}).catch(()=>{});
+    const ctx=await api("/api/v1/statuses/"+c.last_status.id+"/context");
+    const all=[...(ctx.ancestors||[]),c.last_status,...(ctx.descendants||[])].filter(st=>st.visibility==="direct");
+    const uniq=new Map();for(const st of all)if(st?.id)uniq.set(String(st.id),st);
+    const statuses=[...uniq.values()].sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")));
+    const title=(c.accounts?.[0]?.display_name||"DM")+(c._threadLabel?" · "+c._threadLabel:"");
+    const body='<div class="dm-thread-bubbles">'+statuses.map(dmBubble).join("")+'</div>'+
+      '<div class="dm-inline-compose"><button class="dm-attach-btn" id="dmInlineAttach" aria-label="이미지 첨부">▧</button>'+
+      '<input id="dmInlineFile" type="file" accept="image/*,video/*" multiple hidden>'+
+      '<textarea id="dmInlineInput" rows="1" placeholder="메시지 보내기"></textarea>'+
+      '<button class="primary" id="dmInlineSend">보내기</button></div>';
+    $("#app").innerHTML=standaloneShell(title,body);bind();
+    $("#dmInlineAttach")?.addEventListener("click",()=>$("#dmInlineFile")?.click());
+    $("#dmInlineSend")?.addEventListener("click",()=>sendInlineDm(c));
+    $("#dmInlineInput")?.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendInlineDm(c)}});
+    api("/api/v1/conversations/"+id+"/read",{method:"POST",form:{}}).catch(()=>{});
+    requestAnimationFrame(()=>{const main=document.querySelector(".standalone-page .main");if(main)main.scrollTop=main.scrollHeight});
   }catch(e){toast(e.message)}
 }
 
