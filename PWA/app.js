@@ -169,10 +169,10 @@ async function loadAllFollowing(){
 }
 function statusId(raw){return raw?.id||raw?.reblog?.id||""}
 function nonDirect(raw){return raw&&raw.visibility!=="direct"}
-function lentonPublicStatus(raw,allowed){
+function lentonPublicStatus(raw){
   if(!raw||!raw.account)return false;
   const author=raw.account.id||"",me=state.me?.id||"";
-  if(!author||author===me||!allowed.has(author))return false;
+  if(!author||author===me)return false;
   if(raw.visibility==="direct")return false;
   if(raw.reblog)return false;
   if(raw.in_reply_to_id!==null&&raw.in_reply_to_id!==undefined&&String(raw.in_reply_to_id)!=="")return false;
@@ -195,22 +195,39 @@ async function loadLentonHome(chronological){
     ]);
     return mergeChronological(home,pub,allowed);
   }
-  const collected=[],seen=new Set();let homeCursor="",pubCursor="",homeDone=false,pubDone=false;
-  for(let scan=0;scan<8&&collected.length<30;scan++){
-    const hq={limit:"40"},pq={limit:"40"};if(homeCursor)hq.max_id=homeCursor;if(pubCursor)pq.max_id=pubCursor;
-    const [home,pub]=await Promise.all([
-      homeDone?Promise.resolve([]):api("/api/v1/timelines/home",{query:hq}).catch(()=>[]),
-      pubDone?Promise.resolve([]):api("/api/v1/timelines/public",{query:pq}).catch(()=>[])
-    ]);
-    for(const src of [home,pub])for(const raw of src||[]){
-      if(!lentonPublicStatus(raw,allowed))continue;
-      const id=statusId(raw);if(id&&seen.has(id))continue;if(id)seen.add(id);collected.push(raw);
-      if(collected.length>=30)break;
+
+  const [firstHome,firstPub]=await Promise.all([
+    api("/api/v1/timelines/home",{query:{limit:"40"}}),
+    api("/api/v1/timelines/public",{query:{limit:"40"}})
+  ]);
+  const collected=[],seen=new Set();
+  let home=firstHome||[],pub=firstPub||[],homeCursor=home[home.length-1]?.id||"",homeDone=false;
+
+  const addPage=()=>{
+    for(const raw of home){
+      if(!lentonPublicStatus(raw))continue;
+      const id=statusId(raw);if(id&&seen.has(id))continue;if(id)seen.add(id);
+      collected.push(raw);if(collected.length>=30)return;
     }
-    const nextHome=home?.[home.length-1]?.id||"",nextPub=pub?.[pub.length-1]?.id||"";
-    if(!home?.length||!nextHome||nextHome===homeCursor)homeDone=true;else homeCursor=nextHome;
-    if(!pub?.length||!nextPub||nextPub===pubCursor)pubDone=true;else pubCursor=nextPub;
-    if(homeDone&&pubDone)break;
+    for(const raw of pub){
+      if(!lentonPublicStatus(raw))continue;
+      const author=raw?.account?.id||"";if(!allowed.has(author))continue;
+      const id=statusId(raw);if(id&&seen.has(id))continue;if(id)seen.add(id);
+      collected.push(raw);if(collected.length>=30)return;
+    }
+  };
+
+  for(let scan=0;scan<6&&collected.length<30;scan++){
+    if(scan>0){
+      if(homeDone)break;
+      const query={limit:"40"};if(homeCursor)query.max_id=homeCursor;
+      const rawHome=await api("/api/v1/timelines/home",{query});
+      const next=rawHome?.[rawHome.length-1]?.id||"";
+      home=rawHome||[];pub=[];
+      if(!home.length||!next||next===homeCursor)homeDone=true;
+      else homeCursor=next;
+    }
+    addPage();
   }
   collected.sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
   return collected.slice(0,80);
