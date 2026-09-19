@@ -1,0 +1,26 @@
+{
+  "id": "./",
+  "name": "렌톤",
+  "short_name": "렌톤",
+  "description": "빠른 알림을 지원하는 Mastodon 클라이언트",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1d9bf0",
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "./icon-1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

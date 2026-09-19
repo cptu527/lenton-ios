@@ -1,0 +1,59 @@
+name: Deploy Lenton PWA
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'PWA/**'
+      - 'LentonIOS/Resources/AppIconSource/**'
+      - '.github/workflows/deploy-pwa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lenton-pwa-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate JavaScript
+        run: |
+          node --check PWA/app.js
+          node --check PWA/sw.js
+
+      - name: Build static PWA
+        run: |
+          rm -rf dist-pwa
+          cp -R PWA dist-pwa
+          python3 - <<'PY'
+          import base64
+          from pathlib import Path
+          root = Path("LentonIOS/Resources/AppIconSource")
+          parts = [
+              "chunk00.txt","chunk01.txt","chunk02.txt","chunk03.txt",
+              "chunk04a.txt","chunk04b.txt","chunk04c.txt","chunk04d.txt","fixed04e.txt",
+              "chunk05a.txt","chunk05b.txt","chunk05c.txt","chunk05d.txt","chunk05e.txt",
+          ]
+          encoded = "".join((root / n).read_text().strip() for n in parts)
+          encoded += "=" * (-len(encoded) % 4)
+          data = base64.b64decode(encoded, validate=True)
+          out = Path("dist-pwa/icon-1024.png")
+          out.write_bytes(data)
+          print("Wrote", out, len(data), "bytes")
+          PY
+          printf '%s\n' '' > dist-pwa/.nojekyll
+          test -s dist-pwa/icon-1024.png
+
+      - name: Publish gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist-pwa
+          publish_branch: gh-pages
+          force_orphan: true
