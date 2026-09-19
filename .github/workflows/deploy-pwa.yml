@@ -2,7 +2,7 @@ name: Sync Android APK and Deploy Lenton PWA
 
 on:
   push:
-    branches: [ main, pwa/apk-source-pipeline-v02517 ]
+    branches: [ main, pwa/apk-source-pipeline-v02517, pwa/apk-renderer-v02517 ]
     paths:
       - 'PWA/**'
       - 'tools/**'
