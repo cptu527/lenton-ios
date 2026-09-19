@@ -1408,6 +1408,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
     m.innerHTML=`<div class="sheet compose-sheet">
       <div class="sheet-head"><button class="iconbtn" id="closeCompose">×</button><h2>${reply?(ct.replyTitle||"답글"):(visibility==="direct"?"새 DM":(ct.newTitle||"새 게시물"))}</h2><button class="primary" id="sendCompose">${reply?(ct.replyButton||"답글"):(visibility==="direct"?"보내기":(ct.postButton||"게시"))}</button></div>
       <div class="compose-meta-row"><select id="composeVisibility" class="compose-visibility">${visOptions.map(x=>`<option value="${x[0]}" ${visibility===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select></div>
+      ${reply?`<div class="compose-reply-context"><img src="${esc(reply.account?.avatar_static||reply.account?.avatar||"")}" alt=""><div><b>${renderEmojiText(reply.account?.display_name||reply.account?.username||"",reply.account?.emojis||[])}</b><div>${renderRichText(reply.content||"")}</div></div></div>`:""}
       ${recips.length?`<div class="recips">${recips.map((r,i)=>`<button data-r="${i}" class="${r.on?"":"off"}">${r.avatar?`<img src="${esc(r.avatar)}" alt="">`:""}<span>@${esc(r.acct)}</span></button>`).join("")}</div>`:""}
       <div id="parts">${parts.map((p,i)=>`<div class="part ${i===activePart?"active":""}" data-p="${i}">
         <div class="part-head"><b>게시물 ${i+1}</b><label><input type="checkbox" data-cw="${i}" ${p.cw?"checked":""}> CW</label></div>
@@ -1419,10 +1420,12 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
       </div>`).join("")}</div>
       <div class="compose-tools">
         <button type="button" id="composeAttach" aria-label="이미지 첨부">▧</button>
-        <button type="button" id="composeEmoji" aria-label="이모지">☺</button>
+        <button type="button" id="composeCamera" aria-label="카메라">◉</button>
         <button type="button" class="compose-cw-toggle" id="composeCW">CW</button>
+        <button type="button" id="composeEmoji" aria-label="이모지">☺</button>
         <button type="button" class="part-add" id="addPart">＋ 타래</button>
         <input id="composeFile" type="file" accept="image/*,video/*" multiple hidden>
+        <input id="composeCameraFile" type="file" accept="image/*" capture="environment" hidden>
       </div>
       <div id="emojiPicker" class="emoji-picker" hidden></div>
     </div>`;
@@ -1445,8 +1448,9 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
     $("#composeCW",m).onclick=()=>{parts[activePart].cw=!parts[activePart].cw;if(parts[activePart].cw&&!parts[activePart].spoiler&&reply?.spoiler_text)parts[activePart].spoiler=reply.spoiler_text;draw()};
     $("#closeCompose",m).onclick=()=>{if(!confirmClose())return;if(historyPushed){window.__lentonComposeBypass=true;history.back()}else window.__lentonComposeClose?.()};
     $("#composeAttach",m).onclick=()=>$("#composeFile",m).click();
-    $("#composeFile",m).onchange=async e=>{
-      const files=[...e.target.files].slice(0,Math.max(0,4-parts[activePart].media.length));
+    $("#composeCamera",m).onclick=()=>$("#composeCameraFile",m).click();
+    const handleComposeFiles=async filesLike=>{
+      const files=[...filesLike].slice(0,Math.max(0,4-parts[activePart].media.length));
       if(!files.length)return;uploading=true;$("#sendCompose",m).disabled=true;toast("미디어 업로드 중…");
       try{
         for(const file of files){const media=await uploadComposerFile(file);parts[activePart].media.push(media)}
@@ -1454,6 +1458,8 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
       }catch(err){toast("첨부 실패: "+err.message)}
       uploading=false;draw(false);
     };
+    $("#composeFile",m).onchange=async e=>{await handleComposeFiles(e.target.files)};
+    $("#composeCameraFile",m).onchange=async e=>{await handleComposeFiles(e.target.files)};
     $("#composeEmoji",m).onclick=async()=>{
       const box=$("#emojiPicker",m);box.hidden=!box.hidden;if(box.hidden)return;
       box.innerHTML='<div class="center">이모지 불러오는 중…</div>';
