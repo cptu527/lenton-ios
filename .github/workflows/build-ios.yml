@@ -29,6 +29,22 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Rebuild AppIcon from source chunks
+        run: |
+          python3 - <<'PY'
+          import base64
+          from pathlib import Path
+          root = Path("LentonIOS/Resources/AppIconSource")
+          parts = ["chunk00.txt","chunk01.txt","chunk02.txt","chunk03.txt","chunk04a.txt","chunk04b.txt","chunk04c.txt","chunk04d.txt","fixed04e.txt","chunk05a.txt","chunk05b.txt","chunk05c.txt","chunk05d.txt","chunk05e.txt"]
+          encoded = "".join((root / n).read_text().strip() for n in parts)
+          encoded += "=" * (-len(encoded) % 4)
+          data = base64.b64decode(encoded, validate=True)
+          out = Path("LentonIOS/Resources/Assets.xcassets/AppIcon.appiconset/Lenton-AppIcon-1024.png")
+          out.write_bytes(data)
+          print(f"Wrote {out} ({len(data)} bytes)")
+          PY
+          sips -g pixelWidth -g pixelHeight LentonIOS/Resources/Assets.xcassets/AppIcon.appiconset/Lenton-AppIcon-1024.png
+
       - name: Generate Xcode project
         run: xcodegen generate
 
