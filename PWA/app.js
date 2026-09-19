@@ -616,14 +616,15 @@ function dmConversationKey(c){
 function groupDmConversations(cs){
   const groups=new Map();
   for(const c of cs||[]){
-    const key=dmConversationKey(c),prev=groups.get(key);
-    if(!prev){groups.set(key,{...c,_conversationIds:[c.id],_sourceConversations:[c]});continue}
-    prev._conversationIds.push(c.id);prev._sourceConversations.push(c);
-    prev.unread=!!(prev.unread||c.unread);
-    const a=new Date(prev.last_status?.created_at||0).getTime(),b=new Date(c.last_status?.created_at||0).getTime();
-    if(b>a){prev.last_status=c.last_status;prev.id=c.id}
+    const key=dmConversationKey(c);
+    if(!groups.has(key))groups.set(key,[]);
+    groups.get(key).push(c);
   }
-  return [...groups.values()].sort((a,b)=>String(b.last_status?.created_at||"").localeCompare(String(a.last_status?.created_at||"")));
+  for(const group of groups.values()){
+    group.sort((a,b)=>String(b.last_status?.created_at||"").localeCompare(String(a.last_status?.created_at||"")));
+    if(group.length>1)group.forEach((c,i)=>c._threadLabel="타래 "+(i+1)+"/"+group.length);
+  }
+  return [...(cs||[])].sort((a,b)=>String(b.last_status?.created_at||"").localeCompare(String(a.last_status?.created_at||"")));
 }
 async function dmView(){
   renderLoadingShell("메시지");
@@ -632,18 +633,15 @@ async function dmView(){
     const cs=groupDmConversations(raw);
     const body=cs.length?cs.map(c=>{
       const a=c.accounts?.[0],txt=c.last_status?plain(c.last_status.content):"";
-      return `<button class="message-row ${c.unread?"unread":""}" data-conv="${c.id}">
-        <img class="message-avatar" src="${esc(a?.avatar_static||a?.avatar||"")}" alt="">
-        <div class="message-main">
-          <div class="message-name">${renderEmojiText(a?.display_name||a?.username||"대화",a?.emojis||[])}</div>
-          <div class="message-handle">@${esc(a?.acct||"")}</div>
-          <div class="message-preview">${esc(txt)}</div>
-        </div>
-        <time class="message-date">${fmtDateOnly(c.last_status?.created_at)}</time>
-      </button>`;
+      const thread=c._threadLabel?'<span class="message-thread-label"> · '+esc(c._threadLabel)+'</span>':"";
+      return '<button class="message-row '+(c.unread?"unread":"")+'" data-conv="'+esc(c.id)+'">'+
+        '<img class="message-avatar" src="'+esc(a?.avatar_static||a?.avatar||"")+'" alt="">'+
+        '<div class="message-main"><div class="message-name">'+renderEmojiText(a?.display_name||a?.username||"대화",a?.emojis||[])+thread+'</div>'+
+        '<div class="message-handle">@'+esc(a?.acct||"")+'</div><div class="message-preview">'+esc(txt)+'</div></div>'+
+        '<time class="message-date">'+fmtDateOnly(c.last_status?.created_at)+'</time></button>';
     }).join(""):'<div class="center">대화가 없어요.</div>';
     renderMainStable("메시지",body,{view:"dm",fab:true,fabAction:"newdm"}); state._conversations=cs;
-  }catch(e){renderMainStable("메시지",`<div class="center">${esc(e.message)}</div>`,{view:"dm",fab:true,fabAction:"newdm"})}
+  }catch(e){renderMainStable("메시지",'<div class="center">'+esc(e.message)+'</div>',{view:"dm",fab:true,fabAction:"newdm"})}
 }
 
 async function searchDmAccounts(q){
