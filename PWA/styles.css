@@ -2357,3 +2357,75 @@ img{display:block}
   position:relative;
   will-change:transform;
 }
+
+
+/* 2026-09-20 pinned profile / connected thread / reply visibility parity */
+.profile-pinned-label{
+  min-height:28px;
+  display:flex;
+  align-items:center;
+  gap:5px;
+  padding:0 0 4px 58px;
+  color:var(--sub);
+  font-size:12px;
+  font-weight:600;
+}
+.thread-node{
+  position:relative;
+  background:var(--bg);
+}
+.thread-node::before,
+.thread-node::after{
+  content:"";
+  position:absolute;
+  left:38px;
+  width:2px;
+  background:var(--thread);
+  z-index:2;
+  pointer-events:none;
+}
+.thread-node.thread-connect-top::before{
+  top:0;
+  height:18px;
+}
+.thread-node.thread-connect-bottom::after{
+  top:58px;
+  bottom:-1px;
+}
+.thread-node .status{
+  position:relative;
+  z-index:1;
+}
+.thread-node .avatar-button,
+.thread-node .avatar{
+  position:relative;
+  z-index:3;
+}
+.thread-node.thread-current .status{
+  border-left:2px solid color-mix(in srgb,var(--accent) 68%,transparent);
+}
+.thread-node .actions button[data-action="reply"] .count:not(:empty){
+  display:inline-block;
+  min-width:10px;
+  margin-left:4px;
+  font-variant-numeric:tabular-nums;
+  color:inherit;
+}
+.reply-compose .reply-visibility-row{
+  min-height:52px;
+  padding:0 18px;
+  justify-content:flex-start;
+  background:var(--bg);
+}
+.reply-compose .reply-visibility-row .compose-visibility{
+  min-height:44px;
+  padding:0 4px 0 0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  color:var(--fg);
+  font-size:14px;
+  font-weight:600;
+  -webkit-appearance:auto;
+  appearance:auto;
+}
