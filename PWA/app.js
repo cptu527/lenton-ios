@@ -519,7 +519,7 @@ async function notificationsView(replyMentions=false){
           </div>
         </article>`;
       }
-      const label=x.type==="follow"?"나를 팔로우했습니다":x.type==="follow_request"?"팔로우를 요청했습니다":"새 알림";
+      const simpleLabels={follow:"나를 팔로우했습니다",follow_request:"팔로우를 요청했습니다",favourite:"내 게시물을 좋아해요",reblog:"내 게시물을 부스트했어요",poll:"투표가 종료됐어요",status:"새 게시물을 올렸어요",update:"게시물을 수정했어요"}; const label=simpleLabels[x.type]||"새 알림";
       const isNew=(new Date(x.created_at||0).getTime()||0)>seenAt; return `<article class="notify-simple ${isNew?"notification-new":""}">
         <img class="notify-avatar" data-profile="${esc(a.id||"")}" src="${esc(a.avatar_static||a.avatar||"")}" alt="">
         <div><b>${renderEmojiText(a.display_name||a.username||"알림",a.emojis||[])}님이 ${esc(label)}</b><div class="notify-date">${fmtTime(x.created_at)}</div></div>
@@ -671,7 +671,7 @@ async function runSearch(){
   try{
     const r=await api("/api/v2/search",{query:{q,resolve:"true",limit:"20"}});
     let html="";
-    if(r.accounts?.length){html+=`<div class="section-title">사람</div>`+r.accounts.map(a=>`<div class="row"><img class="avatar" style="width:48px;height:48px" src="${esc(a.avatar_static||a.avatar||"")}" alt=""><div class="grow"><b>${esc(a.display_name||a.username)}</b><div class="muted">@${esc(a.acct)}</div></div></div>`).join("")}
+    if(r.accounts?.length){html+=`<div class="section-title">사람</div>`+r.accounts.map(a=>`<button class="row" data-profile="${esc(a.id||"")}"><img class="avatar" style="width:48px;height:48px" src="${esc(a.avatar_static||a.avatar||"")}" alt=""><div class="grow"><b>${renderEmojiText(a.display_name||a.username,a.emojis||[])}</b><div class="muted">@${esc(a.acct)}</div></div></button>`).join("")}
     if(r.statuses?.length){html+=`<div class="section-title">게시물</div>`+r.statuses.map(statusCard).join("")}
     box.className="";box.innerHTML=html||'<div class="center">검색 결과가 없어요.</div>';bind();
   }catch(e){box.className="center";box.textContent=e.message}
@@ -892,9 +892,25 @@ function mutateLayout(id,dir){
 function resetMainTabLayout(){store.del("lenton_main_tab_layout");screenLayoutEditor()}
 async function followRequestsScreen(){
   closeDrawer();$("#app").innerHTML=standaloneShell("팔로우 요청",'<div class="center">불러오는 중…</div>');bind();
-  try{const a=await api("/api/v1/follow_requests",{query:{limit:"40"}});const rows=a.length?a.map(x=>`<div class="row"><img class="avatar" data-profile="${esc(x.id||"")}" style="width:48px;height:48px" src="${esc(x.avatar_static||x.avatar||"")}" alt=""><div class="grow"><b>${esc(x.display_name||x.username)}</b><div class="muted">@${esc(x.acct)}</div></div></div>`).join(""):'<div class="center">팔로우 요청이 없어요.</div>';$("#app").innerHTML=standaloneShell("팔로우 요청",rows);bind()}catch(e){toast(e.message)}
+  try{
+    const a=await api("/api/v1/follow_requests",{query:{limit:"40"}});
+    const rows=a.length?a.map(x=>`<div class="follow-request-row">
+      <button class="follow-request-person" data-profile="${esc(x.id||"")}">
+        <img class="avatar" src="${esc(x.avatar_static||x.avatar||"")}" alt="">
+        <div class="grow"><b>${renderEmojiText(x.display_name||x.username,x.emojis||[])}</b><div class="muted">@${esc(x.acct)}</div></div>
+      </button>
+      <button class="primary small" data-follow-accept="${esc(x.id)}">승인</button>
+      <button class="outline-btn small" data-follow-reject="${esc(x.id)}">거절</button>
+    </div>`).join(""):'<div class="center">팔로우 요청이 없어요.</div>';
+    $("#app").innerHTML=standaloneShell("팔로우 요청",rows);bind()
+  }catch(e){toast(e.message)}
 }
-
+async function decideFollowRequest(id,accept){
+  try{
+    await api(`/api/v1/follow_requests/${id}/${accept?"authorize":"reject"}`,{method:"POST",form:{}});
+    toast(accept?"팔로우 요청을 승인했어요.":"팔로우 요청을 거절했어요.");followRequestsScreen();
+  }catch(e){toast(e.message)}
+}
 
 async function pushDiagnostics(){
   const supported="serviceWorker"in navigator&&"PushManager"in window&&"Notification"in window;
@@ -1543,6 +1559,8 @@ function bind(){
   document.querySelectorAll(".status[data-status-id]").forEach(card=>card.onclick=e=>{if(e.target.closest("button,a,video,audio"))return;openThread(card.dataset.statusId)});
   document.querySelectorAll("[data-thread-older]").forEach(b=>b.onclick=()=>openThread(b.dataset.threadOlder,true));
   document.querySelectorAll("[data-notify]").forEach(b=>b.onclick=()=>notificationsView(b.dataset.notify==="mention"));
+  document.querySelectorAll("[data-follow-accept]").forEach(b=>b.onclick=()=>decideFollowRequest(b.dataset.followAccept,true));
+  document.querySelectorAll("[data-follow-reject]").forEach(b=>b.onclick=()=>decideFollowRequest(b.dataset.followReject,false));
   $("#searchInput")?.addEventListener("keydown",e=>{if(e.key==="Enter")runSearch()});
   $("#themeSel")?.addEventListener("change",e=>{state.theme=e.target.value;store.set("lenton_theme",state.theme);if(state.theme==="system")delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=state.theme});
   $("#accentSel")?.addEventListener("input",e=>{state.accent=e.target.value;store.set("lenton_accent",state.accent);document.documentElement.style.setProperty("--accent",state.accent)});
