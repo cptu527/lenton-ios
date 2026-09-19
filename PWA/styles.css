@@ -1420,3 +1420,56 @@ img{display:block}
   width:28px;height:28px;border:0;border-radius:50%;
   background:rgba(0,0,0,.7);color:white;font-size:20px;
 }
+
+
+/* Android profile four-tab parity */
+.profile-fields{
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+  padding:6px 0 12px;
+}
+.profile-field{
+  display:grid;
+  grid-template-columns:minmax(70px,auto) minmax(0,1fr);
+  gap:12px;
+  align-items:start;
+  font-size:14px;
+}
+.profile-field span{color:var(--sub)}
+.profile-field b{font-weight:500;min-width:0;overflow-wrap:anywhere}
+.profile-count-grid{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  padding:8px 0 4px;
+  text-align:center;
+}
+.profile-count-grid div{display:flex;flex-direction:column;gap:3px}
+.profile-count-grid b{font-size:17px;color:var(--fg)}
+.profile-count-grid span{font-size:13px;color:var(--sub)}
+.profile-tabs-4{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  height:52px;
+  border-bottom:1px solid var(--line);
+  background:var(--bg);
+}
+.profile-tabs-4 button{
+  position:relative;
+  border:0;
+  background:none;
+  color:var(--sub);
+  font-size:14px;
+  padding:0 6px;
+}
+.profile-tabs-4 button.active{color:var(--fg);font-weight:700}
+.profile-tabs-4 button.active::after{
+  content:"";
+  position:absolute;
+  left:25%;
+  right:25%;
+  bottom:0;
+  height:3px;
+  border-radius:999px;
+  background:var(--accent);
+}
