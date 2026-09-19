@@ -2,7 +2,7 @@ name: Deploy Lenton PWA
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, pwa/android-ui-v02517 ]
     paths:
       - 'PWA/**'
       - 'LentonIOS/Resources/AppIconSource/**'
@@ -67,6 +67,7 @@ jobs:
           test -s dist-pwa/icon-1024.png
 
       - name: Publish gh-pages branch
+        if: github.ref == 'refs/heads/main'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
