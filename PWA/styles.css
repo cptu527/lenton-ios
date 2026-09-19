@@ -956,3 +956,9 @@ img{display:block}
   .message-row{grid-template-columns:74px minmax(0,1fr) 90px}
   .notify-status,.notify-simple{grid-template-columns:64px minmax(0,1fr)}
 }
+
+
+/* Lenton gesture surfaces */
+.bottom,.home-tabs,.notify-tabs{touch-action:pan-y}
+.main{touch-action:pan-y}
+.drawer{touch-action:pan-y}

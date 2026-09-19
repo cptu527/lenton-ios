@@ -527,6 +527,7 @@ function openDrawer(){
     <button class="drawer-row" data-drawer="update"><span class="glyph">⇩</span>앱 업데이트</button>
   </aside>`;
   document.body.append(shade);
+  requestAnimationFrame(()=>attachLentonGestures());
   shade.addEventListener("click",e=>{if(e.target===shade)closeDrawer()});
   shade.querySelectorAll("[data-drawer]").forEach(b=>b.onclick=async()=>{
     const v=b.dataset.drawer;
@@ -690,6 +691,80 @@ async function enablePush(){
 function urlBase64ToUint8Array(s){const p="=".repeat((4-s.length%4)%4),b=(s+p).replace(/-/g,"+").replace(/_/g,"/"),raw=atob(b),a=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)a[i]=raw.charCodeAt(i);return a}
 
 
+function gesturePoint(e){
+  const t=e.changedTouches?.[0]||e.touches?.[0]||e;
+  return {x:t.clientX||0,y:t.clientY||0,time:performance.now()};
+}
+function attachSwipe(el,{onLeft,onRight,edgeOnly=false,threshold=40,ratio=1.25,startMaxX=28}={}){
+  if(!el||el.dataset.lentonSwipe==="1")return;
+  el.dataset.lentonSwipe="1";
+  let start=null,tracking=false;
+  el.addEventListener("touchstart",e=>{
+    if(e.touches?.length!==1)return;
+    const p=gesturePoint(e);
+    if(edgeOnly&&p.x>startMaxX){start=null;tracking=false;return}
+    start=p;tracking=true;
+  },{passive:true});
+  el.addEventListener("touchmove",e=>{
+    if(!tracking||!start||e.touches?.length!==1)return;
+    const p=gesturePoint(e),dx=p.x-start.x,dy=p.y-start.y;
+    if(Math.abs(dx)>threshold&&Math.abs(dx)>Math.abs(dy)*ratio){
+      try{e.preventDefault()}catch{}
+    }else if(Math.abs(dy)>threshold&&Math.abs(dy)>=Math.abs(dx)){
+      tracking=false;
+    }
+  },{passive:false});
+  el.addEventListener("touchend",e=>{
+    if(!tracking||!start){start=null;tracking=false;return}
+    const p=gesturePoint(e),dx=p.x-start.x,dy=p.y-start.y;
+    const ok=Math.abs(dx)>threshold&&Math.abs(dx)>Math.abs(dy)*ratio;
+    start=null;tracking=false;
+    if(!ok)return;
+    if(dx<0)onLeft?.();else onRight?.();
+  },{passive:true});
+  el.addEventListener("touchcancel",()=>{start=null;tracking=false},{passive:true});
+}
+function moveMainView(dir){
+  const order=androidNavItems().map(x=>x.id);
+  const i=order.indexOf(state.view);
+  if(i<0)return;
+  const n=i+dir;
+  if(n<0||n>=order.length)return;
+  state.view=order[n];state.listId=null;render();
+}
+function attachLentonGestures(){
+  const bottom=document.querySelector(".bottom");
+  attachSwipe(bottom,{onLeft:()=>moveMainView(1),onRight:()=>moveMainView(-1),threshold:40,ratio:1.25});
+
+  const app=document.querySelector(".app");
+  attachSwipe(app,{
+    edgeOnly:true,startMaxX:28,threshold:46,ratio:1.15,
+    onRight:()=>{if(!document.querySelector(".drawer-shade"))openDrawer()}
+  });
+
+  const drawer=document.querySelector(".drawer");
+  attachSwipe(drawer,{onLeft:()=>closeDrawer(),threshold:46,ratio:1.15});
+
+  if(state.view==="home"){
+    const main=document.querySelector(".main");
+    attachSwipe(main,{
+      threshold:42,ratio:1.15,
+      onLeft:()=>{if(!state.listId&&state.homeMode!=="public"){state.homeMode="public";render()}},
+      onRight:()=>{if(!state.listId&&state.homeMode!=="home"){state.homeMode="home";render()}}
+    });
+  }
+
+  const profileTabs=document.querySelector(".profile-info + .home-tabs,.profile-hero ~ .home-tabs");
+  if(profileTabs){
+    const host=profileTabs.parentElement||document.querySelector(".main");
+    attachSwipe(host,{
+      threshold:42,ratio:1.15,
+      onLeft:()=>{if(state.profileAccount)openProfile(state.profileAccount.id,true);else profileView(true)},
+      onRight:()=>{if(state.profileAccount)openProfile(state.profileAccount.id,false);else profileView(false)}
+    });
+  }
+}
+
 function bind(){
   document.querySelectorAll("[data-profile]").forEach(b=>b.onclick=e=>{e.stopPropagation();openProfile(b.dataset.profile)});
   document.querySelectorAll("[data-open-list]").forEach(b=>b.onclick=()=>{state.view="home";state.listId=b.dataset.openList;render()});
@@ -726,6 +801,7 @@ function bind(){
   $("#searchInput")?.addEventListener("keydown",e=>{if(e.key==="Enter")runSearch()});
   $("#themeSel")?.addEventListener("change",e=>{state.theme=e.target.value;store.set("lenton_theme",state.theme);if(state.theme==="system")delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=state.theme});
   $("#accentSel")?.addEventListener("input",e=>{state.accent=e.target.value;store.set("lenton_accent",state.accent);document.documentElement.style.setProperty("--accent",state.accent)});
+  attachLentonGestures();
 }
 
 let pendingAutomaticUpdate=false;
