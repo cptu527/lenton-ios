@@ -73,10 +73,15 @@ jobs:
         if: steps.gate.outputs.changed == 'true'
         run: |
           rm -rf /tmp/lenton-jadx
+          set +e
           jadx --no-res -d /tmp/lenton-jadx /tmp/lenton.apk
+          JADX_EXIT=$?
+          set -e
+          echo "JADX exit code: $JADX_EXIT (partial library decompile errors are allowed)"
           MAIN="$(find /tmp/lenton-jadx/sources -path '*/com/mastoflow/app/MainActivity.java' -print -quit)"
           test -n "$MAIN"
           cp "$MAIN" /tmp/LentonMainActivity.java
+          test -s /tmp/LentonMainActivity.java
           wc -c /tmp/LentonMainActivity.java
 
       - name: Generate web contract from shipped APK code
