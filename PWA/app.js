@@ -274,6 +274,12 @@ function lentonIcon(name,cls=""){
   if(name==="bookmarkFill")return `<svg ${c}><path d="M6.5 3.5h11v17l-5.5-4-5.5 4v-17Z" fill="currentColor"/></svg>`;
   if(name==="share")return `<svg ${c}><circle cx="6" cy="12" r="2.3" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="18" cy="6" r="2.3" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="18" cy="18" r="2.3" fill="none" stroke="currentColor" stroke-width="2"/><path d="m8 11 7.6-3.8M8 13l7.6 3.8" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
   if(name==="more")return `<svg ${c}><circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/></svg>`;
+  if(name==="profile")return `<svg ${c}><circle cx="12" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5.5 20c.7-4 3-6 6.5-6s5.8 2 6.5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+  if(name==="edit")return `<svg ${c}><path d="M5 19h4l10-10-4-4L5 15v4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="m13.5 6.5 4 4" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
+  if(name==="list")return `<svg ${c}><path d="M8 6h12M8 12h12M8 18h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="4" cy="6" r="1" fill="currentColor"/><circle cx="4" cy="12" r="1" fill="currentColor"/><circle cx="4" cy="18" r="1" fill="currentColor"/></svg>`;
+  if(name==="personAdd")return `<svg ${c}><circle cx="9" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3.5 19c.6-3.4 2.5-5.2 5.5-5.2 1.4 0 2.5.4 3.4 1.1M17 10v8M13 14h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+  if(name==="settings")return `<svg ${c}><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2.8v2.1M12 19.1v2.1M2.8 12h2.1M19.1 12h2.1M5.5 5.5 7 7M17 17l1.5 1.5M18.5 5.5 17 7M7 17l-1.5 1.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="6.2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>`;
+  if(name==="update")return `<svg ${c}><path d="M12 3v12m0 0-4-4m4 4 4-4M5 20h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   return "";
 }
 function navIcon(v){return lentonIcon(v,"nav-icon")}
@@ -291,7 +297,7 @@ function shell(title,body,opts={}){
     <header class="topbar lenton-topbar">
       <button class="topbar-avatar" data-action="drawer">${avatar}</button>
       <h1>${esc(title)}</h1>
-      ${store.get("lenton_realtime_indicator",true)!==false?`<span class="realtime-dot ${navigator.onLine?"online":"offline"}" title="${navigator.onLine?"온라인":"오프라인"}"></span>`:""}<div class="topbar-actions">${right}</div>
+      <div class="topbar-actions">${right}</div>
     </header>
     <main class="main">${body}</main>
     <nav class="bottom lenton-bottom">${navBar()}</nav>
@@ -565,9 +571,9 @@ async function notificationsView(replyMentions=false){
     if(replyMentions) query["types[]"]="mention";
     const n=await api("/api/v1/notifications",{query});
     const tabs=`<div class="notify-tabs lenton-notify-tabs">
-      <button data-action="clearNotifications">지우기</button>
-      <button data-notify="mention" class="${replyMentions?"active":""}">답장할멘션</button>
-    </div>`;
+      <button data-notify="all" class="${replyMentions?"":"active"}">전체</button>
+      <button data-notify="mention" class="${replyMentions?"active":""}">멘션</button>
+    </div><div class="notification-tools"><button data-action="clearNotifications">알림 지우기</button></div>`;
     const seenAt=Number(store.get(scopedKey("notifications_seen_at"),0)||0);
     const newest=n.reduce((m,x)=>Math.max(m,new Date(x.created_at||0).getTime()||0),seenAt);
     const rows=n.length?n.map(x=>{
@@ -603,10 +609,27 @@ async function notificationsView(replyMentions=false){
     store.set(scopedKey("notifications_seen_at"),newest)
   }catch(e){renderMainStable("알림",`<div class="center">${esc(e.message)}</div>`,{view:"notifications",fab:true})}
 }
+function dmConversationKey(c){
+  const ids=(c?.accounts||[]).map(a=>String(a.id||a.acct||"")).filter(Boolean).sort();
+  return ids.join("|")||String(c?.id||"");
+}
+function groupDmConversations(cs){
+  const groups=new Map();
+  for(const c of cs||[]){
+    const key=dmConversationKey(c),prev=groups.get(key);
+    if(!prev){groups.set(key,{...c,_conversationIds:[c.id],_sourceConversations:[c]});continue}
+    prev._conversationIds.push(c.id);prev._sourceConversations.push(c);
+    prev.unread=!!(prev.unread||c.unread);
+    const a=new Date(prev.last_status?.created_at||0).getTime(),b=new Date(c.last_status?.created_at||0).getTime();
+    if(b>a){prev.last_status=c.last_status;prev.id=c.id}
+  }
+  return [...groups.values()].sort((a,b)=>String(b.last_status?.created_at||"").localeCompare(String(a.last_status?.created_at||"")));
+}
 async function dmView(){
   renderLoadingShell("메시지");
   try{
-    const cs=await api("/api/v1/conversations",{query:{limit:"40"}});
+    const raw=await api("/api/v1/conversations",{query:{limit:"80"}});
+    const cs=groupDmConversations(raw);
     const body=cs.length?cs.map(c=>{
       const a=c.accounts?.[0],txt=c.last_status?plain(c.last_status.content):"";
       return `<button class="message-row ${c.unread?"unread":""}" data-conv="${c.id}">
@@ -649,7 +672,7 @@ async function newDmScreen(){
     const box=$("#dmSelectedRecipients"),btn=$("#dmStartCompose");if(!box||!btn)return;
     const a=[...selected.values()];
     box.innerHTML=a.map(x=>`<button class="dm-selected-chip" data-dm-remove="${esc(x.id)}"><img src="${esc(x.avatar_static||x.avatar||"")}" alt=""><span>@${esc(x.acct||x.username||"")}</span> ×</button>`).join("");
-    btn.disabled=!a.length;
+    btn.disabled=!a.length;btn.hidden=!a.length;
     box.querySelectorAll("[data-dm-remove]").forEach(b=>b.onclick=()=>{selected.delete(String(b.dataset.dmRemove));drawSelected()});
   };
   const run=async()=>{
@@ -681,11 +704,19 @@ async function openConversation(id){
   const c=state._conversations?.find(x=>x.id===id); if(!c?.last_status)return;
   state.currentConversation=c;
   try{
-    const ctx=await api(`/api/v1/statuses/${c.last_status.id}/context`);
-    const all=[...(ctx.ancestors||[]),c.last_status,...(ctx.descendants||[])].filter(s=>s.visibility==="direct");
-    const body=all.map(statusCard).join("")+`<div class="card"><button class="primary" data-action="replydm">답장</button></div>`;
+    const sources=c._sourceConversations?.length?c._sourceConversations:[c];
+    const chunks=await Promise.all(sources.filter(x=>x.last_status?.id).map(async x=>{
+      try{
+        const ctx=await api(`/api/v1/statuses/${x.last_status.id}/context`);
+        return [...(ctx.ancestors||[]),x.last_status,...(ctx.descendants||[])].filter(s=>s.visibility==="direct");
+      }catch{return [x.last_status].filter(Boolean)}
+    }));
+    const byId=new Map();
+    for(const st of chunks.flat())if(st?.id)byId.set(String(st.id),st);
+    const all=[...byId.values()].sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")));
+    const body=`<div class="dm-thread">${all.map(statusCard).join("")}</div><div class="dm-reply-dock"><button class="primary" data-action="replydm">답장</button></div>`;
     $("#app").innerHTML=standaloneShell(c.accounts?.[0]?.display_name||"DM",body);bind();
-    api(`/api/v1/conversations/${id}/read`,{method:"POST",form:{}}).catch(()=>{});
+    for(const cid of c._conversationIds||[id])api(`/api/v1/conversations/${cid}/read`,{method:"POST",form:{}}).catch(()=>{});
   }catch(e){toast(e.message)}
 }
 
@@ -721,7 +752,11 @@ async function profileView(replies=state.profileReplies){
   }catch(e){$("#app").innerHTML=shell("프로필",`<div class="center">${esc(e.message)}</div>`);bind()}
 }
 async function openProfile(id,replies=false){
-  if(!id)return;rememberScroll();
+  if(!id)return;
+  if(state.me?.id&&String(id)===String(state.me.id)){
+    rememberScroll();state.view="profile";state.profileAccount=null;state.profileRelationship=null;state.profileReplies=!!replies;return profileView(state.profileReplies);
+  }
+  rememberScroll();
   state.returnView=state.view; state.profileReplies=!!replies;
   $("#app").innerHTML=standaloneShell("프로필",'<div class="center">불러오는 중…</div>');bind();
   try{
@@ -807,10 +842,10 @@ async function runSearch(){
 }
 
 async function bookmarksView(){
-  closeDrawer(); renderLoadingShell("북마크");
+  closeDrawer(); $("#app").innerHTML=standaloneShell("북마크",'<div class="center">불러오는 중…</div>');bind();
   try{
     const a=await api("/api/v1/bookmarks",{query:{limit:"30"}});
-    $("#app").innerHTML=shell("북마크",a.length?a.map(statusCard).join(""):'<div class="center">북마크가 없어요.</div>');bind();
+    $("#app").innerHTML=standaloneShell("북마크",a.length?a.map(statusCard).join(""):'<div class="center">북마크가 없어요.</div>');bind();
   }catch(e){toast(e.message)}
 }
 
@@ -830,18 +865,17 @@ function buildDrawerElement(){
     <div class="drawer-handle">@${esc(m.acct||"")}${m.acct?.includes("@")?"":"@"+esc(state.session?.host||"")}</div>
     <div class="drawer-counts"><b>${m.following_count||0}</b> 팔로잉&nbsp;&nbsp;&nbsp;<b>${m.followers_count||0}</b> 팔로워</div>
     <div class="drawer-divider"></div>
-    <button class="drawer-row" data-drawer="profile"><span class="glyph">♙</span>프로필</button>
-    <button class="drawer-row" data-drawer="profileedit"><span class="glyph">✎</span>프로필 편집</button>
-    <button class="drawer-row" data-drawer="favourites"><span class="glyph">♡</span>좋아요</button>
-    <button class="drawer-row" data-drawer="bookmarks"><span class="glyph">♧</span>북마크</button>
-    <button class="drawer-row" data-drawer="followrequests"><span class="glyph">♙+</span>팔로우 요청</button>
-    <button class="drawer-row" data-drawer="layoutedit"><span class="glyph">✎</span>화면 구성 편집</button>
+    <button class="drawer-row" data-drawer="profile"><span class="glyph">${lentonIcon("profile")}</span>프로필</button>
+    <button class="drawer-row" data-drawer="profileedit"><span class="glyph">${lentonIcon("edit")}</span>프로필 편집</button>
+    <button class="drawer-row" data-drawer="favourites"><span class="glyph">${lentonIcon("heart")}</span>좋아요</button>
+    <button class="drawer-row" data-drawer="bookmarks"><span class="glyph">${lentonIcon("bookmark")}</span>북마크</button>
+    <button class="drawer-row" data-drawer="followrequests"><span class="glyph">${lentonIcon("personAdd")}</span>팔로우 요청</button>
+    <button class="drawer-row" data-drawer="layoutedit"><span class="glyph">${lentonIcon("edit")}</span>화면 구성 편집</button>
     <div class="drawer-spacer"></div>
-    <button class="drawer-row drawer-list-row" data-drawer="lists"><span class="glyph"></span>리스트</button>
+    <button class="drawer-row drawer-list-row" data-drawer="lists"><span class="glyph">${lentonIcon("list")}</span>리스트</button>
     <div class="drawer-divider"></div>
-    <button class="drawer-row" data-drawer="realtime"><span class="glyph">⚙</span>실시간 연결 상태 표시 설정</button>
-    <button class="drawer-row" data-drawer="settings"><span class="glyph">⚙</span>설정</button>
-    <button class="drawer-row" data-drawer="history"><span class="glyph">⇩</span>업데이트 내역</button>
+    <button class="drawer-row" data-drawer="settings"><span class="glyph">${lentonIcon("settings")}</span>설정</button>
+    <button class="drawer-row" data-drawer="history"><span class="glyph">${lentonIcon("update")}</span>업데이트 내역</button>
   </aside>`;
   document.body.append(shade);
   shade.addEventListener("click",e=>{if(e.target===shade)closeDrawer()});
@@ -855,7 +889,6 @@ function buildDrawerElement(){
     else if(v==="settings"){closeDrawer();state.view="settings";render()}
     else if(v==="profileedit"){pushNavSnapshot();closeDrawer();profileEditScreen()}
     else if(v==="layoutedit"){pushNavSnapshot();closeDrawer();screenLayoutEditor()}
-    else if(v==="realtime"){pushNavSnapshot();closeDrawer();realtimeSettingsScreen()}
     else if(v==="history"){pushNavSnapshot();closeDrawer();updateHistoryScreen()}
     else if(v==="addaccount"){closeDrawer();addAccountFlow()}
   });
@@ -1065,10 +1098,10 @@ function removeSavedAccount(index){
   if(!confirm("이 계정을 이 기기에서 제거할까요?"))return;
   list.splice(index,1);store.set("lenton_accounts",list);accountManagerScreen();
 }
-function inquiryScreen(){
+function inquiryScreen(initialType=""){
   const body=`<div class="settings inquiry-form">
     <div class="section"><h3>문의 / 기능 건의</h3>
-      <label>문의 유형<select id="inquiryType" class="field"><option>오류 신고</option><option>기능 건의</option><option>기타 문의</option></select></label>
+      <label>문의 유형<select id="inquiryType" class="field"><option ${initialType==="오류 신고"?"selected":""}>오류 신고</option><option ${initialType==="기능 건의"?"selected":""}>기능 건의</option><option ${initialType==="기타 문의"?"selected":""}>기타 문의</option></select></label>
       <label>발생 화면/기능<input id="inquiryArea" class="field" placeholder="예: DM, 알림, 프로필"></label>
       <label>제목<input id="inquiryTitle" class="field" placeholder="문의 제목"></label>
       <label>문의 내용<textarea id="inquiryBody" class="field inquiry-text" placeholder="내용을 입력하세요"></textarea></label>
@@ -1108,7 +1141,8 @@ async function updateHistoryScreen(){
     <div class="kv"><span>업데이트 방식</span><b>자동</b></div>
     <div class="notice">새 버전은 백그라운드에서 준비되며 작성 중인 글이나 DM을 강제로 새로고침하지 않습니다. 앱을 다음에 열 때 최신 버전이 적용됩니다.</div>
   </div>`;
-  $("#app").innerHTML=standaloneShell("업데이트 내역",`<div class="settings">${info}<div class="section"><h3>변경사항</h3>${rows||'<div class="center">변경 내역을 불러오지 못했어요.</div>'}</div></div>`);bind();
+  const support=`<div class="section update-support"><h3>문의 / 기능 건의</h3><div class="notice">업데이트 후 문제가 생겼거나 원하는 기능이 있다면 여기서 바로 보낼 수 있어요.</div><div class="update-support-actions"><button class="outline-btn" data-action="inquiry" data-inquiry-type="오류 신고">오류 신고</button><button class="primary" data-action="inquiry" data-inquiry-type="기능 건의">기능 건의</button></div></div>`;
+  $("#app").innerHTML=standaloneShell("업데이트 내역",`<div class="settings">${info}<div class="section"><h3>변경사항</h3>${rows||'<div class="center">변경 내역을 불러오지 못했어요.</div>'}</div>${support}</div>`);bind();
 }
 async function settingsView(){
   const d=await pushDiagnostics();
@@ -1130,7 +1164,6 @@ async function settingsView(){
       <div class="setting-row"><b>모드</b><select id="themeSel" class="field" style="height:46px;margin-top:8px"><option value="system">시스템</option><option value="light">라이트</option><option value="dark">다크</option></select></div>
       <div class="setting-row"><b>강조색</b><input id="accentSel" type="color" value="${esc(state.accent)}" style="width:54px;height:38px;border:0;background:none;margin-top:8px"></div>
       <div class="setting-row"><button class="settings-link" data-action="layoutSettings">화면 구성 편집 <span>›</span></button></div>
-      <div class="setting-row"><button class="settings-link" data-action="realtimeSettings">실시간 연결 상태 표시 <span>›</span></button></div>
     </div>
     <div class="section"><h3>계정</h3>
       <div class="setting-row"><b>서버</b><span>${esc(state.session.host)}</span></div>
@@ -1464,8 +1497,11 @@ function animateTransform(el,to,duration=180){
 }
 function buildSwipePreview(html,className){
   const p=document.createElement("div");p.className=className;
+  p.style.width="100vw";p.style.minWidth="100vw";p.style.maxWidth="100vw";
   p.innerHTML=html||'<div class="swipe-empty"></div>';
-  document.body.append(p);return p;
+  document.body.append(p);
+  const child=p.firstElementChild;if(child){child.style.width="100vw";child.style.minWidth="100vw";child.style.maxWidth="100vw"}
+  return p;
 }
 function previewForMainView(view){
   if(state.pageCache[view])return state.pageCache[view];
@@ -1477,12 +1513,12 @@ function attachInteractiveMainSwipe(bottom){
   bottom.dataset.interactiveSwipe="1";
   let start=null,active=false,target=null,preview=null,current=null,width=0,dir=0;
   const cleanup=()=>{
-    if(current){current.style.transition="";current.style.transform="";current.classList.remove("swipe-moving")}
+    if(current){current.style.transition="";current.style.transform="";current.style.width="";current.style.minWidth="";current.style.maxWidth="";current.classList.remove("swipe-moving")}
     preview?.remove();preview=null;start=null;active=false;target=null;current=null;dir=0;
   };
   bottom.addEventListener("touchstart",e=>{
     if(e.touches?.length!==1)return;
-    start=gesturePoint(e);active=false;target=null;current=document.querySelector("#app>.app");width=window.innerWidth||document.documentElement.clientWidth;
+    start=gesturePoint(e);active=false;target=null;current=document.querySelector("#app>.app");width=window.innerWidth||document.documentElement.clientWidth;if(current){current.style.width=width+"px";current.style.minWidth=width+"px";current.style.maxWidth=width+"px"}
   },{passive:true});
   bottom.addEventListener("touchmove",e=>{
     if(!start||e.touches?.length!==1||!current)return;
@@ -1748,11 +1784,10 @@ function bind(){
     else if(a==="backScreen"||a==="backMain")goBackScreen()
     else if(a==="accountManager"){pushNavSnapshot();accountManagerScreen()}
     else if(a==="addAccount")addAccountFlow()
-    else if(a==="inquiry"){pushNavSnapshot();inquiryScreen()}
+    else if(a==="inquiry"){pushNavSnapshot();inquiryScreen(b.dataset.inquiryType||"")}
     else if(a==="sendInquiry")sendInquiry()
     else if(a==="updateHistory"){pushNavSnapshot();updateHistoryScreen()}
     else if(a==="layoutSettings"){pushNavSnapshot();screenLayoutEditor()}
-    else if(a==="realtimeSettings"){pushNavSnapshot();realtimeSettingsScreen()}
     else if(a==="reload")render()
     else if(a==="logout")logout()
     else if(a==="enablepush")enablePush()
