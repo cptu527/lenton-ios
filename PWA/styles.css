@@ -1137,3 +1137,13 @@ img{display:block}
 .bottom .lenton-icon{width:30px;height:30px}
 .lenton-actions .lenton-icon{width:27px;height:27px}
 .lenton-actions button{display:flex;align-items:center;justify-content:center;gap:3px}
+
+
+.follow-request-row{
+  display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:8px;
+  padding:10px 14px 10px 18px;border-bottom:1px solid var(--line);
+}
+.follow-request-person{
+  min-width:0;border:0;background:none;color:var(--fg);display:flex;align-items:center;gap:12px;text-align:left;padding:0;
+}
+.small{height:38px!important;min-width:64px!important;padding:0 12px!important}
