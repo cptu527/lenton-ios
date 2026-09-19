@@ -14,7 +14,7 @@ const state = {
   session: store.get("lenton_session"),
   me:null, view:"home", homeMode:"home", listId:null, lists:[], busy:false,
   theme:store.get("lenton_theme","system"), accent:store.get("lenton_accent",ANDROID?.theme?.accent||"#1d9bf0"),
-  pushError:"", toast:"", currentConversation:null, profileReplies:false, profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}
+  pushError:"", toast:"", currentConversation:null, profileReplies:false, profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, navStack:[], dmDraftRecipients:[], updateAvailable:null, buildInfo:null
 };
 
 function accountScope(){
@@ -290,7 +290,7 @@ function shell(title,body,opts={}){
     </header>
     <main class="main">${body}</main>
     <nav class="bottom lenton-bottom">${navBar()}</nav>
-    ${opts.fab?'<button class="fab lenton-fab" data-action="compose">＋</button>':""}
+    ${opts.fab?`<button class="fab lenton-fab" data-action="${esc(opts.fabAction||"compose")}">＋</button>`:""}
   </div>`;
 }
 function nav(v){return `<button data-view="${v}" class="${state.view===v?"active":""}" aria-label="${v}">${navIcon(v)}</button>`}
@@ -482,7 +482,44 @@ async function loadMoreHome(){
 function scrollKey(){return state.view+(state.view==="home"?":"+state.homeMode+":"+(state.listId||""):"")}
 function rememberScroll(){state.scrolls[scrollKey()]=window.scrollY||document.documentElement.scrollTop||0}
 function restoreScroll(){const y=state.scrolls[scrollKey()];if(typeof y==="number")requestAnimationFrame(()=>window.scrollTo(0,y))}
-function renderLoadingShell(title){$("#app").innerHTML=shell(title,'<div class="center">불러오는 중…</div>',{fab:title==="홈"});bind()}
+
+function pushNavSnapshot(){
+  const app=$("#app");if(!app||!app.innerHTML)return;
+  const snap={
+    html:app.innerHTML,view:state.view,homeMode:state.homeMode,listId:state.listId,
+    scrollY:window.scrollY||document.documentElement.scrollTop||0,
+    profileAccount:state.profileAccount,profileRelationship:state.profileRelationship,
+    profileReplies:state.profileReplies,currentConversation:state.currentConversation
+  };
+  const last=state.navStack[state.navStack.length-1];
+  if(last&&last.html===snap.html&&last.scrollY===snap.scrollY)return;
+  state.navStack.push(snap);if(state.navStack.length>30)state.navStack.shift();
+}
+function goBackScreen(){
+  const snap=state.navStack.pop();
+  if(snap){
+    state.view=snap.view;state.homeMode=snap.homeMode;state.listId=snap.listId;
+    state.profileAccount=snap.profileAccount;state.profileRelationship=snap.profileRelationship;
+    state.profileReplies=snap.profileReplies;state.currentConversation=snap.currentConversation;
+    $("#app").innerHTML=snap.html;bind();
+    requestAnimationFrame(()=>window.scrollTo(0,snap.scrollY||0));
+    return;
+  }
+  state.profileAccount=null;state.profileRelationship=null;state.currentConversation=null;
+  if(state.view!=="home"){state.view=state.returnView||"home";render();return}
+  if(history.length>1)history.back();
+}
+function renderLoadingShell(title){
+  const current=document.querySelector("#app>.app");
+  if(current){
+    current.classList.add("refreshing");
+    const h=current.querySelector(".topbar h1");if(h)h.textContent=title;
+    return;
+  }
+  if(document.querySelector("#app>.standalone-page"))return;
+  $("#app").innerHTML=shell(title,'<div class="center">불러오는 중…</div>',{fab:title==="홈"});
+  bind();
+}
 
 async function notificationsView(replyMentions=false){
   renderLoadingShell("알림");
@@ -545,17 +582,72 @@ async function dmView(){
         <time class="message-date">${fmtDateOnly(c.last_status?.created_at)}</time>
       </button>`;
     }).join(""):'<div class="center">대화가 없어요.</div>';
-    $("#app").innerHTML=shell("메시지",body,{view:"dm",fab:true});bind(); state._conversations=cs;
-  }catch(e){$("#app").innerHTML=shell("메시지",`<div class="center">${esc(e.message)}</div>`,{view:"dm",fab:true});bind()}
+    $("#app").innerHTML=shell("메시지",body,{view:"dm",fab:true,fabAction:"newdm"});bind(); state._conversations=cs;
+  }catch(e){$("#app").innerHTML=shell("메시지",`<div class="center">${esc(e.message)}</div>`,{view:"dm",fab:true,fabAction:"newdm"});bind()}
+}
+
+async function searchDmAccounts(q){
+  const text=String(q||"").trim();if(!text)return [];
+  try{
+    const r=await api("/api/v2/search",{query:{q:text,type:"accounts",resolve:"true",limit:"20"}});
+    return Array.isArray(r?.accounts)?r.accounts:[];
+  }catch{
+    try{return await api("/api/v1/accounts/search",{query:{q:text,resolve:"true",limit:"20"}})}catch{return []}
+  }
+}
+async function newDmScreen(){
+  const selected=new Map((state.dmDraftRecipients||[]).filter(Boolean).map(a=>[String(a.id),a]));
+  $("#app").innerHTML=standaloneShell("새 DM",`
+    <div class="dm-new">
+      <div class="dm-recipient-search">
+        <input id="dmRecipientSearch" class="field" autocomplete="off" autocapitalize="none" placeholder="DM을 보낼 사람 검색">
+        <button class="primary" id="dmRecipientSearchBtn">검색</button>
+      </div>
+      <div id="dmSelectedRecipients" class="dm-selected"></div>
+      <div id="dmRecipientResults" class="dm-results"><div class="center">사용자 이름이나 @아이디를 검색하세요.</div></div>
+      <button class="primary dm-start" id="dmStartCompose" disabled>선택한 사람에게 DM 보내기</button>
+    </div>`);
+  bind();
+  const drawSelected=()=>{
+    const box=$("#dmSelectedRecipients"),btn=$("#dmStartCompose");if(!box||!btn)return;
+    const a=[...selected.values()];
+    box.innerHTML=a.map(x=>`<button class="dm-selected-chip" data-dm-remove="${esc(x.id)}"><img src="${esc(x.avatar_static||x.avatar||"")}" alt=""><span>@${esc(x.acct||x.username||"")}</span> ×</button>`).join("");
+    btn.disabled=!a.length;
+    box.querySelectorAll("[data-dm-remove]").forEach(b=>b.onclick=()=>{selected.delete(String(b.dataset.dmRemove));drawSelected()});
+  };
+  const run=async()=>{
+    const q=$("#dmRecipientSearch")?.value||"",box=$("#dmRecipientResults");if(!box)return;
+    if(!q.trim()){box.innerHTML='<div class="center">검색어를 입력하세요.</div>';return}
+    box.innerHTML='<div class="center">검색 중…</div>';
+    const found=(await searchDmAccounts(q)).filter(a=>a?.id&&a.id!==state.me?.id);
+    box.innerHTML=found.length?found.map(a=>`<button class="dm-person-row" data-dm-add="${esc(a.id)}">
+      <img class="avatar" src="${esc(a.avatar_static||a.avatar||"")}" alt="">
+      <span class="grow"><b>${renderEmojiText(a.display_name||a.username,a.emojis||[])}</b><small>@${esc(a.acct||"")}</small></span>
+      <span>${selected.has(String(a.id))?"선택됨":"＋"}</span>
+    </button>`).join(""):'<div class="center">검색 결과가 없어요.</div>';
+    box.querySelectorAll("[data-dm-add]").forEach(b=>b.onclick=()=>{
+      const a=found.find(x=>String(x.id)===String(b.dataset.dmAdd));if(!a)return;
+      const key=String(a.id);if(selected.has(key))selected.delete(key);else selected.set(key,a);
+      drawSelected();run();
+    });
+  };
+  $("#dmRecipientSearchBtn").onclick=run;
+  $("#dmRecipientSearch").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();run()}});
+  $("#dmStartCompose").onclick=()=>{
+    const recipients=[...selected.values()];if(!recipients.length)return;
+    state.dmDraftRecipients=recipients;
+    compose(null,"direct",recipients);
+  };
+  drawSelected();
 }
 async function openConversation(id){
   const c=state._conversations?.find(x=>x.id===id); if(!c?.last_status)return;
-  state.currentConversation=c; renderLoadingShell("DM");
+  state.currentConversation=c;
   try{
     const ctx=await api(`/api/v1/statuses/${c.last_status.id}/context`);
     const all=[...(ctx.ancestors||[]),c.last_status,...(ctx.descendants||[])].filter(s=>s.visibility==="direct");
     const body=all.map(statusCard).join("")+`<div class="card"><button class="primary" data-action="replydm">답장</button></div>`;
-    $("#app").innerHTML=shell(c.accounts?.[0]?.display_name||"DM",body);bind();
+    $("#app").innerHTML=standaloneShell(c.accounts?.[0]?.display_name||"DM",body);bind();
     api(`/api/v1/conversations/${id}/read`,{method:"POST",form:{}}).catch(()=>{});
   }catch(e){toast(e.message)}
 }
@@ -567,7 +659,7 @@ function accentTextColor(){
   return ((r*299+g*587+b*114)/1000)>=160?"#000":"#fff";
 }
 function standaloneShell(title,body,right=""){
-  return `<div class="standalone-page"><header class="standalone-top"><button class="back" data-action="backMain">‹</button><h1>${esc(title)}</h1>${right}</header><main class="main">${body}</main></div>`;
+  return `<div class="standalone-page"><header class="standalone-top"><button class="back" data-action="backScreen" aria-label="뒤로가기">‹</button><h1>${esc(title)}</h1>${right}</header><main class="main">${body}</main></div>`;
 }
 function profileMarkup(a,{own=false,replies=false,relationship=null}={}){
   const note=relationship?.note||"",noteColor=accentTextColor();
@@ -712,22 +804,22 @@ function buildDrawerElement(){
     <div class="drawer-divider"></div>
     <button class="drawer-row" data-drawer="realtime"><span class="glyph">⚙</span>실시간 연결 상태 표시 설정</button>
     <button class="drawer-row" data-drawer="settings"><span class="glyph">⚙</span>설정</button>
-    <button class="drawer-row" data-drawer="update"><span class="glyph">⇩</span>앱 업데이트</button>
+    <button class="drawer-row" data-drawer="history"><span class="glyph">⇩</span>업데이트 내역</button>
   </aside>`;
   document.body.append(shade);
   shade.addEventListener("click",e=>{if(e.target===shade)closeDrawer()});
   shade.querySelectorAll("[data-drawer]").forEach(b=>b.onclick=async()=>{
     const v=b.dataset.drawer;
     if(v==="profile"){closeDrawer();state.view="profile";render()}
-    else if(v==="bookmarks")bookmarksView();
-    else if(v==="favourites")favouritesView();
-    else if(v==="followrequests"){closeDrawer();followRequestsScreen()}
-    else if(v==="lists"){closeDrawer();listsScreen()}
+    else if(v==="bookmarks"){pushNavSnapshot();bookmarksView()}
+    else if(v==="favourites"){pushNavSnapshot();favouritesView()}
+    else if(v==="followrequests"){pushNavSnapshot();closeDrawer();followRequestsScreen()}
+    else if(v==="lists"){pushNavSnapshot();closeDrawer();listsScreen()}
     else if(v==="settings"){closeDrawer();state.view="settings";render()}
-    else if(v==="profileedit"){closeDrawer();profileEditScreen()}
-    else if(v==="layoutedit"){closeDrawer();screenLayoutEditor()}
-    else if(v==="realtime"){closeDrawer();realtimeSettingsScreen()}
-    else if(v==="update"){closeDrawer();applyAutomaticUpdate();toast("최신 버전을 확인했어요.")}
+    else if(v==="profileedit"){pushNavSnapshot();closeDrawer();profileEditScreen()}
+    else if(v==="layoutedit"){pushNavSnapshot();closeDrawer();screenLayoutEditor()}
+    else if(v==="realtime"){pushNavSnapshot();closeDrawer();realtimeSettingsScreen()}
+    else if(v==="history"){pushNavSnapshot();closeDrawer();updateHistoryScreen()}
     else if(v==="addaccount"){closeDrawer();addAccountFlow()}
   });
   shade.querySelectorAll("[data-switch-account-key]").forEach(b=>b.onclick=()=>{
@@ -920,9 +1012,72 @@ async function pushDiagnostics(){
   try{const c=await caches.open("lenton-meta"),r=await c.match("./__lastpush");if(r)last=new Date(Number(await r.text())).toLocaleString("ko-KR")}catch{}
   return {supported,regd,last};
 }
+
+function accountManagerScreen(){
+  const list=savedAccounts(),current=state.session?.host+"|"+(state.me?.id||"");
+  const rows=list.map((x,i)=>`<div class="account-manage-row">
+    <button class="account-main" data-account-switch="${i}"><img class="avatar" src="${esc(x.avatar||"")}" alt=""><span class="grow"><b>${esc(x.display_name||x.acct||"계정")}</b><small>@${esc(x.acct||"")} · ${esc(x.host||"")}</small></span>${x.key===current?"<em>사용 중</em>":""}</button>
+    <button class="danger-text" data-account-remove="${i}" ${x.key===current?"disabled":""}>제거</button>
+  </div>`).join("");
+  $("#app").innerHTML=standaloneShell("계정 관리",`<div class="settings"><div class="section"><h3>계정</h3>${rows||'<div class="center">저장된 계정이 없어요.</div>'}<div class="setting-row"><button class="primary" data-action="addAccount">＋ 계정 추가</button></div></div></div>`);
+  bind();
+}
+function removeSavedAccount(index){
+  const list=savedAccounts();if(index<0||index>=list.length)return;
+  const target=list[index],current=state.session?.host+"|"+(state.me?.id||"");if(target.key===current){toast("현재 사용 중인 계정은 먼저 다른 계정으로 전환해 주세요.");return}
+  if(!confirm("이 계정을 이 기기에서 제거할까요?"))return;
+  list.splice(index,1);store.set("lenton_accounts",list);accountManagerScreen();
+}
+function inquiryScreen(){
+  const body=`<div class="settings inquiry-form">
+    <div class="section"><h3>문의 / 기능 건의</h3>
+      <label>문의 유형<select id="inquiryType" class="field"><option>오류 신고</option><option>기능 건의</option><option>기타 문의</option></select></label>
+      <label>발생 화면/기능<input id="inquiryArea" class="field" placeholder="예: DM, 알림, 프로필"></label>
+      <label>제목<input id="inquiryTitle" class="field" placeholder="문의 제목"></label>
+      <label>문의 내용<textarea id="inquiryBody" class="field inquiry-text" placeholder="내용을 입력하세요"></textarea></label>
+      <label>재현 방법<textarea id="inquirySteps" class="field inquiry-text" placeholder="오류라면 재현 방법을 적어주세요"></textarea></label>
+      <div class="notice">버전과 iOS/PWA 환경 정보가 함께 포함됩니다. 로그인 토큰이나 비밀번호는 포함하지 않습니다.</div>
+      <div class="setting-row"><button class="primary" data-action="sendInquiry">문의 내용 보내기</button></div>
+    </div></div>`;
+  $("#app").innerHTML=standaloneShell("문의 / 기능 건의",body);bind();
+}
+async function sendInquiry(){
+  const type=$("#inquiryType")?.value||"문의",area=$("#inquiryArea")?.value.trim()||"-",title=$("#inquiryTitle")?.value.trim()||"렌톤 문의";
+  const body=$("#inquiryBody")?.value.trim()||"",steps=$("#inquirySteps")?.value.trim()||"-";
+  if(!body){toast("문의 내용을 입력해 주세요.");return}
+  const info=[
+    "■ 문의 정보",`문의 유형 : ${type}`,`발생 화면/기능 : ${area}`,`제목 : ${title}`,"",
+    "■ 문의 내용",body,"","■ 재현 방법",steps,"","────────────────────",
+    `렌톤 Android 기준 : v${ANDROID?.versionName||"?"} (${ANDROID?.versionCode||"?"})`,
+    `PWA 빌드 : ${currentPwaToken()||"unknown"}`,
+    `서버 : ${state.session?.host||"-"}`,
+    `환경 : ${standalone()?"iPhone 홈 화면 PWA":"Safari 웹"}`,
+    `User Agent : ${navigator.userAgent}`
+  ].join("\n");
+  try{
+    if(navigator.share){await navigator.share({title:`[Lenton] ${title}`,text:info});toast("문의 내용을 공유했어요.");return}
+  }catch(e){if(e?.name==="AbortError")return}
+  try{await navigator.clipboard.writeText(info);toast("문의 내용을 복사했어요. 메일 앱을 엽니다.")}catch{}
+  location.href=`mailto:?subject=${encodeURIComponent("[Lenton] "+title)}&body=${encodeURIComponent(info)}`;
+}
+async function updateHistoryScreen(){
+  let build=null,entries=[];
+  try{const r=await fetch("./build.json?ts="+Date.now(),{cache:"no-store"});if(r.ok)build=await r.json()}catch{}
+  try{const r=await fetch("./changelog.json?ts="+Date.now(),{cache:"no-store"});if(r.ok)entries=await r.json()}catch{}
+  const rows=(Array.isArray(entries)?entries:[]).map(x=>`<div class="update-entry"><div class="update-head"><b>${esc(x.title||x.version||"업데이트")}</b><span>${esc(x.date||"")}</span></div><ul>${(x.changes||[]).map(v=>`<li>${esc(v)}</li>`).join("")}</ul></div>`).join("");
+  const info=`<div class="section"><h3>현재 버전</h3>
+    <div class="kv"><span>Android 원본</span><b>v${esc(ANDROID?.versionName||"?")} · code ${esc(ANDROID?.versionCode||"?")}</b></div>
+    <div class="kv"><span>PWA revision</span><b>${esc(build?.pwaRevision||currentPwaToken()||"unknown")}</b></div>
+    <div class="kv"><span>업데이트 방식</span><b>자동</b></div>
+    <div class="notice">새 버전은 백그라운드에서 준비되며 작성 중인 글이나 DM을 강제로 새로고침하지 않습니다. 앱을 다음에 열 때 최신 버전이 적용됩니다.</div>
+  </div>`;
+  $("#app").innerHTML=standaloneShell("업데이트 내역",`<div class="settings">${info}<div class="section"><h3>변경사항</h3>${rows||'<div class="center">변경 내역을 불러오지 못했어요.</div>'}</div></div>`);bind();
+}
 async function settingsView(){
   const d=await pushDiagnostics();
   const notif=("Notification"in window)?Notification.permission:"unsupported";
+  let build=null;try{const r=await fetch("./build.json?ts="+Date.now(),{cache:"no-store"});if(r.ok)build=await r.json()}catch{}
+  state.buildInfo=build;
   const body=`<div class="settings">
     ${!standalone()?'<div class="install-card"><b>홈 화면에 설치하기</b><p>Safari 공유 버튼 → 홈 화면에 추가 → 웹 앱으로 열기</p></div>':""}
     <div class="section"><h3>빠른 알림</h3>
@@ -937,12 +1092,23 @@ async function settingsView(){
     <div class="section"><h3>화면</h3>
       <div class="setting-row"><b>모드</b><select id="themeSel" class="field" style="height:46px;margin-top:8px"><option value="system">시스템</option><option value="light">라이트</option><option value="dark">다크</option></select></div>
       <div class="setting-row"><b>강조색</b><input id="accentSel" type="color" value="${esc(state.accent)}" style="width:54px;height:38px;border:0;background:none;margin-top:8px"></div>
+      <div class="setting-row"><button class="settings-link" data-action="layoutSettings">화면 구성 편집 <span>›</span></button></div>
+      <div class="setting-row"><button class="settings-link" data-action="realtimeSettings">실시간 연결 상태 표시 <span>›</span></button></div>
     </div>
     <div class="section"><h3>계정</h3>
       <div class="setting-row"><b>서버</b><span>${esc(state.session.host)}</span></div>
+      <div class="setting-row"><button class="settings-link" data-action="accountManager">계정 추가 / 전환 <span>›</span></button></div>
       <div class="setting-row"><button class="danger" data-action="logout">로그아웃</button></div>
     </div>
-    <div class="section"><h3>버전</h3><div class="setting-row"><b>Android 원본</b><span>v${esc(ANDROID?.versionName||"?")} · code ${esc(ANDROID?.versionCode||"?")}</span></div><div class="setting-row"><b>웹 생성 기준</b><span>${esc(ANDROID?.generatedFrom||"unknown")}</span></div></div>
+    <div class="section"><h3>지원</h3>
+      <div class="setting-row"><button class="settings-link" data-action="inquiry">문의 / 기능 건의 <span>›</span></button></div>
+      <div class="setting-row"><button class="settings-link" data-action="updateHistory">업데이트 내역 <span>›</span></button></div>
+    </div>
+    <div class="section"><h3>버전</h3>
+      <div class="setting-row"><b>Android 원본</b><span>v${esc(ANDROID?.versionName||"?")} · code ${esc(ANDROID?.versionCode||"?")}</span></div>
+      <div class="setting-row"><b>PWA revision</b><span>${esc(build?.pwaRevision||currentPwaToken()||"unknown")}</span></div>
+      <div class="setting-row"><b>업데이트</b><span>${state.updateAvailable?"새 버전 준비됨":"자동 업데이트"}</span></div>
+    </div>
   </div>`;
   $("#app").innerHTML=shell("설정",body,{gear:false});
   $("#themeSel").value=state.theme; bind();
@@ -1100,14 +1266,15 @@ async function uploadComposerFile(file){
   try{return await apiMultipart("/api/v2/media",fd)}
   catch{return await apiMultipart("/api/v1/media",fd)}
 }
-function compose(reply=null,forcedVisibility=null){
+function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
   let historyPushed=false;
   let parts=[{text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[]}];
   let visibility=forcedVisibility||reply?.visibility||"public",activePart=0,uploading=false;
   const recips=[];
+  const addRecipient=a=>{if(a&&a.id!==state.me?.id&&!recips.some(x=>String(x.id)===String(a.id)))recips.push({...a,on:true})};
+  for(const a of initialRecipients||[])addRecipient(a);
   if(reply){
-    const add=a=>{if(a&&a.id!==state.me?.id&&!recips.some(x=>x.id===a.id))recips.push({...a,on:true})};
-    add(reply.account);(reply.mentions||[]).forEach(add);
+    addRecipient(reply.account);(reply.mentions||[]).forEach(addRecipient);
   }
   const dirty=()=>parts.some(p=>p.text.trim()||p.spoiler.trim()||p.media.length);
   const confirmClose=()=>!dirty()||confirm("작성 중인 내용을 버릴까요?");
@@ -1124,7 +1291,7 @@ function compose(reply=null,forcedVisibility=null){
     const ct=ANDROID?.renderer?.compose||{};
     const visOptions=[["public","공개"],["unlisted","조용히 공개"],["private","팔로워만"],["direct","DM"]];
     m.innerHTML=`<div class="sheet compose-sheet">
-      <div class="sheet-head"><button class="iconbtn" id="closeCompose">×</button><h2>${reply?(ct.replyTitle||"답글"):(ct.newTitle||"새 게시물")}</h2><button class="primary" id="sendCompose">${reply?(ct.replyButton||"답글"):(ct.postButton||"게시")}</button></div>
+      <div class="sheet-head"><button class="iconbtn" id="closeCompose">×</button><h2>${reply?(ct.replyTitle||"답글"):(visibility==="direct"?"새 DM":(ct.newTitle||"새 게시물"))}</h2><button class="primary" id="sendCompose">${reply?(ct.replyButton||"답글"):(visibility==="direct"?"보내기":(ct.postButton||"게시"))}</button></div>
       <div class="compose-meta-row"><select id="composeVisibility" class="compose-visibility">${visOptions.map(x=>`<option value="${x[0]}" ${visibility===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select></div>
       ${recips.length?`<div class="recips">${recips.map((r,i)=>`<button data-r="${i}" class="${r.on?"":"off"}">${r.avatar?`<img src="${esc(r.avatar)}" alt="">`:""}<span>@${esc(r.acct)}</span></button>`).join("")}</div>`:""}
       <div id="parts">${parts.map((p,i)=>`<div class="part ${i===activePart?"active":""}" data-p="${i}">
@@ -1199,7 +1366,7 @@ function compose(reply=null,forcedVisibility=null){
           for(const media of p.media)if(media.id)form.append("media_ids[]",media.id);
           const posted=await api("/api/v1/statuses",{method:"POST",form});replyId=posted.id;
         }
-        window.__lentonComposeClose?.();if(historyPushed){window.__lentonComposeBypass=true;history.back()}toast("게시했어요.");if(state.view==="home")render()
+        window.__lentonComposeClose?.();if(historyPushed){window.__lentonComposeBypass=true;history.back()}toast(visibility==="direct"?"DM을 보냈어요.":"게시했어요.");if(visibility==="direct"){state.dmDraftRecipients=[];if(state.currentConversation?.id)openConversation(state.currentConversation.id);else{state.view="dm";render()}}else if(state.view==="home")render()
       }catch(e){toast(e.message);btn.disabled=false;btn.textContent=reply?"답글":"게시"}
     };
   };
@@ -1494,6 +1661,16 @@ function attachInteractiveProfileSwipe(host){
   },{passive:true});
   host.addEventListener("touchcancel",cleanup,{passive:true});
 }
+
+function attachStandaloneBackSwipe(page){
+  if(!page||page.dataset.backSwipe==="1")return;page.dataset.backSwipe="1";
+  let start=null,active=false,width=0;
+  const clean=()=>{page.style.transition="";page.style.transform="";page.style.boxShadow="";start=null;active=false};
+  page.addEventListener("touchstart",e=>{if(e.touches?.length!==1)return;const p=gesturePoint(e);if(p.x>26)return;start=p;width=window.innerWidth||document.documentElement.clientWidth;active=false},{passive:true});
+  page.addEventListener("touchmove",e=>{if(!start||e.touches?.length!==1)return;const p=gesturePoint(e),dx=p.x-start.x,dy=p.y-start.y;if(dx<=0)return;if(!active){if(Math.abs(dy)>16&&Math.abs(dy)>=Math.abs(dx)){clean();return}if(dx<10||dx<=Math.abs(dy)*1.15)return;active=true;page.style.transition="none";page.style.boxShadow="-10px 0 24px rgba(0,0,0,.14)"}if(active){e.preventDefault();page.style.transform=`translate3d(${Math.min(width,dx)}px,0,0)`}},{passive:false});
+  page.addEventListener("touchend",e=>{if(!start){clean();return}const p=gesturePoint(e),dx=p.x-start.x,dt=Math.max(1,p.time-start.time),vx=dx/dt;if(!active){clean();return}if(dx>width*.22||vx>.65){page.style.transition="transform 180ms cubic-bezier(.2,.75,.25,1)";page.style.transform=`translate3d(${width}px,0,0)`;setTimeout(()=>{clean();goBackScreen()},190)}else{page.style.transition="transform 160ms cubic-bezier(.2,.75,.25,1)";page.style.transform="translate3d(0,0,0)";setTimeout(clean,175)}},{passive:true});
+  page.addEventListener("touchcancel",clean,{passive:true});
+}
 function attachLentonGestures(){
   const bottom=document.querySelector(".bottom");
   attachInteractiveMainSwipe(bottom);
@@ -1506,6 +1683,7 @@ function attachLentonGestures(){
 
   if(state.view==="home")attachInteractiveHomeSwipe(document.querySelector(".main"));
 
+  attachStandaloneBackSwipe(document.querySelector(".standalone-page"));
   const profileTabs=document.querySelector(".profile-info + .home-tabs,.profile-hero ~ .home-tabs");
   if(profileTabs){
     const host=document.querySelector(".standalone-page .main")||document.querySelector(".app .main");
@@ -1514,9 +1692,9 @@ function attachLentonGestures(){
 }
 
 function bind(){
-  document.querySelectorAll("[data-profile]").forEach(b=>b.onclick=e=>{e.stopPropagation();openProfile(b.dataset.profile)});
+  document.querySelectorAll("[data-profile]").forEach(b=>b.onclick=e=>{e.stopPropagation();pushNavSnapshot();openProfile(b.dataset.profile)});
   document.querySelectorAll("[data-open-list]").forEach(b=>b.onclick=()=>{state.view="home";state.listId=b.dataset.openList;render()});
-  document.querySelectorAll("[data-list-manage]").forEach(b=>b.onclick=()=>listManageScreen(b.dataset.listManage));
+  document.querySelectorAll("[data-list-manage]").forEach(b=>b.onclick=()=>{pushNavSnapshot();listManageScreen(b.dataset.listManage)});
   document.querySelectorAll("[data-list-visible]").forEach(b=>b.onclick=()=>{const id=b.dataset.listVisible;setListHidden(id,!hiddenListIds().has(id));listsScreen()});
   document.querySelectorAll("[data-list-save]").forEach(b=>b.onclick=()=>saveListSettings(b.dataset.listSave));
   document.querySelectorAll("[data-list-delete]").forEach(b=>b.onclick=()=>deleteList(b.dataset.listDelete));
@@ -1529,6 +1707,15 @@ function bind(){
     if(a==="settings"){state.view="settings";render()}
     else if(a==="drawer")openDrawer()
     else if(a==="compose")compose()
+    else if(a==="newdm"){pushNavSnapshot();newDmScreen()}
+    else if(a==="backScreen"||a==="backMain")goBackScreen()
+    else if(a==="accountManager"){pushNavSnapshot();accountManagerScreen()}
+    else if(a==="addAccount")addAccountFlow()
+    else if(a==="inquiry"){pushNavSnapshot();inquiryScreen()}
+    else if(a==="sendInquiry")sendInquiry()
+    else if(a==="updateHistory"){pushNavSnapshot();updateHistoryScreen()}
+    else if(a==="layoutSettings"){pushNavSnapshot();screenLayoutEditor()}
+    else if(a==="realtimeSettings"){pushNavSnapshot();realtimeSettingsScreen()}
     else if(a==="reload")render()
     else if(a==="logout")logout()
     else if(a==="enablepush")enablePush()
@@ -1550,22 +1737,23 @@ function bind(){
     else if(a==="profileMenu")openProfilePopup()
     else if(a==="editPrivateNote")editPrivateNote()
     else if(a==="followProfile")toggleFollowProfile()
-    else if(a==="backMain"){state.profileAccount=null;state.profileRelationship=null;render()}
   });
   document.querySelectorAll("[data-home-mode]").forEach(b=>b.onclick=()=>{state.homeMode=b.dataset.homeMode;state.listId=null;render()});
   document.querySelectorAll("[data-list]").forEach(b=>b.onclick=()=>{state.listId=state.listId===b.dataset.list?null:b.dataset.list;render()});
-  document.querySelectorAll("[data-conv]").forEach(b=>b.onclick=()=>openConversation(b.dataset.conv));
+  document.querySelectorAll("[data-conv]").forEach(b=>b.onclick=()=>{pushNavSnapshot();openConversation(b.dataset.conv)});
   document.querySelectorAll("[data-media-url]").forEach(b=>b.onclick=e=>{e.stopPropagation();openMediaViewer(b.dataset.mediaUrl,b.dataset.mediaAlt||"")});
-  document.querySelectorAll(".status[data-status-id]").forEach(card=>card.onclick=e=>{if(e.target.closest("button,a,video,audio"))return;openThread(card.dataset.statusId)});
+  document.querySelectorAll(".status[data-status-id]").forEach(card=>card.onclick=e=>{if(e.target.closest("button,a,video,audio"))return;pushNavSnapshot();openThread(card.dataset.statusId)});
   document.querySelectorAll("[data-thread-older]").forEach(b=>b.onclick=()=>openThread(b.dataset.threadOlder,true));
   document.querySelectorAll("[data-notify]").forEach(b=>b.onclick=()=>notificationsView(b.dataset.notify==="mention"));
   document.querySelectorAll("[data-follow-accept]").forEach(b=>b.onclick=()=>decideFollowRequest(b.dataset.followAccept,true));
   document.querySelectorAll("[data-follow-reject]").forEach(b=>b.onclick=()=>decideFollowRequest(b.dataset.followReject,false));
+  document.querySelectorAll("[data-account-switch]").forEach(b=>b.onclick=()=>switchSavedAccount(Number(b.dataset.accountSwitch)));
+  document.querySelectorAll("[data-account-remove]").forEach(b=>b.onclick=()=>removeSavedAccount(Number(b.dataset.accountRemove)));
   $("#searchInput")?.addEventListener("keydown",e=>{if(e.key==="Enter")runSearch()});
   $("#themeSel")?.addEventListener("change",e=>{state.theme=e.target.value;store.set("lenton_theme",state.theme);if(state.theme==="system")delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=state.theme});
   $("#accentSel")?.addEventListener("input",e=>{state.accent=e.target.value;store.set("lenton_accent",state.accent);document.documentElement.style.setProperty("--accent",state.accent)});
   const appRoot=document.querySelector("#app>.app");
-  if(appRoot)state.pageCache[state.view]=$("#app").innerHTML;
+  if(appRoot){appRoot.classList.remove("refreshing");state.pageCache[state.view]=$("#app").innerHTML;}
   if(state.view==="home"&&document.querySelector(".main"))state.homeCache[state.homeMode]=document.querySelector(".main").innerHTML;
   if(document.querySelector(".profile-info")&&document.querySelector(".main")){
     const pid=state.profileAccount?.id||state.me?.id||"me";
@@ -1576,23 +1764,30 @@ function bind(){
   attachLayoutEditorDrag();
 }
 
+
+function currentPwaToken(){
+  try{
+    const src=document.querySelector('script[src*="app.js"]')?.src||"";
+    if(src)return new URL(src,location.href).searchParams.get("v")||"";
+  }catch{}
+  return "";
+}
 let pendingAutomaticUpdate=false;
 function composeIsOpen(){return !!document.querySelector(".modal .sheet")}
 async function applyAutomaticUpdate(){
   try{
-    const current=String(ANDROID?.apkSha256||"").toLowerCase();
-    const r=await fetch("./build.json?ts="+Date.now(),{cache:"no-store"});
-    if(!r.ok)return;
-    const remote=await r.json();
-    const next=String(remote?.apkSha256||"").toLowerCase();
-    if(!current||!next||current===next)return;
-    if(composeIsOpen()){pendingAutomaticUpdate=true;return}
-    const key="lenton_reload_"+next;
-    if(sessionStorage.getItem(key))return;
-    sessionStorage.setItem(key,"1");
-    const reg=await navigator.serviceWorker.getRegistration("./");
-    await reg?.update().catch(()=>{});
-    location.reload();
+    const r=await fetch("./build.json?ts="+Date.now(),{cache:"no-store"});if(!r.ok)return;
+    const remote=await r.json();state.buildInfo=remote;
+    const current=currentPwaToken(),next=String(remote?.cacheToken||"");
+    if(!next||!current||current===next){state.updateAvailable=null;return}
+    state.updateAvailable=remote;
+    const reg=await navigator.serviceWorker.getRegistration("./");await reg?.update().catch(()=>{});
+    const noticeKey="lenton_update_notice_"+next;
+    if(!store.get(noticeKey,false)){
+      store.set(noticeKey,true);
+      if(composeIsOpen())pendingAutomaticUpdate=true;
+      else toast("새 렌톤 버전이 준비됐어요. 앱을 다음에 열면 자동 적용됩니다.");
+    }
   }catch{}
 }
 async function registerSW(){
@@ -1608,11 +1803,14 @@ setInterval(()=>{if(document.visibilityState==="visible")applyAutomaticUpdate()}
 window.addEventListener("beforeinstallprompt",e=>e.preventDefault());
 window.addEventListener("popstate",()=>{
   const modal=document.querySelector(".compose-modal");
-  if(!modal)return;
-  if(window.__lentonComposeBypass){window.__lentonComposeBypass=false;window.__lentonComposeClose?.();return}
-  const ok=window.__lentonComposeGuard?window.__lentonComposeGuard():true;
-  if(ok)window.__lentonComposeClose?.();
-  else history.pushState({...history.state,lentonCompose:true},"",location.href);
+  if(modal){
+    if(window.__lentonComposeBypass){window.__lentonComposeBypass=false;window.__lentonComposeClose?.();return}
+    const ok=window.__lentonComposeGuard?window.__lentonComposeGuard():true;
+    if(ok)window.__lentonComposeClose?.();
+    else history.pushState({...history.state,lentonCompose:true},"",location.href);
+    return;
+  }
+  if(document.querySelector(".standalone-page")&&state.navStack.length)goBackScreen();
 });
 window.addEventListener("beforeunload",e=>{
   if(document.querySelector(".compose-modal")&&window.__lentonComposeGuard){
