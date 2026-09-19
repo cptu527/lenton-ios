@@ -2031,3 +2031,196 @@ img{display:block}
   color:#aaa;
   font-size:14px;
 }
+
+
+/* Android DM / reply composer parity */
+.dm-tool-btn .lenton-icon,
+.android-compose-tools .lenton-icon{
+  width:26px;
+  height:26px;
+}
+.android-dm-compose{
+  grid-template-columns:44px 44px minmax(0,1fr) 48px 82px;
+  gap:2px;
+  align-items:center;
+  padding:7px 10px calc(8px + env(safe-area-inset-bottom));
+  border-top:1px solid var(--line);
+  background:var(--bg);
+}
+.dm-tool-btn{
+  width:44px;
+  height:44px;
+  display:grid;
+  place-items:center;
+  color:var(--accent);
+}
+.android-dm-compose textarea{
+  height:44px;
+  min-height:44px;
+  border:0;
+  border-radius:24px;
+  padding:10px 15px;
+  background:var(--surface);
+}
+.dm-inline-count{
+  width:48px;
+  height:44px;
+  font-size:12px;
+}
+.dm-inline-send{
+  width:82px;
+  height:44px;
+  border-radius:22px;
+  border:0;
+  background:var(--accent);
+  color:white;
+  font-size:15px;
+  font-weight:700;
+}
+
+.compose-thread-context{
+  max-height:42vh;
+  overflow:auto;
+  border-bottom:1px solid var(--line);
+  background:var(--bg);
+}
+.compose-thread-row{
+  display:grid;
+  grid-template-columns:42px minmax(0,1fr);
+  gap:10px;
+  padding:10px 16px;
+  border-bottom:1px solid var(--line);
+}
+.compose-thread-row:last-child{border-bottom:0}
+.compose-thread-row>img{
+  width:42px;
+  height:42px;
+  border-radius:50%;
+  object-fit:cover;
+}
+.compose-thread-author{
+  display:flex;
+  align-items:baseline;
+  gap:6px;
+  min-width:0;
+}
+.compose-thread-author b{
+  color:var(--fg);
+  font-size:15px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.compose-thread-author span{
+  color:var(--sub);
+  font-size:12px;
+  white-space:nowrap;
+}
+.compose-thread-text{
+  margin-top:3px;
+  color:var(--fg);
+  font-size:14px;
+  line-height:1.42;
+}
+.compose-reply-summary{
+  width:100%;
+  min-height:44px;
+  border:0;
+  border-bottom:1px solid var(--line);
+  background:var(--bg);
+  color:var(--accent);
+  text-align:left;
+  padding:0 18px;
+  font-size:13px;
+  font-weight:600;
+}
+
+.reply-recipient-shade{
+  position:fixed;
+  inset:0;
+  z-index:500;
+  display:grid;
+  place-items:center;
+  padding:24px;
+  background:rgba(0,0,0,.56);
+}
+.reply-recipient-dialog{
+  width:min(92vw,520px);
+  max-height:76dvh;
+  overflow:auto;
+  background:var(--bg);
+  color:var(--fg);
+  border-radius:4px;
+  padding:24px 26px 18px;
+  box-shadow:0 18px 60px rgba(0,0,0,.35);
+}
+.reply-recipient-dialog h3{
+  margin:0 0 18px;
+  font-size:22px;
+}
+.reply-recipient-list{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.reply-recipient-list label{
+  min-height:72px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+}
+.reply-recipient-person{
+  min-width:0;
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+.reply-recipient-person>img{
+  width:52px;
+  height:52px;
+  border-radius:50%;
+  object-fit:cover;
+}
+.reply-recipient-person>span{
+  min-width:0;
+}
+.reply-recipient-person b{
+  display:block;
+  font-size:17px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.reply-recipient-person small{
+  display:block;
+  margin-top:4px;
+  color:var(--sub);
+  font-size:14px;
+}
+.reply-recipient-list input[type="checkbox"]{
+  width:26px;
+  height:26px;
+  accent-color:var(--accent);
+}
+.reply-recipient-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:26px;
+  margin-top:22px;
+}
+.reply-recipient-actions button{
+  border:0;
+  background:none;
+  color:var(--accent);
+  font-size:16px;
+  font-weight:700;
+  padding:8px 0;
+}
+
+.android-compose-tools #composeAttach,
+.android-compose-tools #composeCamera,
+.android-compose-tools #composeEmoji{
+  display:grid;
+  place-items:center;
+}
