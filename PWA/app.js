@@ -572,7 +572,7 @@ async function notificationsView(replyMentions=false){
     const n=await api("/api/v1/notifications",{query});
     const tabs=`<div class="notify-tabs lenton-notify-tabs">
       <button data-notify="all" class="${replyMentions?"":"active"}">전체</button>
-      <button data-notify="mention" class="${replyMentions?"active":""}">멘션</button>
+      <button data-notify="mention" class="${replyMentions?"active":""}">답장할멘션</button>
     </div><div class="notification-tools"><button data-action="clearNotifications">알림 지우기</button></div>`;
     const seenAt=Number(store.get(scopedKey("notifications_seen_at"),0)||0);
     const newest=n.reduce((m,x)=>Math.max(m,new Date(x.created_at||0).getTime()||0),seenAt);
@@ -616,14 +616,15 @@ function dmConversationKey(c){
 function groupDmConversations(cs){
   const groups=new Map();
   for(const c of cs||[]){
-    const key=dmConversationKey(c),prev=groups.get(key);
-    if(!prev){groups.set(key,{...c,_conversationIds:[c.id],_sourceConversations:[c]});continue}
-    prev._conversationIds.push(c.id);prev._sourceConversations.push(c);
-    prev.unread=!!(prev.unread||c.unread);
-    const a=new Date(prev.last_status?.created_at||0).getTime(),b=new Date(c.last_status?.created_at||0).getTime();
-    if(b>a){prev.last_status=c.last_status;prev.id=c.id}
+    const key=dmConversationKey(c);
+    if(!groups.has(key))groups.set(key,[]);
+    groups.get(key).push(c);
   }
-  return [...groups.values()].sort((a,b)=>String(b.last_status?.created_at||"").localeCompare(String(a.last_status?.created_at||"")));
+  for(const group of groups.values()){
+    group.sort((a,b)=>String(b.last_status?.created_at||"").localeCompare(String(a.last_status?.created_at||"")));
+    if(group.length>1)group.forEach((c,i)=>c._threadLabel="타래 "+(i+1)+"/"+group.length);
+  }
+  return [...(cs||[])].sort((a,b)=>String(b.last_status?.created_at||"").localeCompare(String(a.last_status?.created_at||"")));
 }
 async function dmView(){
   renderLoadingShell("메시지");
@@ -632,18 +633,15 @@ async function dmView(){
     const cs=groupDmConversations(raw);
     const body=cs.length?cs.map(c=>{
       const a=c.accounts?.[0],txt=c.last_status?plain(c.last_status.content):"";
-      return `<button class="message-row ${c.unread?"unread":""}" data-conv="${c.id}">
-        <img class="message-avatar" src="${esc(a?.avatar_static||a?.avatar||"")}" alt="">
-        <div class="message-main">
-          <div class="message-name">${renderEmojiText(a?.display_name||a?.username||"대화",a?.emojis||[])}</div>
-          <div class="message-handle">@${esc(a?.acct||"")}</div>
-          <div class="message-preview">${esc(txt)}</div>
-        </div>
-        <time class="message-date">${fmtDateOnly(c.last_status?.created_at)}</time>
-      </button>`;
+      const thread=c._threadLabel?'<span class="message-thread-label"> · '+esc(c._threadLabel)+'</span>':"";
+      return '<button class="message-row '+(c.unread?"unread":"")+'" data-conv="'+esc(c.id)+'">'+
+        '<img class="message-avatar" src="'+esc(a?.avatar_static||a?.avatar||"")+'" alt="">'+
+        '<div class="message-main"><div class="message-name">'+renderEmojiText(a?.display_name||a?.username||"대화",a?.emojis||[])+thread+'</div>'+
+        '<div class="message-handle">@'+esc(a?.acct||"")+'</div><div class="message-preview">'+esc(txt)+'</div></div>'+
+        '<time class="message-date">'+fmtDateOnly(c.last_status?.created_at)+'</time></button>';
     }).join(""):'<div class="center">대화가 없어요.</div>';
     renderMainStable("메시지",body,{view:"dm",fab:true,fabAction:"newdm"}); state._conversations=cs;
-  }catch(e){renderMainStable("메시지",`<div class="center">${esc(e.message)}</div>`,{view:"dm",fab:true,fabAction:"newdm"})}
+  }catch(e){renderMainStable("메시지",'<div class="center">'+esc(e.message)+'</div>',{view:"dm",fab:true,fabAction:"newdm"})}
 }
 
 async function searchDmAccounts(q){
@@ -700,23 +698,56 @@ async function newDmScreen(){
   };
   drawSelected();
 }
+function dmBubble(st){
+  const own=String(st.account?.id||"")===String(state.me?.id||"");
+  const media=(st.media_attachments||[]).map(m=>'<button class="dm-bubble-media" data-media-url="'+esc(m.url||m.preview_url||"")+'" data-media-alt="'+esc(m.description||"DM 이미지")+'"><img src="'+esc(m.preview_url||m.url||"")+'" alt=""></button>').join("");
+  return '<div class="dm-bubble-row '+(own?"mine":"theirs")+'">'+
+    (own?"":'<img class="dm-bubble-avatar" src="'+esc(st.account?.avatar_static||st.account?.avatar||"")+'" alt="">')+
+    '<div class="dm-bubble-wrap">'+
+    (own?"":'<div class="dm-bubble-name">'+renderEmojiText(st.account?.display_name||st.account?.username||"",st.account?.emojis||[])+'</div>')+
+    '<div class="dm-bubble">'+renderRichText(st.content||"")+media+'</div>'+
+    '<div class="dm-bubble-time">'+fmtTime(st.created_at)+'</div></div></div>';
+}
+async function sendInlineDm(conversation){
+  const input=$("#dmInlineInput"),send=$("#dmInlineSend"),file=$("#dmInlineFile");
+  if(!input||!send)return;
+  const text=input.value.trim(),files=[...(file?.files||[])].slice(0,4);
+  if(!text&&!files.length)return;
+  send.disabled=true;send.textContent="전송 중…";
+  try{
+    const media=[];for(const f of files)media.push(await uploadComposerFile(f));
+    const recipient=(conversation.accounts||[]).filter(a=>String(a.id)!==String(state.me?.id))[0];
+    const form=new URLSearchParams();
+    form.append("status",(recipient?.acct?"@"+recipient.acct+" ":"")+text);
+    form.append("visibility","direct");
+    if(conversation.last_status?.id)form.append("in_reply_to_id",conversation.last_status.id);
+    for(const m of media)if(m.id)form.append("media_ids[]",m.id);
+    await api("/api/v1/statuses",{method:"POST",form});
+    input.value="";if(file)file.value="";
+    await dmView();const refreshed=state._conversations?.find(x=>String(x.id)===String(conversation.id))||state._conversations?.find(x=>dmConversationKey(x)===dmConversationKey(conversation));
+    if(refreshed)await openConversation(refreshed.id);
+  }catch(e){toast(e.message);send.disabled=false;send.textContent="보내기"}
+}
 async function openConversation(id){
-  const c=state._conversations?.find(x=>x.id===id); if(!c?.last_status)return;
+  const c=state._conversations?.find(x=>String(x.id)===String(id)); if(!c?.last_status)return;
   state.currentConversation=c;
   try{
-    const sources=c._sourceConversations?.length?c._sourceConversations:[c];
-    const chunks=await Promise.all(sources.filter(x=>x.last_status?.id).map(async x=>{
-      try{
-        const ctx=await api(`/api/v1/statuses/${x.last_status.id}/context`);
-        return [...(ctx.ancestors||[]),x.last_status,...(ctx.descendants||[])].filter(s=>s.visibility==="direct");
-      }catch{return [x.last_status].filter(Boolean)}
-    }));
-    const byId=new Map();
-    for(const st of chunks.flat())if(st?.id)byId.set(String(st.id),st);
-    const all=[...byId.values()].sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")));
-    const body=`<div class="dm-thread">${all.map(statusCard).join("")}</div><div class="dm-reply-dock"><button class="primary" data-action="replydm">답장</button></div>`;
-    $("#app").innerHTML=standaloneShell(c.accounts?.[0]?.display_name||"DM",body);bind();
-    for(const cid of c._conversationIds||[id])api(`/api/v1/conversations/${cid}/read`,{method:"POST",form:{}}).catch(()=>{});
+    const ctx=await api("/api/v1/statuses/"+c.last_status.id+"/context");
+    const all=[...(ctx.ancestors||[]),c.last_status,...(ctx.descendants||[])].filter(st=>st.visibility==="direct");
+    const uniq=new Map();for(const st of all)if(st?.id)uniq.set(String(st.id),st);
+    const statuses=[...uniq.values()].sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")));
+    const title=(c.accounts?.[0]?.display_name||"DM")+(c._threadLabel?" · "+c._threadLabel:"");
+    const body='<div class="dm-thread-bubbles">'+statuses.map(dmBubble).join("")+'</div>'+
+      '<div class="dm-inline-compose"><button class="dm-attach-btn" id="dmInlineAttach" aria-label="이미지 첨부">▧</button>'+
+      '<input id="dmInlineFile" type="file" accept="image/*,video/*" multiple hidden>'+
+      '<textarea id="dmInlineInput" rows="1" placeholder="메시지 보내기"></textarea>'+
+      '<button class="primary" id="dmInlineSend">보내기</button></div>';
+    $("#app").innerHTML=standaloneShell(title,body);bind();
+    $("#dmInlineAttach")?.addEventListener("click",()=>$("#dmInlineFile")?.click());
+    $("#dmInlineSend")?.addEventListener("click",()=>sendInlineDm(c));
+    $("#dmInlineInput")?.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendInlineDm(c)}});
+    api("/api/v1/conversations/"+id+"/read",{method:"POST",form:{}}).catch(()=>{});
+    requestAnimationFrame(()=>{const main=document.querySelector(".standalone-page .main");if(main)main.scrollTop=main.scrollHeight});
   }catch(e){toast(e.message)}
 }
 
@@ -729,48 +760,55 @@ function accentTextColor(){
 function standaloneShell(title,body,right=""){
   return `<div class="standalone-page"><header class="standalone-top"><button class="back" data-action="backScreen" aria-label="뒤로가기">‹</button><h1>${esc(title)}</h1>${right}</header><main class="main">${body}</main></div>`;
 }
-function profileMarkup(a,{own=false,replies=false,relationship=null}={}){
-  const note=relationship?.note||"",noteColor=accentTextColor();
-  const controls=own?"":`<button class="outline-btn" data-action="followProfile">${relationship?.following?"팔로잉":"팔로우"}</button>`;
-  const privateNote=own?"":`<div class="private-note-card" data-action="editPrivateNote" style="color:${noteColor}"><div class="label">비밀 메모</div><div class="note">${esc(note.trim()?note:"메모를 추가하려면 탭하세요.")}</div></div>`;
-  const header=a.header_static||a.header||"",avatar=a.avatar_static||a.avatar||"";
-  return `<div class="profile-hero">
-      ${header?`<button class="profile-header-button" data-media-url="${esc(header)}" data-media-alt="프로필 헤더"><img class="profile-header" src="${esc(header)}" alt=""></button>`:'<div class="profile-header"></div>'}
-      ${avatar?`<button class="profile-avatar-button" data-media-url="${esc(avatar)}" data-media-alt="프로필 사진"><img class="profile-avatar" src="${esc(avatar)}" alt=""></button>`:""}
-    </div>
-    <div class="profile-info"><div class="profile-name-row"><div class="profile-names"><h2>${renderEmojiText(a.display_name||a.username,a.emojis||[])}</h2><div class="profile-handle">@${esc(a.acct)}</div></div>${controls}</div><div class="profile-bio">${renderRichText(a.note||"")}</div>${privateNote}<div class="profile-counts"><b style="color:var(--fg)">${a.following_count||0}</b> 팔로잉&nbsp;&nbsp;&nbsp;<b style="color:var(--fg)">${a.followers_count||0}</b> 팔로워</div></div>
-    <div class="home-tabs"><button data-action="profilePosts" class="${replies?"":"active"}">${esc((ANDROID?.renderer?.profileTabs||["게시물","답글"])[0])}</button><button data-action="profileReplies" class="${replies?"active":""}">${esc((ANDROID?.renderer?.profileTabs||["게시물","답글"])[1])}</button></div>`;
+function profileQuery(mode){
+  const q={limit:"25"};
+  if(mode==="posts")q.exclude_replies="true";
+  else if(mode==="pinned")q.pinned="true";
+  else if(mode==="media")q.only_media="true";
+  return q;
 }
-async function profileView(replies=state.profileReplies){
-  state.profileAccount=null; state.profileRelationship=null; state.profileReplies=!!replies;
+function profileMarkup(a,opts={}){
+  const own=!!opts.own,mode=opts.mode||"posts",relationship=opts.relationship||null;
+  const note=relationship?.note||"",noteColor=accentTextColor();
+  const controls=own?'<button class="outline-btn" data-action="profileEditOwn">프로필 편집</button>':'<button class="outline-btn" data-action="followProfile">'+(relationship?.following?"팔로잉":"팔로우")+'</button>';
+  const privateNote=own?"":'<div class="private-note-card" data-action="editPrivateNote" style="color:'+noteColor+'"><div class="label">비밀 메모</div><div class="note">'+esc(note.trim()?note:"메모를 추가하려면 탭하세요.")+'</div></div>';
+  const header=a.header_static||a.header||"",avatar=a.avatar_static||a.avatar||"";
+  const fields=(a.fields||[]).map(f=>'<div class="profile-field"><span>'+renderRichText(f.name||"")+'</span><b>'+renderRichText(f.value||"")+'</b></div>').join("");
+  const tabs=[["posts","게시물","profilePosts"],["replies","게시물과 답글","profileReplies"],["pinned","고정","profilePinned"],["media","미디어","profileMedia"]];
+  return '<div class="profile-hero">'+
+    (header?'<button class="profile-header-button" data-media-url="'+esc(header)+'" data-media-alt="프로필 헤더"><img class="profile-header" src="'+esc(header)+'" alt=""></button>':'<div class="profile-header"></div>')+
+    (avatar?'<button class="profile-avatar-button" data-media-url="'+esc(avatar)+'" data-media-alt="프로필 사진"><img class="profile-avatar" src="'+esc(avatar)+'" alt=""></button>':"")+
+    '</div><div class="profile-info"><div class="profile-name-row"><div class="profile-names"><h2>'+renderEmojiText(a.display_name||a.username,a.emojis||[])+'</h2><div class="profile-handle">@'+esc(a.acct)+'</div></div>'+controls+'</div>'+
+    '<div class="profile-bio">'+renderRichText(a.note||"")+'</div>'+(fields?'<div class="profile-fields">'+fields+'</div>':"")+privateNote+
+    '<div class="profile-count-grid"><div><b>'+Number(a.statuses_count||0).toLocaleString()+'</b><span>게시물</span></div><div><b>'+Number(a.following_count||0).toLocaleString()+'</b><span>팔로잉</span></div><div><b>'+Number(a.followers_count||0).toLocaleString()+'</b><span>팔로워</span></div></div></div>'+
+    '<div class="profile-tabs-4">'+tabs.map(x=>'<button data-action="'+x[2]+'" class="'+(mode===x[0]?"active":"")+'">'+x[1]+'</button>').join("")+'</div>';
+}
+async function profileView(mode=state.profileMode||"posts"){
+  if(typeof mode==="boolean")mode=mode?"replies":"posts";
+  state.profileAccount=null;state.profileRelationship=null;state.profileMode=mode;state.profileReplies=mode==="replies";
   renderLoadingShell("프로필");
   try{
-    if(!state.me) state.me=await api("/api/v1/accounts/verify_credentials");
-    const a=state.me, query={limit:"25"}; if(!state.profileReplies)query.exclude_replies="true";
-    const statuses=await api(`/api/v1/accounts/${a.id}/statuses`,{query});
-    $("#app").innerHTML=shell("프로필",profileMarkup(a,{own:true,replies:state.profileReplies})+(statuses.length?statuses.map(statusCard).join(""):'<div class="center">게시물이 없어요.</div>'));bind()
-  }catch(e){$("#app").innerHTML=shell("프로필",`<div class="center">${esc(e.message)}</div>`);bind()}
+    if(!state.me)state.me=await api("/api/v1/accounts/verify_credentials");
+    const a=state.me,statuses=await api("/api/v1/accounts/"+a.id+"/statuses",{query:profileQuery(mode)});
+    $("#app").innerHTML=shell("프로필",profileMarkup(a,{own:true,mode})+(statuses.length?statuses.map(statusCard).join(""):'<div class="center">게시물이 없어요.</div>'));bind();
+  }catch(e){$("#app").innerHTML=shell("프로필",'<div class="center">'+esc(e.message)+'</div>');bind()}
 }
-async function openProfile(id,replies=false){
-  if(!id)return;
-  if(state.me?.id&&String(id)===String(state.me.id)){
-    rememberScroll();state.view="profile";state.profileAccount=null;state.profileRelationship=null;state.profileReplies=!!replies;return profileView(state.profileReplies);
-  }
-  rememberScroll();
-  state.returnView=state.view; state.profileReplies=!!replies;
+async function openProfile(id,mode=state.profileMode||"posts"){
+  if(!id)return;if(typeof mode==="boolean")mode=mode?"replies":"posts";
+  if(state.me?.id&&String(id)===String(state.me.id)){rememberScroll();state.view="profile";state.profileAccount=null;state.profileRelationship=null;state.profileMode=mode;return profileView(mode)}
+  rememberScroll();state.returnView=state.view;state.profileMode=mode;state.profileReplies=mode==="replies";
   $("#app").innerHTML=standaloneShell("프로필",'<div class="center">불러오는 중…</div>');bind();
   try{
-    const [a,rels]=await Promise.all([
-      api(`/api/v1/accounts/${id}`),
-      api("/api/v1/accounts/relationships",{query:{"id[]":id}})
+    const [a,rels,statuses]=await Promise.all([
+      api("/api/v1/accounts/"+id),
+      api("/api/v1/accounts/relationships",{query:{"id[]":id}}),
+      api("/api/v1/accounts/"+id+"/statuses",{query:profileQuery(mode)})
     ]);
     const relationship=Array.isArray(rels)?(rels[0]||{}):{};
-    const query={limit:"25"}; if(!state.profileReplies)query.exclude_replies="true";
-    const statuses=await api(`/api/v1/accounts/${id}/statuses`,{query});
-    state.profileAccount=a; state.profileRelationship=relationship;
-    const more=`<button class="profile-more" data-action="profileMenu" aria-label="프로필 관리">${lentonIcon("more")}</button>`;
-    $("#app").innerHTML=standaloneShell("프로필",profileMarkup(a,{own:false,replies:state.profileReplies,relationship})+(statuses.length?statuses.map(statusCard).join(""):'<div class="center">게시물이 없어요.</div>'),more);bind();
-  }catch(e){$("#app").innerHTML=standaloneShell("프로필",`<div class="center">${esc(e.message)}</div>`);bind()}
+    state.profileAccount=a;state.profileRelationship=relationship;
+    const more='<button class="profile-more" data-action="profileMenu" aria-label="프로필 관리">'+lentonIcon("more")+'</button>';
+    $("#app").innerHTML=standaloneShell("프로필",profileMarkup(a,{own:false,mode,relationship})+(statuses.length?statuses.map(statusCard).join(""):'<div class="center">게시물이 없어요.</div>'),more);bind();
+  }catch(e){$("#app").innerHTML=standaloneShell("프로필",'<div class="center">'+esc(e.message)+'</div>');bind()}
 }
 function closePopup(){document.querySelector(".android-popup-shade")?.remove()}
 function openProfilePopup(){
@@ -1099,36 +1137,50 @@ function removeSavedAccount(index){
   list.splice(index,1);store.set("lenton_accounts",list);accountManagerScreen();
 }
 function inquiryScreen(initialType=""){
-  const body=`<div class="settings inquiry-form">
-    <div class="section"><h3>문의 / 기능 건의</h3>
-      <label>문의 유형<select id="inquiryType" class="field"><option ${initialType==="오류 신고"?"selected":""}>오류 신고</option><option ${initialType==="기능 건의"?"selected":""}>기능 건의</option><option ${initialType==="기타 문의"?"selected":""}>기타 문의</option></select></label>
-      <label>발생 화면/기능<input id="inquiryArea" class="field" placeholder="예: DM, 알림, 프로필"></label>
-      <label>제목<input id="inquiryTitle" class="field" placeholder="문의 제목"></label>
-      <label>문의 내용<textarea id="inquiryBody" class="field inquiry-text" placeholder="내용을 입력하세요"></textarea></label>
-      <label>재현 방법<textarea id="inquirySteps" class="field inquiry-text" placeholder="오류라면 재현 방법을 적어주세요"></textarea></label>
-      <div class="notice">버전과 iOS/PWA 환경 정보가 함께 포함됩니다. 로그인 토큰이나 비밀번호는 포함하지 않습니다.</div>
-      <div class="setting-row"><button class="primary" data-action="sendInquiry">문의 내용 보내기</button></div>
-    </div></div>`;
+  state.inquiryFiles=state.inquiryFiles||[];
+  const body='<div class="settings inquiry-form"><div class="section"><h3>문의 / 기능 건의</h3>'+
+    '<label>문의 유형<select id="inquiryType" class="field"><option '+(initialType==="오류 신고"?"selected":"")+'>오류 신고</option><option '+(initialType==="기능 건의"?"selected":"")+'>기능 건의</option><option '+(initialType==="기타 문의"?"selected":"")+'>기타 문의</option></select></label>'+
+    '<label>발생 화면/기능<input id="inquiryArea" class="field" placeholder="예: DM, 알림, 프로필"></label>'+
+    '<label>제목<input id="inquiryTitle" class="field" placeholder="문의 제목"></label>'+
+    '<label>문의 내용<textarea id="inquiryBody" class="field inquiry-text" placeholder="내용을 입력하세요"></textarea></label>'+
+    '<label>재현 방법<textarea id="inquirySteps" class="field inquiry-text" placeholder="오류라면 재현 방법을 적어주세요"></textarea></label>'+
+    '<div class="inquiry-attachments"><div class="inquiry-attachments-head"><b>스크린샷</b><span>최대 3장</span></div>'+
+    '<input id="inquiryFiles" type="file" accept="image/*" multiple hidden><button class="outline-btn" id="inquiryPickFiles">스크린샷 추가</button>'+
+    '<div id="inquiryFilePreviews" class="inquiry-file-previews"></div></div>'+
+    '<div class="notice">앱 버전, iOS/PWA 환경, 서버 정보가 함께 포함됩니다. 로그인 토큰이나 비밀번호는 포함하지 않습니다.</div>'+
+    '<div class="setting-row"><button class="primary" data-action="sendInquiry">이메일로 보내기</button></div></div></div>';
   $("#app").innerHTML=standaloneShell("문의 / 기능 건의",body);bind();
+  const draw=()=>{
+    const box=$("#inquiryFilePreviews");if(!box)return;
+    box.innerHTML=(state.inquiryFiles||[]).map((f,i)=>'<div class="inquiry-file"><img src="'+URL.createObjectURL(f)+'" alt=""><button type="button" data-inquiry-remove="'+i+'">×</button></div>').join("");
+    box.querySelectorAll("[data-inquiry-remove]").forEach(b=>b.onclick=()=>{state.inquiryFiles.splice(Number(b.dataset.inquiryRemove),1);draw()});
+  };
+  $("#inquiryPickFiles")?.addEventListener("click",()=>$("#inquiryFiles")?.click());
+  $("#inquiryFiles")?.addEventListener("change",e=>{state.inquiryFiles=[...(state.inquiryFiles||[]),...e.target.files].slice(0,3);draw()});
+  draw();
 }
 async function sendInquiry(){
   const type=$("#inquiryType")?.value||"문의",area=$("#inquiryArea")?.value.trim()||"-",title=$("#inquiryTitle")?.value.trim()||"렌톤 문의";
   const body=$("#inquiryBody")?.value.trim()||"",steps=$("#inquirySteps")?.value.trim()||"-";
   if(!body){toast("문의 내용을 입력해 주세요.");return}
   const info=[
-    "■ 문의 정보",`문의 유형 : ${type}`,`발생 화면/기능 : ${area}`,`제목 : ${title}`,"",
+    "■ 문의 정보","문의 유형 : "+type,"발생 화면/기능 : "+area,"제목 : "+title,"",
     "■ 문의 내용",body,"","■ 재현 방법",steps,"","────────────────────",
-    `렌톤 Android 기준 : v${ANDROID?.versionName||"?"} (${ANDROID?.versionCode||"?"})`,
-    `PWA 빌드 : ${currentPwaToken()||"unknown"}`,
-    `서버 : ${state.session?.host||"-"}`,
-    `환경 : ${standalone()?"iPhone 홈 화면 PWA":"Safari 웹"}`,
-    `User Agent : ${navigator.userAgent}`
+    "렌톤 Android 기준 : v"+(ANDROID?.versionName||"?")+" ("+(ANDROID?.versionCode||"?")+")",
+    "PWA 빌드 : "+(currentPwaToken()||"unknown"),
+    "서버 : "+(state.session?.host||"-"),
+    "환경 : "+(standalone()?"iPhone/iPad 홈 화면 PWA":"Safari 웹"),
+    "User Agent : "+navigator.userAgent
   ].join("\n");
+  const files=(state.inquiryFiles||[]).slice(0,3);
   try{
-    if(navigator.share){await navigator.share({title:`[Lenton] ${title}`,text:info});toast("문의 내용을 공유했어요.");return}
+    const payload={title:"[Lenton] "+title,text:info};
+    if(files.length&&navigator.canShare?.({files}))payload.files=files;
+    if(navigator.share){await navigator.share(payload);toast(files.length?"문의 내용과 스크린샷을 공유했어요.":"문의 내용을 공유했어요.");state.inquiryFiles=[];return}
   }catch(e){if(e?.name==="AbortError")return}
-  try{await navigator.clipboard.writeText(info);toast("문의 내용을 복사했어요. 메일 앱을 엽니다.")}catch{}
-  location.href=`mailto:cptu527@gmail.com?subject=${encodeURIComponent("[Lenton] "+title)}&body=${encodeURIComponent(info)}`;
+  try{await navigator.clipboard.writeText(info)}catch{}
+  toast(files.length?"메일 앱에서 선택한 스크린샷을 첨부해 주세요.":"메일 앱을 엽니다.");
+  location.href="mailto:cptu527@gmail.com?subject="+encodeURIComponent("[Lenton] "+title)+"&body="+encodeURIComponent(info);
 }
 async function updateHistoryScreen(){
   let build=null,entries=[];
@@ -1363,6 +1415,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
     m.innerHTML=`<div class="sheet compose-sheet">
       <div class="sheet-head"><button class="iconbtn" id="closeCompose">×</button><h2>${reply?(ct.replyTitle||"답글"):(visibility==="direct"?"새 DM":(ct.newTitle||"새 게시물"))}</h2><button class="primary" id="sendCompose">${reply?(ct.replyButton||"답글"):(visibility==="direct"?"보내기":(ct.postButton||"게시"))}</button></div>
       <div class="compose-meta-row"><select id="composeVisibility" class="compose-visibility">${visOptions.map(x=>`<option value="${x[0]}" ${visibility===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select></div>
+      ${reply?`<div class="compose-reply-context"><img src="${esc(reply.account?.avatar_static||reply.account?.avatar||"")}" alt=""><div><b>${renderEmojiText(reply.account?.display_name||reply.account?.username||"",reply.account?.emojis||[])}</b><div>${renderRichText(reply.content||"")}</div></div></div>`:""}
       ${recips.length?`<div class="recips">${recips.map((r,i)=>`<button data-r="${i}" class="${r.on?"":"off"}">${r.avatar?`<img src="${esc(r.avatar)}" alt="">`:""}<span>@${esc(r.acct)}</span></button>`).join("")}</div>`:""}
       <div id="parts">${parts.map((p,i)=>`<div class="part ${i===activePart?"active":""}" data-p="${i}">
         <div class="part-head"><b>게시물 ${i+1}</b><label><input type="checkbox" data-cw="${i}" ${p.cw?"checked":""}> CW</label></div>
@@ -1374,10 +1427,12 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
       </div>`).join("")}</div>
       <div class="compose-tools">
         <button type="button" id="composeAttach" aria-label="이미지 첨부">▧</button>
-        <button type="button" id="composeEmoji" aria-label="이모지">☺</button>
+        <button type="button" id="composeCamera" aria-label="카메라">◉</button>
         <button type="button" class="compose-cw-toggle" id="composeCW">CW</button>
+        <button type="button" id="composeEmoji" aria-label="이모지">☺</button>
         <button type="button" class="part-add" id="addPart">＋ 타래</button>
         <input id="composeFile" type="file" accept="image/*,video/*" multiple hidden>
+        <input id="composeCameraFile" type="file" accept="image/*" capture="environment" hidden>
       </div>
       <div id="emojiPicker" class="emoji-picker" hidden></div>
     </div>`;
@@ -1400,8 +1455,9 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
     $("#composeCW",m).onclick=()=>{parts[activePart].cw=!parts[activePart].cw;if(parts[activePart].cw&&!parts[activePart].spoiler&&reply?.spoiler_text)parts[activePart].spoiler=reply.spoiler_text;draw()};
     $("#closeCompose",m).onclick=()=>{if(!confirmClose())return;if(historyPushed){window.__lentonComposeBypass=true;history.back()}else window.__lentonComposeClose?.()};
     $("#composeAttach",m).onclick=()=>$("#composeFile",m).click();
-    $("#composeFile",m).onchange=async e=>{
-      const files=[...e.target.files].slice(0,Math.max(0,4-parts[activePart].media.length));
+    $("#composeCamera",m).onclick=()=>$("#composeCameraFile",m).click();
+    const handleComposeFiles=async filesLike=>{
+      const files=[...filesLike].slice(0,Math.max(0,4-parts[activePart].media.length));
       if(!files.length)return;uploading=true;$("#sendCompose",m).disabled=true;toast("미디어 업로드 중…");
       try{
         for(const file of files){const media=await uploadComposerFile(file);parts[activePart].media.push(media)}
@@ -1409,6 +1465,8 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
       }catch(err){toast("첨부 실패: "+err.message)}
       uploading=false;draw(false);
     };
+    $("#composeFile",m).onchange=async e=>{await handleComposeFiles(e.target.files)};
+    $("#composeCameraFile",m).onchange=async e=>{await handleComposeFiles(e.target.files)};
     $("#composeEmoji",m).onclick=async()=>{
       const box=$("#emojiPicker",m);box.hidden=!box.hidden;if(box.hidden)return;
       box.innerHTML='<div class="center">이모지 불러오는 중…</div>';
@@ -1700,42 +1758,41 @@ function attachDrawerCloseSwipe(drawer){
 }
 function attachInteractiveProfileSwipe(host){
   if(!host||host.dataset.profileSwipe==="1")return;host.dataset.profileSwipe="1";
-  let start=null,active=false,targetReplies=null,preview=null,width=0,dir=0;
-  const accountId=state.profileAccount?.id||state.me?.id||"me";
-  const cleanup=()=>{host.style.transition="";host.style.transform="";host.classList.remove("swipe-moving");preview?.remove();preview=null;start=null;active=false;targetReplies=null};
+  let start=null,active=false,targetMode=null,preview=null,width=0,dir=0;
+  const modes=["posts","replies","pinned","media"],accountId=state.profileAccount?.id||state.me?.id||"me";
+  const cleanup=()=>{host.style.transition="";host.style.transform="";host.classList.remove("swipe-moving");preview?.remove();preview=null;start=null;active=false;targetMode=null};
   host.addEventListener("touchstart",e=>{if(e.touches?.length!==1)return;const p=gesturePoint(e);if(p.x<=28)return;start=p;width=window.innerWidth||document.documentElement.clientWidth},{passive:true});
   host.addEventListener("touchmove",e=>{
     if(!start||e.touches?.length!==1)return;const p=gesturePoint(e),dx=p.x-start.x,dy=p.y-start.y;
     if(!active){
       if(Math.abs(dy)>18&&Math.abs(dy)>=Math.abs(dx)){cleanup();return}
       if(Math.abs(dx)<10||Math.abs(dx)<=Math.abs(dy)*1.15)return;
-      dir=dx<0?1:-1;targetReplies=dir>0?(state.profileReplies?null:true):(state.profileReplies?false:null);active=true;
+      const current=state.profileMode||"posts",i=modes.indexOf(current);dir=dx<0?1:-1;targetMode=modes[i+dir]||null;active=true;
       host.classList.add("swipe-moving");host.style.transition="none";
-      if(targetReplies!==null){
-        const key=accountId+":"+(targetReplies?"replies":"posts"),html=state.profileCache[key]||'<div class="center">불러오는 중…</div>';
-        preview=buildSwipePreview(html,"profile-swipe-preview");preview.style.transform=`translate3d(${dir>0?width:-width}px,0,0)`;
+      if(targetMode){
+        const key=accountId+":"+targetMode,html=state.profileCache[key]||'<div class="center">불러오는 중…</div>';
+        preview=buildSwipePreview(html,"profile-swipe-preview");preview.style.transform="translate3d("+(dir>0?width:-width)+"px,0,0)";
       }
     }
-    if(!active)return;e.preventDefault();const shown=targetReplies!==null?dx:dx*.18;
-    host.style.transform=`translate3d(${shown}px,0,0)`;if(preview)preview.style.transform=`translate3d(${shown+(dir>0?width:-width)}px,0,0)`;
+    if(!active)return;e.preventDefault();const shown=targetMode?dx:dx*.18;
+    host.style.transform="translate3d("+shown+"px,0,0)";if(preview)preview.style.transform="translate3d("+(shown+(dir>0?width:-width))+"px,0,0)";
   },{passive:false});
   host.addEventListener("touchend",async e=>{
     if(!start){cleanup();return}const p=gesturePoint(e),dx=p.x-start.x,dt=Math.max(1,p.time-start.time),vx=dx/dt;
-    if(!active){cleanup();return}const commit=targetReplies!==null&&(Math.abs(dx)>width*.20||Math.abs(vx)>.65);
+    if(!active){cleanup();return}const commit=!!targetMode&&(Math.abs(dx)>width*.20||Math.abs(vx)>.65);
     if(commit){
       host.style.transition="transform 180ms cubic-bezier(.2,.75,.25,1)";if(preview)preview.style.transition=host.style.transition;
-      requestAnimationFrame(()=>{host.style.transform=`translate3d(${dir>0?-width:width}px,0,0)`;if(preview)preview.style.transform="translate3d(0,0,0)"});
-      await new Promise(r=>setTimeout(r,195));const target=targetReplies;cleanup();
+      requestAnimationFrame(()=>{host.style.transform="translate3d("+(dir>0?-width:width)+"px,0,0)";if(preview)preview.style.transform="translate3d(0,0,0)"});
+      await new Promise(r=>setTimeout(r,195));const target=targetMode;cleanup();
       if(state.profileAccount)openProfile(state.profileAccount.id,target);else profileView(target);
     }else{
       host.style.transition="transform 160ms cubic-bezier(.2,.75,.25,1)";if(preview)preview.style.transition=host.style.transition;
-      requestAnimationFrame(()=>{host.style.transform="translate3d(0,0,0)";if(preview)preview.style.transform=`translate3d(${dir>0?width:-width}px,0,0)`});
+      requestAnimationFrame(()=>{host.style.transform="translate3d(0,0,0)";if(preview)preview.style.transform="translate3d("+(dir>0?width:-width)+"px,0,0)"});
       setTimeout(cleanup,180);
     }
   },{passive:true});
   host.addEventListener("touchcancel",cleanup,{passive:true});
 }
-
 function attachStandaloneBackSwipe(page){
   if(!page||page.dataset.backSwipe==="1")return;page.dataset.backSwipe="1";
   let start=null,active=false,width=0;
@@ -1758,7 +1815,7 @@ function attachLentonGestures(){
   if(state.view==="home")attachInteractiveHomeSwipe(document.querySelector(".main"));
 
   attachStandaloneBackSwipe(document.querySelector(".standalone-page"));
-  const profileTabs=document.querySelector(".profile-info + .home-tabs,.profile-hero ~ .home-tabs");
+  const profileTabs=document.querySelector(".profile-tabs-4,.profile-info + .home-tabs,.profile-hero ~ .home-tabs");
   if(profileTabs){
     const host=document.querySelector(".standalone-page .main")||document.querySelector(".app .main");
     attachInteractiveProfileSwipe(host);
@@ -1805,8 +1862,11 @@ function bind(){
     else if(a==="reply")replyById(b.dataset.id)
     else if(a==="fav"||a==="boost"||a==="bookmark")statusAction(b.dataset.id,a)
     else if(a==="replydm"){if(state.currentConversation?.last_status)compose(state.currentConversation.last_status,"direct")}
-    else if(a==="profileReplies"){if(state.profileAccount)openProfile(state.profileAccount.id,true);else profileView(true)}
-    else if(a==="profilePosts"){if(state.profileAccount)openProfile(state.profileAccount.id,false);else profileView(false)}
+    else if(a==="profileReplies"){if(state.profileAccount)openProfile(state.profileAccount.id,"replies");else profileView("replies")}
+    else if(a==="profilePosts"){if(state.profileAccount)openProfile(state.profileAccount.id,"posts");else profileView("posts")}
+    else if(a==="profilePinned"){if(state.profileAccount)openProfile(state.profileAccount.id,"pinned");else profileView("pinned")}
+    else if(a==="profileMedia"){if(state.profileAccount)openProfile(state.profileAccount.id,"media");else profileView("media")}
+    else if(a==="profileEditOwn"){pushNavSnapshot();profileEditScreen()}
     else if(a==="profileMenu")openProfilePopup()
     else if(a==="editPrivateNote")editPrivateNote()
     else if(a==="followProfile")toggleFollowProfile()
@@ -1833,7 +1893,7 @@ function bind(){
   if(state.view==="home"&&document.querySelector(".main"))state.homeCache[state.homeMode]=document.querySelector(".main").innerHTML;
   if(document.querySelector(".profile-info")&&document.querySelector(".main")){
     const pid=state.profileAccount?.id||state.me?.id||"me";
-    state.profileCache[pid+":"+(state.profileReplies?"replies":"posts")]=document.querySelector(".main").innerHTML;
+    state.profileCache[pid+":"+(state.profileMode||"posts")]=document.querySelector(".main").innerHTML;
   }
   attachLentonGestures();
   restoreScroll();
