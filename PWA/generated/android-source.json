@@ -47,10 +47,161 @@
     }
   },
   "ui": {
+    "topBarDp": 50,
+    "bottomBarDp": 58,
+    "topBarPadding": [
+      16,
+      0,
+      8,
+      0
+    ],
+    "topBarAvatarDp": 30,
+    "topBarTitleSp": 20,
+    "topBarSearchDp": 48,
+    "topBarMoreDp": 44,
+    "statusPadding": [
+      16,
+      10,
+      14,
+      8
+    ],
     "avatarDp": 46,
-    "topBarDp": 62,
-    "bottomBarDp": 64,
-    "bodySp": 16
+    "statusContentInsetDp": 12,
+    "authorLineDp": 28,
+    "bodySp": 16,
+    "bodyLineExtraDp": 2,
+    "actionRowDp": 48,
+    "actionGlyphSp": 22,
+    "actionItemDp": 46,
+    "mediaSingleDp": 260,
+    "mediaMultiDp": 220,
+    "drawerWidthRatio": 0.88,
+    "drawerPadding": [
+      22,
+      18,
+      18,
+      12
+    ],
+    "drawerAvatarDp": 60,
+    "drawerRowDp": 58,
+    "drawerGlyphDp": 25,
+    "drawerTextSp": 19,
+    "profileHeaderDp": 170,
+    "profileAvatarDp": 82,
+    "profileAvatarLeftDp": 18,
+    "profileAvatarTopDp": 126,
+    "profileHeroDp": 226,
+    "profileNameSp": 22,
+    "profileTabDp": 50,
+    "notificationPadding": [
+      16,
+      12,
+      14,
+      10
+    ],
+    "notificationGlyphDp": 25,
+    "messagePadding": [
+      12,
+      7,
+      12,
+      7
+    ],
+    "messageAvatarDp": 46,
+    "standaloneTopDp": 60
+  },
+  "renderer": {
+    "bottomNavItems": [
+      {
+        "id": "home",
+        "androidPage": "home",
+        "glyph": "⌂"
+      },
+      {
+        "id": "search",
+        "androidPage": "search",
+        "glyph": "⌕"
+      },
+      {
+        "id": "notifications",
+        "androidPage": "notifications",
+        "glyph": "♢"
+      },
+      {
+        "id": "dm",
+        "androidPage": "messages",
+        "glyph": "✉"
+      }
+    ],
+    "drawerRows": [
+      {
+        "id": "profile",
+        "label": "프로필",
+        "glyph": "♙"
+      },
+      {
+        "id": "bookmarks",
+        "label": "북마크",
+        "glyph": "▢"
+      },
+      {
+        "id": "lists",
+        "label": "리스트",
+        "glyph": "☷"
+      },
+      {
+        "id": "followrequests",
+        "label": "팔로우 요청",
+        "glyph": "♧"
+      },
+      {
+        "id": "settings",
+        "label": "설정",
+        "glyph": "⚙"
+      },
+      {
+        "id": "theme",
+        "labelLight": "다크 모드",
+        "labelDark": "라이트 모드",
+        "glyphLight": "◐",
+        "glyphDark": "☀"
+      }
+    ],
+    "actions": {
+      "reply": "○",
+      "boost": "↻",
+      "favouriteOff": "♡",
+      "favouriteOn": "♥",
+      "bookmarkOff": "▢",
+      "bookmarkOn": "▣"
+    },
+    "profileTabs": [
+      "게시물",
+      "답글"
+    ],
+    "notificationLabels": {
+      "mention": "나를 멘션했어요",
+      "favourite": "내 게시물을 좋아해요",
+      "reblog": "내 게시물을 부스트했어요",
+      "follow": "나를 팔로우했어요",
+      "follow_request": "팔로우를 요청했어요",
+      "poll": "투표가 종료됐어요",
+      "status": "새 게시물을 올렸어요"
+    },
+    "notificationGlyphs": {
+      "mention": "@",
+      "favourite": "♥",
+      "reblog": "↻",
+      "follow": "+",
+      "follow_request": "+",
+      "default": "♢"
+    },
+    "compose": {
+      "newTitle": "새 게시물",
+      "replyTitle": "답글",
+      "postButton": "게시",
+      "replyButton": "답글",
+      "cw": "CW"
+    }
   },
   "criticalSourceHashes": {
     "activity": "067a6c6f438cd0f6769c87c6647100d4f2205b9b4ec51fb0d7dec92284e8af4d",
@@ -58,6 +209,11 @@
     "publicLoader": null,
     "bottomNav": "85e7fb0f19b8a9ccab3a0d64bb52b43bc819f7d4d9c53e4f5a33a25b408e009e",
     "drawer": "3187c08167fe35b7ba453063c5fc0924d1686497c2549aac883b1d87ac1c0e74",
-    "composer": null
+    "composer": "90e01f3b6ba3a012dda437c110b94d484006ce57cf1e8d084a384aafaaa95f2c",
+    "topBar": "6d17ede08f6658e6421cbbbebcc23af00440287161ef8d29f98ae9812c03a6ba",
+    "status": null,
+    "profile": "19a6b295bc00ccaf6395337b5d82c19bf6dde6f13eb6d81319e4a948207e9c4d",
+    "notification": null,
+    "conversation": "c745b4e6790293a55fe3f4c154af6d732c5b8552420c2adc09d9462088d9f8dd"
   }
 }
