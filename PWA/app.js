@@ -116,6 +116,7 @@ function applyAndroidSpecMetrics(){
   px("--android-profile-hero",ui.profileHeroDp,226);
   px("--android-profile-name",ui.profileNameSp,22);
   px("--android-profile-tab",ui.profileTabDp,50);
+  px("--android-notification-glyph",ui.notificationGlyphDp,25);
   px("--android-message-avatar",ui.messageAvatarDp,48);
   px("--android-standalone-top",ui.standaloneTopDp,60);
   root.style.setProperty("--android-drawer-width",String(Math.round((ui.drawerWidthRatio||.88)*100))+"vw");
@@ -1856,6 +1857,7 @@ function bind(){
   document.querySelectorAll(".status[data-status-id]").forEach(card=>card.onclick=e=>{if(e.target.closest("button,a,video,audio"))return;pushNavSnapshot();openThread(card.dataset.statusId)});
   document.querySelectorAll("[data-thread-older]").forEach(b=>b.onclick=()=>openThread(b.dataset.threadOlder,true));
   document.querySelectorAll("[data-notify]").forEach(b=>b.onclick=()=>notificationsView(b.dataset.notify==="mention"));
+  document.querySelectorAll("[data-notify-status]").forEach(card=>card.onclick=e=>{if(e.target.closest("[data-profile]"))return;pushNavSnapshot();openThread(card.dataset.notifyStatus)});
   document.querySelectorAll("[data-follow-accept]").forEach(b=>b.onclick=()=>decideFollowRequest(b.dataset.followAccept,true));
   document.querySelectorAll("[data-follow-reject]").forEach(b=>b.onclick=()=>decideFollowRequest(b.dataset.followReject,false));
   document.querySelectorAll("[data-account-switch]").forEach(b=>b.onclick=()=>switchSavedAccount(Number(b.dataset.accountSwitch)));
