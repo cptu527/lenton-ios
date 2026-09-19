@@ -140,6 +140,75 @@ def parse_drawer(method: str):
     rows.append({"id":"theme","labelLight":"다크 모드","labelDark":"라이트 모드","glyphLight":"◐","glyphDark":"☀"})
     return rows
 
+
+def quoted_literals(text: str):
+    vals=[]
+    for m in re.finditer(r'"((?:\\.|[^"\\])*)"', text or ""):
+        try:
+            vals.append(bytes(m.group(1),"utf-8").decode("unicode_escape"))
+        except Exception:
+            vals.append(m.group(1))
+    return vals
+
+def first_matching_literals(text: str, allowed):
+    out=[]
+    for v in quoted_literals(text):
+        if v in allowed and v not in out:
+            out.append(v)
+    return out
+
+def parse_home_tabs(main_text: str):
+    m=extract_any_method(main_text,"addHomeTabs","renderHomeTabs")
+    vals=first_matching_literals(m,{"시간순","퍼블릭","팔로잉","공개","로컬","연합"})
+    if len(vals)>=2:
+        return vals[:2]
+    return ["시간순","퍼블릭"]
+
+def parse_profile_tabs(main_text: str):
+    m=extract_any_method(main_text,"renderProfile","showOwnProfile","showProfile")
+    allowed={"게시물","답글","게시물과 답글","고정","미디어"}
+    vals=first_matching_literals(m,allowed)
+    # Preserve source order and remove duplicate aliases.
+    if vals:
+        return vals
+    return []
+
+def parse_compose_literals(main_text: str):
+    m=extract_any_method(main_text,"compose","showComposer","openComposer")
+    vals=quoted_literals(m)
+    def pick(*choices):
+        for c in choices:
+            if c in vals:return c
+        return choices[0]
+    return {
+        "newTitle":pick("새 게시물","새 글"),
+        "replyTitle":pick("답글","답장"),
+        "postButton":pick("게시","작성"),
+        "replyButton":pick("답글","답장"),
+        "cw":"CW" if "CW" in vals or "콘텐츠 경고" in vals else "",
+        "hasGif":("GIF" in vals),
+        "hasThread":("타래" in m or "＋ 타래" in m or "+ 타래" in m),
+    }
+
+def detect_features(main_text: str):
+    checks={
+      "lists":('/api/v1/lists' in main_text and '/api/v1/timelines/list/' in main_text),
+      "profileOverflow":('attachProfileOverflow' in main_text or 'showProfileListManager' in main_text),
+      "privateProfileNote":('/api/v1/accounts/' in main_text and '/note' in main_text and '비밀 메모' in main_text),
+      "screenLayoutEditor":('showScreenLayoutEditor' in main_text or 'screen_layout_order' in main_text),
+      "replyCwInheritance":('spoiler_text' in main_text and 'composerReplyTarget' in main_text),
+      "bottomNavSwipe":('handleBottomNavSwipeDispatch' in main_text),
+      "homeSwipe":('HomeSwipeRecyclerView' in main_text or '시간순' in main_text and '퍼블릭' in main_text),
+      "dmPreviousConversation":('이전 대화 보기' in main_text),
+      "dmThreadSeparation":('타래 1/' in main_text or 'thread' in main_text.lower() and 'conversation' in main_text.lower()),
+      "problemReport":('문의 유형' in main_text or '재현 방법' in main_text or '이메일로 보내기' in main_text),
+      "customEmoji":('/api/v1/custom_emojis' in main_text),
+      "multiAccount":('계정 추가' in main_text or 'account' in main_text.lower() and 'switch' in main_text.lower()),
+      "updater":('Lenton-Updater/' in main_text or 'currentReleaseNotes' in main_text),
+      "draftGuard":('작성 중인 내용을 버릴까요?' in main_text),
+    }
+    return checks
+
 def parse_action_glyphs(method: str):
     calls=re.findall(r'addAction\([^,]+,\s*(?:([^,]+)\?\s*"([^"]+)"\s*:\s*"([^"]+)"|"([^"]+)")',method or "")
     # Current Lenton action order is stable; source hash below protects structural drift.
@@ -176,6 +245,10 @@ def build_spec(main_text: str, latest: dict, apk_sha: str, source_path: str):
     action_method = extract_any_method(main_text, "actionRow")
     add_action_method = extract_any_method(main_text, "addAction")
     profile_method = extract_any_method(main_text, "renderProfile")
+    home_tabs=parse_home_tabs(main_text)
+    profile_tabs=parse_profile_tabs(main_text)
+    compose_spec=parse_compose_literals(main_text)
+    features=detect_features(main_text)
     notification_method = extract_any_method(main_text, "addNotification")
     conversation_method = extract_any_method(main_text, "addConversation")
     standalone_method = extract_any_method(main_text, "buildStandalone")
@@ -246,10 +319,10 @@ def build_spec(main_text: str, latest: dict, apk_sha: str, source_path: str):
         "bottomNavItems":nav_items,
         "drawerRows":drawer_rows,
         "actions":parse_action_glyphs(action_method),
-        "profileTabs":["게시물","답글"],
+        "profileTabs":profile_tabs,
         "notificationLabels":notification_labels(main_text),
         "notificationGlyphs":{"mention":"@","favourite":"♥","reblog":"↻","follow":"+","follow_request":"+","default":"♢"},
-        "compose":{"newTitle":"새 게시물","replyTitle":"답글","postButton":"게시","replyButton":"답글","cw":"CW"},
+        "compose":compose_spec,
     }
 
     critical = {
@@ -276,8 +349,8 @@ def build_spec(main_text: str, latest: dict, apk_sha: str, source_path: str):
         "apkSha256": apk_sha,
         "decompiledSource": source_path,
         "homeTabs": {
-            "chronological": "시간순" if "시간순" in main_text else "시간순",
-            "public": "퍼블릭" if "퍼블릭" in main_text else "퍼블릭",
+            "chronological": home_tabs[0],
+            "public": home_tabs[1],
         },
         "bottomNav": {
             "order": nav_order
@@ -296,6 +369,7 @@ def build_spec(main_text: str, latest: dict, apk_sha: str, source_path: str):
         "theme": theme,
         "ui": ui,
         "renderer": renderer,
+        "features": features,
         "criticalSourceHashes": critical
     }
     return spec
@@ -345,6 +419,11 @@ def main():
         "source": spec["decompiledSource"],
         "bottomNav": spec["bottomNav"]["order"],
         "public": spec["timeline"]["public"],
+        "homeTabs": spec["homeTabs"],
+        "profileTabs": spec["renderer"]["profileTabs"],
+        "drawerRows": spec["renderer"]["drawerRows"],
+        "compose": spec["renderer"]["compose"],
+        "features": spec["features"],
     }, ensure_ascii=False, indent=2))
 
 if __name__ == "__main__":
