@@ -1130,36 +1130,50 @@ function removeSavedAccount(index){
   list.splice(index,1);store.set("lenton_accounts",list);accountManagerScreen();
 }
 function inquiryScreen(initialType=""){
-  const body=`<div class="settings inquiry-form">
-    <div class="section"><h3>문의 / 기능 건의</h3>
-      <label>문의 유형<select id="inquiryType" class="field"><option ${initialType==="오류 신고"?"selected":""}>오류 신고</option><option ${initialType==="기능 건의"?"selected":""}>기능 건의</option><option ${initialType==="기타 문의"?"selected":""}>기타 문의</option></select></label>
-      <label>발생 화면/기능<input id="inquiryArea" class="field" placeholder="예: DM, 알림, 프로필"></label>
-      <label>제목<input id="inquiryTitle" class="field" placeholder="문의 제목"></label>
-      <label>문의 내용<textarea id="inquiryBody" class="field inquiry-text" placeholder="내용을 입력하세요"></textarea></label>
-      <label>재현 방법<textarea id="inquirySteps" class="field inquiry-text" placeholder="오류라면 재현 방법을 적어주세요"></textarea></label>
-      <div class="notice">버전과 iOS/PWA 환경 정보가 함께 포함됩니다. 로그인 토큰이나 비밀번호는 포함하지 않습니다.</div>
-      <div class="setting-row"><button class="primary" data-action="sendInquiry">문의 내용 보내기</button></div>
-    </div></div>`;
+  state.inquiryFiles=state.inquiryFiles||[];
+  const body='<div class="settings inquiry-form"><div class="section"><h3>문의 / 기능 건의</h3>'+
+    '<label>문의 유형<select id="inquiryType" class="field"><option '+(initialType==="오류 신고"?"selected":"")+'>오류 신고</option><option '+(initialType==="기능 건의"?"selected":"")+'>기능 건의</option><option '+(initialType==="기타 문의"?"selected":"")+'>기타 문의</option></select></label>'+
+    '<label>발생 화면/기능<input id="inquiryArea" class="field" placeholder="예: DM, 알림, 프로필"></label>'+
+    '<label>제목<input id="inquiryTitle" class="field" placeholder="문의 제목"></label>'+
+    '<label>문의 내용<textarea id="inquiryBody" class="field inquiry-text" placeholder="내용을 입력하세요"></textarea></label>'+
+    '<label>재현 방법<textarea id="inquirySteps" class="field inquiry-text" placeholder="오류라면 재현 방법을 적어주세요"></textarea></label>'+
+    '<div class="inquiry-attachments"><div class="inquiry-attachments-head"><b>스크린샷</b><span>최대 3장</span></div>'+
+    '<input id="inquiryFiles" type="file" accept="image/*" multiple hidden><button class="outline-btn" id="inquiryPickFiles">스크린샷 추가</button>'+
+    '<div id="inquiryFilePreviews" class="inquiry-file-previews"></div></div>'+
+    '<div class="notice">앱 버전, iOS/PWA 환경, 서버 정보가 함께 포함됩니다. 로그인 토큰이나 비밀번호는 포함하지 않습니다.</div>'+
+    '<div class="setting-row"><button class="primary" data-action="sendInquiry">이메일로 보내기</button></div></div></div>';
   $("#app").innerHTML=standaloneShell("문의 / 기능 건의",body);bind();
+  const draw=()=>{
+    const box=$("#inquiryFilePreviews");if(!box)return;
+    box.innerHTML=(state.inquiryFiles||[]).map((f,i)=>'<div class="inquiry-file"><img src="'+URL.createObjectURL(f)+'" alt=""><button type="button" data-inquiry-remove="'+i+'">×</button></div>').join("");
+    box.querySelectorAll("[data-inquiry-remove]").forEach(b=>b.onclick=()=>{state.inquiryFiles.splice(Number(b.dataset.inquiryRemove),1);draw()});
+  };
+  $("#inquiryPickFiles")?.addEventListener("click",()=>$("#inquiryFiles")?.click());
+  $("#inquiryFiles")?.addEventListener("change",e=>{state.inquiryFiles=[...(state.inquiryFiles||[]),...e.target.files].slice(0,3);draw()});
+  draw();
 }
 async function sendInquiry(){
   const type=$("#inquiryType")?.value||"문의",area=$("#inquiryArea")?.value.trim()||"-",title=$("#inquiryTitle")?.value.trim()||"렌톤 문의";
   const body=$("#inquiryBody")?.value.trim()||"",steps=$("#inquirySteps")?.value.trim()||"-";
   if(!body){toast("문의 내용을 입력해 주세요.");return}
   const info=[
-    "■ 문의 정보",`문의 유형 : ${type}`,`발생 화면/기능 : ${area}`,`제목 : ${title}`,"",
+    "■ 문의 정보","문의 유형 : "+type,"발생 화면/기능 : "+area,"제목 : "+title,"",
     "■ 문의 내용",body,"","■ 재현 방법",steps,"","────────────────────",
-    `렌톤 Android 기준 : v${ANDROID?.versionName||"?"} (${ANDROID?.versionCode||"?"})`,
-    `PWA 빌드 : ${currentPwaToken()||"unknown"}`,
-    `서버 : ${state.session?.host||"-"}`,
-    `환경 : ${standalone()?"iPhone 홈 화면 PWA":"Safari 웹"}`,
-    `User Agent : ${navigator.userAgent}`
+    "렌톤 Android 기준 : v"+(ANDROID?.versionName||"?")+" ("+(ANDROID?.versionCode||"?")+")",
+    "PWA 빌드 : "+(currentPwaToken()||"unknown"),
+    "서버 : "+(state.session?.host||"-"),
+    "환경 : "+(standalone()?"iPhone/iPad 홈 화면 PWA":"Safari 웹"),
+    "User Agent : "+navigator.userAgent
   ].join("\n");
+  const files=(state.inquiryFiles||[]).slice(0,3);
   try{
-    if(navigator.share){await navigator.share({title:`[Lenton] ${title}`,text:info});toast("문의 내용을 공유했어요.");return}
+    const payload={title:"[Lenton] "+title,text:info};
+    if(files.length&&navigator.canShare?.({files}))payload.files=files;
+    if(navigator.share){await navigator.share(payload);toast(files.length?"문의 내용과 스크린샷을 공유했어요.":"문의 내용을 공유했어요.");state.inquiryFiles=[];return}
   }catch(e){if(e?.name==="AbortError")return}
-  try{await navigator.clipboard.writeText(info);toast("문의 내용을 복사했어요. 메일 앱을 엽니다.")}catch{}
-  location.href=`mailto:cptu527@gmail.com?subject=${encodeURIComponent("[Lenton] "+title)}&body=${encodeURIComponent(info)}`;
+  try{await navigator.clipboard.writeText(info)}catch{}
+  toast(files.length?"메일 앱에서 선택한 스크린샷을 첨부해 주세요.":"메일 앱을 엽니다.");
+  location.href="mailto:cptu527@gmail.com?subject="+encodeURIComponent("[Lenton] "+title)+"&body="+encodeURIComponent(info);
 }
 async function updateHistoryScreen(){
   let build=null,entries=[];
