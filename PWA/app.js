@@ -760,48 +760,55 @@ function accentTextColor(){
 function standaloneShell(title,body,right=""){
   return `<div class="standalone-page"><header class="standalone-top"><button class="back" data-action="backScreen" aria-label="뒤로가기">‹</button><h1>${esc(title)}</h1>${right}</header><main class="main">${body}</main></div>`;
 }
-function profileMarkup(a,{own=false,replies=false,relationship=null}={}){
-  const note=relationship?.note||"",noteColor=accentTextColor();
-  const controls=own?"":`<button class="outline-btn" data-action="followProfile">${relationship?.following?"팔로잉":"팔로우"}</button>`;
-  const privateNote=own?"":`<div class="private-note-card" data-action="editPrivateNote" style="color:${noteColor}"><div class="label">비밀 메모</div><div class="note">${esc(note.trim()?note:"메모를 추가하려면 탭하세요.")}</div></div>`;
-  const header=a.header_static||a.header||"",avatar=a.avatar_static||a.avatar||"";
-  return `<div class="profile-hero">
-      ${header?`<button class="profile-header-button" data-media-url="${esc(header)}" data-media-alt="프로필 헤더"><img class="profile-header" src="${esc(header)}" alt=""></button>`:'<div class="profile-header"></div>'}
-      ${avatar?`<button class="profile-avatar-button" data-media-url="${esc(avatar)}" data-media-alt="프로필 사진"><img class="profile-avatar" src="${esc(avatar)}" alt=""></button>`:""}
-    </div>
-    <div class="profile-info"><div class="profile-name-row"><div class="profile-names"><h2>${renderEmojiText(a.display_name||a.username,a.emojis||[])}</h2><div class="profile-handle">@${esc(a.acct)}</div></div>${controls}</div><div class="profile-bio">${renderRichText(a.note||"")}</div>${privateNote}<div class="profile-counts"><b style="color:var(--fg)">${a.following_count||0}</b> 팔로잉&nbsp;&nbsp;&nbsp;<b style="color:var(--fg)">${a.followers_count||0}</b> 팔로워</div></div>
-    <div class="home-tabs"><button data-action="profilePosts" class="${replies?"":"active"}">${esc((ANDROID?.renderer?.profileTabs||["게시물","답글"])[0])}</button><button data-action="profileReplies" class="${replies?"active":""}">${esc((ANDROID?.renderer?.profileTabs||["게시물","답글"])[1])}</button></div>`;
+function profileQuery(mode){
+  const q={limit:"25"};
+  if(mode==="posts")q.exclude_replies="true";
+  else if(mode==="pinned")q.pinned="true";
+  else if(mode==="media")q.only_media="true";
+  return q;
 }
-async function profileView(replies=state.profileReplies){
-  state.profileAccount=null; state.profileRelationship=null; state.profileReplies=!!replies;
+function profileMarkup(a,opts={}){
+  const own=!!opts.own,mode=opts.mode||"posts",relationship=opts.relationship||null;
+  const note=relationship?.note||"",noteColor=accentTextColor();
+  const controls=own?'<button class="outline-btn" data-action="profileEditOwn">프로필 편집</button>':'<button class="outline-btn" data-action="followProfile">'+(relationship?.following?"팔로잉":"팔로우")+'</button>';
+  const privateNote=own?"":'<div class="private-note-card" data-action="editPrivateNote" style="color:'+noteColor+'"><div class="label">비밀 메모</div><div class="note">'+esc(note.trim()?note:"메모를 추가하려면 탭하세요.")+'</div></div>';
+  const header=a.header_static||a.header||"",avatar=a.avatar_static||a.avatar||"";
+  const fields=(a.fields||[]).map(f=>'<div class="profile-field"><span>'+renderRichText(f.name||"")+'</span><b>'+renderRichText(f.value||"")+'</b></div>').join("");
+  const tabs=[["posts","게시물","profilePosts"],["replies","게시물과 답글","profileReplies"],["pinned","고정","profilePinned"],["media","미디어","profileMedia"]];
+  return '<div class="profile-hero">'+
+    (header?'<button class="profile-header-button" data-media-url="'+esc(header)+'" data-media-alt="프로필 헤더"><img class="profile-header" src="'+esc(header)+'" alt=""></button>':'<div class="profile-header"></div>')+
+    (avatar?'<button class="profile-avatar-button" data-media-url="'+esc(avatar)+'" data-media-alt="프로필 사진"><img class="profile-avatar" src="'+esc(avatar)+'" alt=""></button>':"")+
+    '</div><div class="profile-info"><div class="profile-name-row"><div class="profile-names"><h2>'+renderEmojiText(a.display_name||a.username,a.emojis||[])+'</h2><div class="profile-handle">@'+esc(a.acct)+'</div></div>'+controls+'</div>'+
+    '<div class="profile-bio">'+renderRichText(a.note||"")+'</div>'+(fields?'<div class="profile-fields">'+fields+'</div>':"")+privateNote+
+    '<div class="profile-count-grid"><div><b>'+Number(a.statuses_count||0).toLocaleString()+'</b><span>게시물</span></div><div><b>'+Number(a.following_count||0).toLocaleString()+'</b><span>팔로잉</span></div><div><b>'+Number(a.followers_count||0).toLocaleString()+'</b><span>팔로워</span></div></div></div>'+
+    '<div class="profile-tabs-4">'+tabs.map(x=>'<button data-action="'+x[2]+'" class="'+(mode===x[0]?"active":"")+'">'+x[1]+'</button>').join("")+'</div>';
+}
+async function profileView(mode=state.profileMode||"posts"){
+  if(typeof mode==="boolean")mode=mode?"replies":"posts";
+  state.profileAccount=null;state.profileRelationship=null;state.profileMode=mode;state.profileReplies=mode==="replies";
   renderLoadingShell("프로필");
   try{
-    if(!state.me) state.me=await api("/api/v1/accounts/verify_credentials");
-    const a=state.me, query={limit:"25"}; if(!state.profileReplies)query.exclude_replies="true";
-    const statuses=await api(`/api/v1/accounts/${a.id}/statuses`,{query});
-    $("#app").innerHTML=shell("프로필",profileMarkup(a,{own:true,replies:state.profileReplies})+(statuses.length?statuses.map(statusCard).join(""):'<div class="center">게시물이 없어요.</div>'));bind()
-  }catch(e){$("#app").innerHTML=shell("프로필",`<div class="center">${esc(e.message)}</div>`);bind()}
+    if(!state.me)state.me=await api("/api/v1/accounts/verify_credentials");
+    const a=state.me,statuses=await api("/api/v1/accounts/"+a.id+"/statuses",{query:profileQuery(mode)});
+    $("#app").innerHTML=shell("프로필",profileMarkup(a,{own:true,mode})+(statuses.length?statuses.map(statusCard).join(""):'<div class="center">게시물이 없어요.</div>'));bind();
+  }catch(e){$("#app").innerHTML=shell("프로필",'<div class="center">'+esc(e.message)+'</div>');bind()}
 }
-async function openProfile(id,replies=false){
-  if(!id)return;
-  if(state.me?.id&&String(id)===String(state.me.id)){
-    rememberScroll();state.view="profile";state.profileAccount=null;state.profileRelationship=null;state.profileReplies=!!replies;return profileView(state.profileReplies);
-  }
-  rememberScroll();
-  state.returnView=state.view; state.profileReplies=!!replies;
+async function openProfile(id,mode=state.profileMode||"posts"){
+  if(!id)return;if(typeof mode==="boolean")mode=mode?"replies":"posts";
+  if(state.me?.id&&String(id)===String(state.me.id)){rememberScroll();state.view="profile";state.profileAccount=null;state.profileRelationship=null;state.profileMode=mode;return profileView(mode)}
+  rememberScroll();state.returnView=state.view;state.profileMode=mode;state.profileReplies=mode==="replies";
   $("#app").innerHTML=standaloneShell("프로필",'<div class="center">불러오는 중…</div>');bind();
   try{
-    const [a,rels]=await Promise.all([
-      api(`/api/v1/accounts/${id}`),
-      api("/api/v1/accounts/relationships",{query:{"id[]":id}})
+    const [a,rels,statuses]=await Promise.all([
+      api("/api/v1/accounts/"+id),
+      api("/api/v1/accounts/relationships",{query:{"id[]":id}}),
+      api("/api/v1/accounts/"+id+"/statuses",{query:profileQuery(mode)})
     ]);
     const relationship=Array.isArray(rels)?(rels[0]||{}):{};
-    const query={limit:"25"}; if(!state.profileReplies)query.exclude_replies="true";
-    const statuses=await api(`/api/v1/accounts/${id}/statuses`,{query});
-    state.profileAccount=a; state.profileRelationship=relationship;
-    const more=`<button class="profile-more" data-action="profileMenu" aria-label="프로필 관리">${lentonIcon("more")}</button>`;
-    $("#app").innerHTML=standaloneShell("프로필",profileMarkup(a,{own:false,replies:state.profileReplies,relationship})+(statuses.length?statuses.map(statusCard).join(""):'<div class="center">게시물이 없어요.</div>'),more);bind();
-  }catch(e){$("#app").innerHTML=standaloneShell("프로필",`<div class="center">${esc(e.message)}</div>`);bind()}
+    state.profileAccount=a;state.profileRelationship=relationship;
+    const more='<button class="profile-more" data-action="profileMenu" aria-label="프로필 관리">'+lentonIcon("more")+'</button>';
+    $("#app").innerHTML=standaloneShell("프로필",profileMarkup(a,{own:false,mode,relationship})+(statuses.length?statuses.map(statusCard).join(""):'<div class="center">게시물이 없어요.</div>'),more);bind();
+  }catch(e){$("#app").innerHTML=standaloneShell("프로필",'<div class="center">'+esc(e.message)+'</div>');bind()}
 }
 function closePopup(){document.querySelector(".android-popup-shade")?.remove()}
 function openProfilePopup(){
