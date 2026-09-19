@@ -1838,3 +1838,15 @@ img{display:block}
 .dm-media-preview{position:sticky;bottom:calc(51px + env(safe-area-inset-bottom));display:flex;gap:6px;padding:0 7px;background:var(--bg)}
 .dm-media-chip{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-radius:12px;padding:5px 8px;background:var(--surface);font-size:12px;color:var(--sub)}
 .dm-thread-bubbles,.dm-bubble-row,.dm-bubble-wrap,.dm-bubble{all:unset}
+
+
+/* profile metadata add/remove editor */
+.profile-meta-add{width:100%;margin:8px 0 4px}
+.profile-edit-field-pair{
+  grid-template-columns:minmax(0,.34fr) minmax(0,.58fr) 36px;
+  align-items:center;
+}
+.profile-meta-remove{
+  width:36px;height:36px;border:0;border-radius:50%;
+  background:var(--surface);color:var(--sub);font-size:22px;padding:0
+}
