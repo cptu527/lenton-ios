@@ -1651,3 +1651,16 @@ img{display:block}
   backface-visibility:hidden;
   -webkit-backface-visibility:hidden;
 }
+
+
+/* APK parity: stable finger-following swipe layers */
+.app,.main,.standalone-page{backface-visibility:hidden;-webkit-backface-visibility:hidden}
+.bottom{touch-action:none}
+.home-tabs,.profile-tabs-4,.profile-tabs-2{touch-action:pan-y}
+.main-swipe-preview,.home-swipe-preview,.profile-swipe-preview,.swipe-moving{
+  transform:translate3d(0,0,0);
+  backface-visibility:hidden;
+  -webkit-backface-visibility:hidden;
+  contain:paint;
+}
+.home-swipe-preview,.profile-swipe-preview{right:auto;max-width:none}
