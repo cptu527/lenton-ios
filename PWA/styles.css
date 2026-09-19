@@ -2481,3 +2481,361 @@ img{display:block}
   padding:0;
   font-size:28px;
 }
+
+
+/* 2026-09-20 Android parity: composer, accounts, mentions, profile */
+
+/* Reply counts must be visible on every timeline/profile card, not only thread detail. */
+.lenton-actions button[data-action="reply"] .count:not(:empty){
+  display:inline-block!important;
+  min-width:10px;
+  margin-left:5px!important;
+  color:var(--sub)!important;
+  font-size:13px!important;
+  line-height:1;
+  font-variant-numeric:tabular-nums;
+}
+
+/* Mastodon @mentions behave as in-app profile links. */
+.inline-mention{
+  display:inline;
+  border:0;
+  margin:0;
+  padding:0;
+  background:none;
+  color:var(--accent);
+  font:inherit;
+  line-height:inherit;
+  text-align:inherit;
+  cursor:pointer;
+}
+
+/* Both new-post and reply composers use the Android bottom visibility/tool arrangement. */
+.compose-modal .compose-sheet{
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+.compose-modal #parts{
+  flex:1 1 auto;
+  min-height:0;
+  overflow:auto;
+}
+.compose-modal .compose-visibility-row{
+  flex:0 0 52px;
+  min-height:52px;
+  display:flex;
+  align-items:center;
+  justify-content:flex-start;
+  padding:0 18px;
+  border-top:1px solid var(--line);
+  border-bottom:0;
+  background:var(--bg);
+}
+.compose-modal .compose-visibility-row .compose-visibility{
+  min-height:44px;
+  height:44px;
+  padding:0 4px 0 0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  color:var(--accent);
+  font-size:14px;
+  font-weight:700;
+  -webkit-appearance:auto;
+  appearance:auto;
+}
+.compose-modal .android-compose-tools{
+  position:static!important;
+  flex:0 0 58px;
+  display:flex!important;
+  grid-template-columns:none!important;
+  align-items:center;
+  gap:0;
+  width:100%;
+  padding:0 18px;
+  border-top:1px solid var(--line);
+  background:var(--bg);
+}
+.compose-modal .android-compose-tools button{
+  flex:0 0 52px;
+  width:52px;
+  min-width:52px;
+  height:54px;
+  padding:0;
+  display:grid;
+  place-items:center;
+}
+.compose-modal .android-compose-tools #addPart{
+  margin-left:auto!important;
+  flex:0 0 52px;
+  width:52px;
+  min-width:52px;
+  justify-self:auto!important;
+  grid-column:auto!important;
+  font-size:30px;
+}
+
+/* Drawer account avatars: big current account on the left, all alternates in a row, + at the end. */
+.drawer-account-strip{
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr);
+  align-items:center;
+  gap:18px;
+}
+.drawer-switchers{
+  min-width:0;
+  margin-left:0!important;
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:10px;
+  overflow-x:auto;
+  overscroll-behavior-x:contain;
+  scrollbar-width:none;
+}
+.drawer-switchers::-webkit-scrollbar{display:none}
+.drawer-account-btn,.drawer-add-account{flex:0 0 54px}
+.drawer-switch-avatar,.drawer-add-account{width:54px;height:54px}
+.drawer-switch-avatar{
+  display:block;
+  border-radius:50%;
+  object-fit:cover;
+}
+.drawer-add-account{
+  border:1px solid var(--line);
+  background:var(--bg);
+  color:var(--fg);
+  border-radius:50%;
+  font-size:27px;
+}
+
+/* Android account selection bottom sheet. */
+.account-switcher-shade{
+  position:fixed;
+  inset:0;
+  z-index:180;
+  display:flex;
+  align-items:flex-end;
+  justify-content:center;
+  background:rgba(0,0,0,.56);
+  padding-top:env(safe-area-inset-top);
+}
+.account-switcher-sheet{
+  width:min(100%,720px);
+  max-height:86dvh;
+  overflow:auto;
+  padding:18px 28px calc(24px + env(safe-area-inset-bottom));
+  border-radius:30px 30px 0 0;
+  background:var(--bg);
+  color:var(--fg);
+}
+.account-switcher-sheet header{
+  min-height:58px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom:4px;
+}
+.account-switcher-sheet header h2{
+  margin:0;
+  font-size:23px;
+}
+.account-switcher-sheet header button{
+  width:46px;
+  height:46px;
+  border:0;
+  background:none;
+  color:var(--fg);
+  font-size:34px;
+  line-height:1;
+}
+.account-switcher-list{display:flex;flex-direction:column}
+.account-switcher-row{
+  width:100%;
+  min-height:88px;
+  display:grid;
+  grid-template-columns:68px minmax(0,1fr) 42px;
+  align-items:center;
+  gap:14px;
+  border:0;
+  background:transparent;
+  color:var(--fg);
+  text-align:left;
+  padding:8px 4px;
+}
+.account-switcher-row img{
+  width:64px;
+  height:64px;
+  border-radius:50%;
+  object-fit:cover;
+}
+.account-switcher-row span{min-width:0}
+.account-switcher-row b{
+  display:block;
+  font-size:18px;
+  line-height:1.35;
+}
+.account-switcher-row small{
+  display:block;
+  margin-top:5px;
+  color:var(--sub);
+  font-size:15px;
+  overflow:hidden;
+  white-space:nowrap;
+  text-overflow:ellipsis;
+}
+.account-switcher-row em{
+  color:var(--accent);
+  font-size:28px;
+  font-style:normal;
+  text-align:center;
+}
+.account-existing-add{
+  width:100%;
+  min-height:66px;
+  margin-top:8px;
+  border:0;
+  border-top:1px solid var(--line);
+  background:transparent;
+  color:var(--fg);
+  text-align:left;
+  padding:12px 4px 0;
+  font-size:17px;
+  font-weight:600;
+}
+
+/* Full-screen account add page, matching Android instead of browser prompt(). */
+.account-add-page{
+  position:fixed;
+  inset:0;
+  z-index:170;
+  min-height:100dvh;
+  overflow:auto;
+  background:var(--bg);
+  color:var(--fg);
+  padding:calc(env(safe-area-inset-top) + 20px) 28px calc(env(safe-area-inset-bottom) + 30px);
+}
+.account-add-cancel{
+  border:0;
+  background:none;
+  color:var(--fg);
+  padding:12px 0;
+  font-size:17px;
+}
+.account-add-body{
+  width:min(100%,620px);
+  margin:22px auto 0;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+}
+.account-add-logo{
+  width:116px;
+  height:116px;
+  border-radius:50%;
+  object-fit:cover;
+  margin:0 0 34px;
+}
+.account-add-body h1{
+  margin:0;
+  font-size:38px;
+  letter-spacing:-1px;
+}
+.account-add-body p{
+  margin:62px 0 28px;
+  color:var(--sub);
+  font-size:17px;
+}
+.account-add-input{
+  width:100%;
+  height:98px;
+  border:0;
+  border-radius:26px;
+  background:var(--surface);
+  color:var(--fg);
+  padding:0 28px;
+  font-size:22px;
+}
+.account-add-login{
+  width:100%;
+  height:92px;
+  margin-top:26px;
+  border:0;
+  border-radius:30px;
+  background:var(--accent);
+  color:#fff;
+  font-size:19px;
+  font-weight:700;
+}
+
+/* Other-account profile header/actions/relationship state like Android Lenton. */
+.profile-name-row{
+  align-items:flex-start!important;
+  padding-top:6px;
+}
+.profile-names{padding-top:2px}
+.profile-mutual{
+  display:inline-block;
+  margin:6px 0 5px;
+  padding:4px 9px;
+  border-radius:8px;
+  background:var(--surface);
+  color:var(--sub);
+  font-size:12px;
+  font-weight:700;
+}
+.profile-actions{
+  margin-left:auto;
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  flex-wrap:wrap;
+}
+.profile-message-btn,
+.profile-follow-btn,
+.profile-bell{
+  height:48px;
+  border:1px solid var(--line);
+  background:var(--bg);
+  color:var(--fg);
+  font-weight:700;
+}
+.profile-message-btn,
+.profile-follow-btn{
+  border-radius:24px;
+  padding:0 18px;
+  font-size:15px;
+}
+.profile-bell{
+  width:48px;
+  padding:0;
+  border-radius:50%;
+  display:grid;
+  place-items:center;
+}
+.profile-bell .lenton-icon{width:24px;height:24px}
+.profile-bell.on{
+  color:var(--accent);
+  border-color:color-mix(in srgb,var(--accent) 55%,var(--line));
+  background:color-mix(in srgb,var(--accent) 8%,var(--bg));
+}
+.profile-bell:disabled{opacity:.38}
+.profile-own-edit{margin-left:auto}
+.profile-bio{clear:both}
+.profile-info .private-note-card{
+  margin:12px 0 10px;
+  padding:14px 16px;
+  border-radius:12px;
+}
+.profile-info .profile-fields{padding-top:4px}
+
+@media (max-width:560px){
+  .account-add-page{padding-left:20px;padding-right:20px}
+  .account-add-body p{margin-top:46px}
+  .account-add-input{height:76px;font-size:18px}
+  .account-add-login{height:68px}
+  .profile-name-row{flex-wrap:wrap}
+  .profile-actions{width:100%;justify-content:flex-start;margin:4px 0 0}
+}
