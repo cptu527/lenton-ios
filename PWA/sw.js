@@ -1,5 +1,5 @@
 const CACHE="lenton-pwa-v3";
-const SHELL=["./","./index.html","./styles.css","./app.js","./manifest.webmanifest","./icon-192.png","./icon-512.png","./icon-1024.png"];
+const SHELL=["./","./index.html","./styles.css","./app.js","./manifest.webmanifest","./generated/android-spec.js","./icon-192.png","./icon-512.png","./icon-1024.png"];
 
 self.addEventListener("install",event=>{
   event.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL.filter(x=>!x.includes("icon-")))).then(()=>self.skipWaiting()));
