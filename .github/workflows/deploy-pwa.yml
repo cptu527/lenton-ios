@@ -53,24 +53,30 @@ jobs:
               for n in images[:300]:
                   print(n)
 
-              launchers = [n for n in names if n.lower().endswith("/ic_launcher.png")]
-              if not launchers:
-                  launchers = [n for n in names if n.lower().endswith("/ic_launcher_foreground.png")]
-              if not launchers:
-                  raise SystemExit("No named launcher image found in APK")
+              import struct
+              pngs = []
+              for n in names:
+                  if not n.lower().endswith(".png") or ".9.png" in n.lower():
+                      continue
+                  data = z.read(n)
+                  if data[:8] != b"\\x89PNG\\r\\n\\x1a\\n" or len(data) < 24:
+                      continue
+                  width, height = struct.unpack(">II", data[16:24])
+                  pngs.append((n, width, height, len(data)))
+                  print("PNG", n, width, height, len(data))
 
-              def rank(name):
-                  low = name.lower()
-                  if "xxxhdpi" in low: return 5
-                  if "xxhdpi" in low: return 4
-                  if "xhdpi" in low: return 3
-                  if "hdpi" in low: return 2
-                  if "mdpi" in low: return 1
-                  return 0
+              legacy = [x for x in pngs if x[1] == 192 and x[2] == 192]
+              if not legacy:
+                  legacy = [x for x in pngs if x[1] == x[2] and x[1] in (48,72,96,144,192)]
+              if not legacy:
+                  legacy = [x for x in pngs if x[1] == x[2]]
 
-              launcher = sorted(launchers, key=rank)[-1]
-              print("Using Android launcher:", launcher)
-              Path("/tmp/lenton-android-launcher.png").write_bytes(z.read(launcher))
+              if not legacy:
+                  raise SystemExit("No square PNG launcher candidate found in APK")
+
+              launcher = sorted(legacy, key=lambda x: (x[1] == 192, x[3], x[1]))[-1]
+              print("Using Android launcher candidate:", launcher)
+              Path("/tmp/lenton-android-launcher.png").write_bytes(z.read(launcher[0]))
           PY
 
           test -s /tmp/lenton-android-launcher.png
