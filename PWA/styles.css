@@ -1123,3 +1123,10 @@ img{display:block}
   bottom:0;z-index:28;background:var(--bg);overflow:hidden;
   will-change:transform;pointer-events:none;
 }
+
+
+.layout-grip{touch-action:none;user-select:none;-webkit-user-select:none}
+.layout-tab-row.dragging{
+  position:relative;z-index:10;background:var(--surface);
+  box-shadow:0 8px 20px rgba(0,0,0,.16);transform:scale(1.01);
+}
