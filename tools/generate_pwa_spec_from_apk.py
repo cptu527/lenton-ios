@@ -126,20 +126,19 @@ def parse_bottom_nav(method: str):
 
 def parse_drawer(method: str):
     rows=[]
-    mapping={"프로필":"profile","북마크":"bookmarks","리스트":"lists","팔로우 요청":"followrequests","설정":"settings"}
-    for glyph,label in re.findall(r'drawerRow\([^,]+,\s*"([^"]+)"\s*,\s*"([^"]+)"',method or ""):
-        rows.append({"id":mapping.get(label,label),"label":label,"glyph":glyph})
+    mapping={
+      "프로필":"profile","프로필 편집":"profileedit","좋아요":"favourites","북마크":"bookmarks",
+      "팔로우 요청":"followrequests","화면 구성 편집":"layoutedit","리스트":"lists",
+      "실시간 연결 상태 표시 설정":"realtime","설정":"settings","앱 업데이트":"update"
+    }
+    modern=re.findall(r'drawer(?:Update)?Row\([^,]+,\s*\d+\s*,\s*"([^"]+)"',method or "")
+    for label in modern:
+        if label not in [x.get("label") for x in rows]:
+            rows.append({"id":mapping.get(label,label),"label":label})
     if not rows:
-        rows=[
-            {"id":"profile","label":"프로필","glyph":"♙"},
-            {"id":"bookmarks","label":"북마크","glyph":"▢"},
-            {"id":"lists","label":"리스트","glyph":"☷"},
-            {"id":"followrequests","label":"팔로우 요청","glyph":"♧"},
-            {"id":"settings","label":"설정","glyph":"⚙"},
-        ]
-    rows.append({"id":"theme","labelLight":"다크 모드","labelDark":"라이트 모드","glyphLight":"◐","glyphDark":"☀"})
+        for glyph,label in re.findall(r'drawerRow\([^,]+,\s*"([^"]+)"\s*,\s*"([^"]+)"',method or ""):
+            rows.append({"id":mapping.get(label,label),"label":label,"glyph":glyph})
     return rows
-
 
 def quoted_literals(text: str):
     vals=[]
@@ -165,29 +164,65 @@ def parse_home_tabs(main_text: str):
     return ["시간순","퍼블릭"]
 
 def parse_profile_tabs(main_text: str):
-    m=extract_any_method(main_text,"renderProfile","showOwnProfile","showProfile")
     allowed={"게시물","답글","게시물과 답글","고정","미디어"}
-    vals=first_matching_literals(m,allowed)
-    # Preserve source order and remove duplicate aliases.
-    if vals:
-        return vals
-    return []
+    sig=re.compile(r'(?:private|public|protected)\s+[^\n{;]+\s+(\w+)\s*\([^)]*\)\s*\{')
+    candidates=[]
+    for m in sig.finditer(main_text):
+        name=m.group(1)
+        block=extract_method(main_text,name)
+        if not block:
+            continue
+        score=0
+        for needle,w in [
+          ("followers_count",4),("following_count",4),("header",2),("avatar",2),
+          ("프로필",2),("게시물",3),("답글",3)
+        ]:
+            if needle in block:score+=w
+        vals=first_matching_literals(block,allowed)
+        if vals:score+=len(vals)*3
+        if score>=8:candidates.append((score,len(block),vals,name))
+    if candidates:
+        candidates.sort(reverse=True)
+        vals=candidates[0][2]
+        clean=[v for v in vals if v in ("게시물","답글","게시물과 답글")]
+        if clean:
+            return clean
+    # JADX can inline/reshape the profile method enough that method extraction misses it.
+    # Fall back only to explicit tab-construction patterns, not generic string presence.
+    explicit=[]
+    for label in ("게시물","답글","게시물과 답글"):
+        if re.search(r'\btab\(\s*"'+re.escape(label)+r'"\s*,',main_text):
+            explicit.append(label)
+    if len(explicit)>=2:
+        return explicit
+    pos=main_text.find("renderProfile")
+    window=main_text[pos:pos+26000] if pos>=0 else ""
+    nearby=[label for label in ("게시물","답글","게시물과 답글") if '"'+label+'"' in window]
+    clean=[]
+    for label in nearby:
+        if label not in clean: clean.append(label)
+    return clean or explicit
 
 def parse_compose_literals(main_text: str):
-    m=extract_any_method(main_text,"compose","showComposer","openComposer")
-    vals=quoted_literals(m)
+    vals=quoted_literals(main_text)
     def pick(*choices):
         for c in choices:
             if c in vals:return c
         return choices[0]
+    pos=main_text.find("class ComposerToolView")
+    tool_block=main_text[pos:pos+14000] if pos>=0 else ""
     return {
         "newTitle":pick("새 게시물","새 글"),
         "replyTitle":pick("답글","답장"),
         "postButton":pick("게시","작성"),
         "replyButton":pick("답글","답장"),
-        "cw":"CW" if "CW" in vals or "콘텐츠 경고" in vals else "",
-        "hasGif":("GIF" in vals),
-        "hasThread":("타래" in m or "＋ 타래" in m or "+ 타래" in m),
+        "cw":"CW" if "CW" in main_text or "콘텐츠 경고" in main_text else "",
+        "hasPhoto":("PHOTO" in tool_block),
+        "hasCamera":("CAMERA" in tool_block),
+        "hasGif":("GIF" in tool_block or "GIF" in main_text),
+        "hasPoll":("POLL" in tool_block or "투표" in main_text),
+        "hasThread":("PLUS" in tool_block or "타래" in main_text),
+        "toolOrder":["photo","camera","gif","poll","cw","plus"] if tool_block else [],
     }
 
 def detect_features(main_text: str):
@@ -210,16 +245,54 @@ def detect_features(main_text: str):
     return checks
 
 def parse_action_glyphs(method: str):
-    calls=re.findall(r'addAction\([^,]+,\s*(?:([^,]+)\?\s*"([^"]+)"\s*:\s*"([^"]+)"|"([^"]+)")',method or "")
-    # Current Lenton action order is stable; source hash below protects structural drift.
-    return {
-        "reply":"○",
-        "boost":"↻",
-        "favouriteOff":"♡",
-        "favouriteOn":"♥",
-        "bookmarkOff":"▢",
-        "bookmarkOn":"▣",
-    }
+    out={"reply":"○","boost":"↻","favouriteOff":"♡","favouriteOn":"♥","bookmarkOff":"▢","bookmarkOn":"▣"}
+    literals=re.findall(r'"([^"]+)"',method or "")
+    # Prefer glyphs around action construction, but keep safe fallbacks.
+    for key,candidates in {
+      "reply":["○","↩","↪"],"boost":["↻","⟳"],"favouriteOff":["♡"],"favouriteOn":["♥"],
+      "bookmarkOff":["▢","☆"],"bookmarkOn":["▣","★"]
+    }.items():
+        for candidate in candidates:
+            if candidate in literals:
+                out[key]=candidate
+                break
+    return out
+
+def parse_notification_tabs(main_text: str):
+    allowed={"전체","멘션","답장할멘션"}
+    sig=re.compile(r'(?:private|public|protected)\s+[^\n{;]+\s+(\w+)\s*\([^)]*\)\s*\{')
+    for m in sig.finditer(main_text):
+        block=extract_method(main_text,m.group(1))
+        if not block or "/api/v1/notifications" not in block:
+            continue
+        vals=first_matching_literals(block,allowed)
+        if len(vals)>=2:
+            return vals[:2]
+    pos=main_text.find("loadNotifications")
+    window=main_text[pos:pos+18000] if pos>=0 else ""
+    vals=[label for label in ("전체","멘션","답장할멘션") if '"'+label+'"' in window]
+    return vals[:2] if len(vals)>=2 else ["전체","멘션"]
+
+def parse_notification_glyphs(text: str):
+    out={"mention":"@","favourite":"♥","reblog":"↻","follow":"+","follow_request":"+","default":"♢"}
+    m=extract_any_method(text,"notificationGlyph")
+    for key in ["mention","favourite","reblog","follow","follow_request"]:
+        mm=re.search(r'"'+re.escape(key)+r'".*?return"([^"]+)"',m,re.S)
+        if mm: out[key]=mm.group(1)
+    returns=re.findall(r'return"([^"]+)"',m)
+    if returns: out["default"]=returns[-1]
+    return out
+
+def parse_profile_counts(profile_method: str, main_text: str):
+    block=profile_method or ""
+    if not block:
+        pos=main_text.find("renderProfile")
+        if pos>=0:block=main_text[pos:pos+18000]
+    fields=[]
+    if "statuses_count" in block: fields.append("statuses")
+    if "following_count" in block: fields.append("following")
+    if "followers_count" in block: fields.append("followers")
+    return fields or ["following","followers"]
 
 def notification_labels(text: str):
     defaults={
@@ -320,8 +393,10 @@ def build_spec(main_text: str, latest: dict, apk_sha: str, source_path: str):
         "drawerRows":drawer_rows,
         "actions":parse_action_glyphs(action_method),
         "profileTabs":profile_tabs,
+        "profileCounts":parse_profile_counts(profile_method,main_text),
+        "notificationTabs":parse_notification_tabs(main_text),
         "notificationLabels":notification_labels(main_text),
-        "notificationGlyphs":{"mention":"@","favourite":"♥","reblog":"↻","follow":"+","follow_request":"+","default":"♢"},
+        "notificationGlyphs":parse_notification_glyphs(main_text),
         "compose":compose_spec,
     }
 
@@ -410,6 +485,11 @@ def main():
       "게시물과 답글","고정","미디어","GIF","CW","타래","이전 대화 보기",
       "문의 유형","이메일로 보내기","계정 추가","앱 업데이트","업데이트 내역",
       "HomeSwipeRecyclerView","positionHomeIndicator","renderProfile","loadNotifications",
+      "MainNavIconView","StatusActionIconView","DrawerIconView","ComposerToolView",
+      "/api/v1/conversations","새 DM","DM 보내기","메시지 보내기","showConversation","loadMessages",
+      "private void renderProfile","private void loadMessages","private void addConversation","private void showConversation",
+      "private void showOwnProfile","private void loadNotifications","private void openDrawer","private void drawerRow",
+      "StatusAction","DrawerIcon","MainNavIcon","onDraw(Canvas","addAction(",
       "알림","프로필","답글","게시물"
     ]
     contexts={}
@@ -437,6 +517,8 @@ def main():
         "public": spec["timeline"]["public"],
         "homeTabs": spec["homeTabs"],
         "profileTabs": spec["renderer"]["profileTabs"],
+        "profileCounts": spec["renderer"].get("profileCounts"),
+        "notificationTabs": spec["renderer"].get("notificationTabs"),
         "drawerRows": spec["renderer"]["drawerRows"],
         "compose": spec["renderer"]["compose"],
         "features": spec["features"],

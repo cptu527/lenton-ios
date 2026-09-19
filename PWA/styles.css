@@ -65,7 +65,7 @@ img{display:block}
 .topbar h1{
   margin:0;
   padding-left:14px;
-  font-size:20px;
+  font-size:var(--android-drawer-text);
   line-height:1;
   font-weight:800;
   letter-spacing:-.3px;
@@ -566,10 +566,10 @@ img{display:block}
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){--nav-line:color-mix(in srgb,var(--accent) 32%,var(--bg))}
 }
-.app{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
+.app{padding-bottom:calc(var(--android-bottom) + env(safe-area-inset-bottom))}
 .main,.sheet{width:100%;max-width:none;margin:0;background:var(--bg)}
 .topbar{
-  height:62px;
+  height:var(--android-topbar);
   padding:0 8px 0 16px;
   background:var(--bg);
   backdrop-filter:none;
@@ -577,23 +577,26 @@ img{display:block}
   border-bottom:1px solid var(--line);
 }
 .topbar h1{padding-left:14px;font-size:20px;font-weight:700;letter-spacing:0}
-.topbar-avatar{width:40px;height:40px;flex-basis:40px}
-.top-icon{width:44px;height:62px;font-size:27px}
-.top-icon.search{width:48px;font-size:30px}
+.topbar-avatar{width:var(--android-topbar-avatar);height:var(--android-topbar-avatar);flex-basis:var(--android-topbar-avatar)}
+.top-icon{width:var(--android-topbar-more);height:var(--android-topbar);font-size:27px}
+.top-icon.search{width:var(--android-topbar-search);font-size:30px}
 .bottom{
-  height:calc(64px + env(safe-area-inset-bottom));
+  height:calc(var(--android-bottom) + env(safe-area-inset-bottom));
   padding-bottom:env(safe-area-inset-bottom);
   background:var(--bg);
   backdrop-filter:none;
   -webkit-backdrop-filter:none;
   border-top:1px solid var(--nav-line);
 }
-.bottom button{height:64px}
+.bottom button{height:var(--android-bottom)}
 .home-tabs{height:52px}
 .notify-tabs{height:50px}
 .home-tabs button,.notify-tabs button{font-size:15px;font-weight:400}
 .home-tabs button.active,.notify-tabs button.active{font-weight:700}
-.home-tabs button.active::after,.notify-tabs button.active::after{display:none}
+.home-tabs button{position:relative}
+.home-tabs button::after{content:"";position:absolute;width:36px;height:3px;left:50%;bottom:0;transform:translateX(-50%) scaleX(0);border-radius:2px;background:var(--accent);transition:transform 170ms cubic-bezier(.2,.75,.25,1);transform-origin:center}
+.home-tabs button.active::after{transform:translateX(-50%) scaleX(1)}
+.notify-tabs button.active::after{display:none}
 .chips{
   min-height:50px;
   gap:7px;
@@ -609,29 +612,29 @@ img{display:block}
   font-weight:700;
   background:var(--surface);
 }
-.status{padding:10px 14px 8px 16px}
+.status{padding:var(--android-status-padding)}
 .boosted{min-height:26px;padding:0 0 6px 56px;font-size:12px}
 .status-head{gap:12px}
-.avatar{width:46px;height:46px}
-.author-line{height:28px}
+.avatar{width:var(--android-avatar);height:var(--android-avatar)}
+.author-line{height:var(--android-author-line)}
 .name,.acctline{font-size:15px}
 .name{font-weight:700}
-.content{padding:2px 0 6px;font-size:16px;line-height:1.5}
+.content{padding:2px 0 6px;font-size:var(--android-body);line-height:1.5}
 .media{height:260px;max-height:260px;border-radius:18px;margin:8px 0 6px}
-.actions{height:48px}
-.actions button{height:46px;font-size:22px;gap:0}
+.actions{height:var(--android-action-row)}
+.actions button{height:var(--android-action-item);font-size:var(--android-action-glyph);gap:0}
 .actions .count{font-size:12px;margin-left:2px}
 .search-box{padding:10px 14px 8px}
 .search-box .field{height:48px;padding:0 12px 0 18px;border-radius:24px;background:var(--surface)}
 .search-box .primary{width:72px;height:44px}
 .row{gap:12px;padding:12px 14px 12px 16px}
 .notification-mark{width:44px;flex-basis:44px;font-size:25px;line-height:46px}
-.profile-hero{height:226px}
-.profile-header{height:170px}
-.profile-avatar{left:18px;top:126px;width:92px;height:92px}
+.profile-hero{height:var(--android-profile-hero)}
+.profile-header{height:var(--android-profile-header)}
+.profile-avatar{left:var(--android-profile-avatar-left);top:var(--android-profile-avatar-top);width:var(--android-profile-avatar);height:var(--android-profile-avatar)}
 .profile-info{padding:0 18px 12px}
 .profile-name-row{min-height:60px}
-.profile-names h2{font-size:22px;line-height:32px}
+.profile-names h2{font-size:var(--android-profile-name);line-height:32px}
 .profile-handle{font-size:15px;line-height:26px}
 .profile-bio{padding:8px 0 10px;font-size:15px;line-height:1.5}
 .profile-counts{padding:5px 0 12px;font-size:14px}
@@ -898,31 +901,31 @@ img{display:block}
 
 .message-row{
   width:100%;display:grid;
-  grid-template-columns:74px minmax(0,1fr) auto;
-  gap:16px;align-items:center;
-  padding:18px 22px;
+  grid-template-columns:var(--android-message-avatar) minmax(0,1fr) auto;
+  gap:12px;align-items:start;
+  padding:var(--android-message-padding);
   border:0;border-bottom:1px solid var(--line);
   background:var(--bg);color:var(--fg);text-align:left;
 }
-.message-avatar{width:68px;height:68px;border-radius:50%;object-fit:cover}
+.message-avatar{width:var(--android-message-avatar);height:var(--android-message-avatar);border-radius:50%;object-fit:cover}
 .message-main{min-width:0}
-.message-name{font-size:18px;font-weight:700;line-height:1.3}
-.message-handle{margin-top:4px;color:var(--sub);font-size:15px}
+.message-name{font-size:16px;font-weight:700;line-height:1.3}
+.message-handle{margin-top:2px;color:var(--sub);font-size:14px}
 .message-preview{
-  margin-top:8px;color:var(--sub);font-size:16px;
+  margin-top:4px;color:var(--sub);font-size:15px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-.message-date{align-self:start;padding-top:4px;color:var(--sub);font-size:14px;white-space:nowrap}
+.message-date{align-self:start;padding-top:2px;color:var(--sub);font-size:13px;white-space:nowrap}
 .message-row.unread .message-name{color:var(--fg)}
 
 .lenton-drawer{
-  width:min(82vw,620px);
+  width:min(var(--android-drawer-width),620px);
   max-width:none;
-  padding:calc(28px + env(safe-area-inset-top)) 38px calc(28px + env(safe-area-inset-bottom));
+  padding:calc(env(safe-area-inset-top) + var(--android-drawer-pad-top)) var(--android-drawer-pad-right) calc(env(safe-area-inset-bottom) + var(--android-drawer-pad-bottom)) var(--android-drawer-pad-left);
   overflow:auto;
 }
 .drawer-account-strip{display:flex;align-items:center;gap:22px}
-.lenton-drawer .drawer-avatar{width:94px;height:94px;border-radius:50%}
+.lenton-drawer .drawer-avatar{width:var(--android-drawer-avatar);height:var(--android-drawer-avatar);border-radius:50%}
 .drawer-switchers{display:flex;align-items:center;gap:12px;margin-left:auto}
 .drawer-switch-avatar,.drawer-add-account{
   width:58px;height:58px;border-radius:50%;flex:0 0 58px;
@@ -937,14 +940,14 @@ img{display:block}
 .lenton-drawer .drawer-counts{height:auto;margin-top:22px;margin-bottom:18px;font-size:15px}
 .lenton-drawer .drawer-divider{margin:0;border-top:1px solid var(--line)}
 .lenton-drawer .drawer-row{
-  height:70px;
-  font-size:20px;
+  height:var(--android-drawer-row);
+  font-size:var(--android-drawer-text);
   font-weight:600;
   padding:0 8px;
 }
 .lenton-drawer .drawer-row .glyph{
-  width:56px;
-  font-size:30px;
+  width:52px;
+  font-size:var(--android-drawer-glyph);
   display:inline-grid;
   place-items:center;
 }
@@ -953,7 +956,7 @@ img{display:block}
 .drawer-list-row .glyph{width:56px!important}
 
 @media (min-width:900px){
-  .message-row{grid-template-columns:74px minmax(0,1fr) 90px}
+  .message-row{grid-template-columns:var(--android-message-avatar) minmax(0,1fr) 90px}
   .notify-status,.notify-simple{grid-template-columns:64px minmax(0,1fr)}
 }
 
@@ -1664,3 +1667,77 @@ img{display:block}
   contain:paint;
 }
 .home-swipe-preview,.profile-swipe-preview{right:auto;max-width:none}
+
+
+/* APK runtime parity: notification cards and dynamic profile counts */
+.profile-count-grid{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}
+.android-notify-card{
+  display:grid;
+  grid-template-columns:44px minmax(0,1fr);
+  gap:0;
+  padding:var(--android-notification-padding);
+  border-bottom:1px solid var(--line);
+  background:var(--bg);
+}
+.android-notify-glyph{
+  width:44px;
+  min-height:46px;
+  display:flex;
+  justify-content:center;
+  align-items:flex-start;
+  padding-top:1px;
+  font-size:var(--android-notification-glyph,25px);
+  line-height:1;
+  color:var(--accent);
+}
+.android-notify-glyph.fav{color:var(--pink)}
+.android-notify-glyph.boost{color:var(--green)}
+.android-notify-main{min-width:0}
+.android-notify-person{
+  width:100%;
+  min-height:40px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  border:0;
+  padding:0;
+  background:none;
+  color:var(--fg);
+  text-align:left;
+}
+.android-notify-person img{
+  width:36px;height:36px;border-radius:50%;object-fit:cover;flex:0 0 36px;
+}
+.android-notify-person b{
+  min-width:0;
+  font-size:15px;
+  line-height:1.35;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.android-notify-card .notify-content{
+  margin-top:3px;
+  color:var(--sub);
+  font-size:15px;
+  line-height:1.42;
+  display:-webkit-box;
+  -webkit-line-clamp:4;
+  -webkit-box-orient:vertical;
+  overflow:hidden;
+}
+.android-notify-card.has-status{cursor:pointer}
+
+
+/* APK DM previous-thread control */
+.dm-previous-conversation{
+  width:100%;
+  height:48px;
+  border:0;
+  border-bottom:1px solid var(--line);
+  background:var(--bg);
+  color:var(--accent);
+  padding:0 18px;
+  text-align:left;
+  font-size:15px;
+}

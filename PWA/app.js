@@ -116,6 +116,7 @@ function applyAndroidSpecMetrics(){
   px("--android-profile-hero",ui.profileHeroDp,226);
   px("--android-profile-name",ui.profileNameSp,22);
   px("--android-profile-tab",ui.profileTabDp,50);
+  px("--android-notification-glyph",ui.notificationGlyphDp,25);
   px("--android-message-avatar",ui.messageAvatarDp,48);
   px("--android-standalone-top",ui.standaloneTopDp,60);
   root.style.setProperty("--android-drawer-width",String(Math.round((ui.drawerWidthRatio||.88)*100))+"vw");
@@ -123,6 +124,14 @@ function applyAndroidSpecMetrics(){
   root.style.setProperty("--android-status-padding",sp.map(x=>String(x)+"px").join(" "));
   const dp=ui.drawerPadding||[24,24,24,20];
   root.style.setProperty("--android-drawer-padding",dp.map(x=>String(x)+"px").join(" "));
+  root.style.setProperty("--android-drawer-pad-top",String(dp[0])+"px");
+  root.style.setProperty("--android-drawer-pad-right",String(dp[1])+"px");
+  root.style.setProperty("--android-drawer-pad-bottom",String(dp[2])+"px");
+  root.style.setProperty("--android-drawer-pad-left",String(dp[3])+"px");
+  const np=ui.notificationPadding||[16,12,14,10];
+  root.style.setProperty("--android-notification-padding",np.map(x=>String(x)+"px").join(" "));
+  const mp=ui.messagePadding||[16,12,14,12];
+  root.style.setProperty("--android-message-padding",mp.map(x=>String(x)+"px").join(" "));
 }
 applyAndroidSpecMetrics();
 
@@ -563,50 +572,29 @@ function renderLoadingShell(title){
   bind();
 }
 
-async function notificationsView(replyMentions=false){
+async function notificationsView(mentionsOnly=false){
   renderLoadingShell("알림");
   try{
-    const query={limit:"40"};
-    if(replyMentions) query["types[]"]="mention";
-    const n=await api("/api/v1/notifications",{query});
-    const tabs=`<div class="notify-tabs lenton-notify-tabs">
-      <button data-notify="all" class="${replyMentions?"":"active"}">전체</button>
-      <button data-notify="mention" class="${replyMentions?"active":""}">멘션</button>
-    </div><div class="notification-tools"><button data-action="clearNotifications">알림 지우기</button></div>`;
-    const seenAt=Number(store.get(scopedKey("notifications_seen_at"),0)||0);
-    const newest=n.reduce((m,x)=>Math.max(m,new Date(x.created_at||0).getTime()||0),seenAt);
-    const rows=n.length?n.map(x=>{
-      const a=x.account||{}, st=x.status||null;
-      if(st){
-        const replyTarget=state.me?.display_name||state.me?.username||"나"; const replyMeta=st.in_reply_to_id?`<div class="notify-reply-meta">${renderEmojiText(replyTarget,state.me?.emojis||[])}에게 보내는 답글</div>`:"";
-        const isNew=(new Date(x.created_at||0).getTime()||0)>seenAt; return `<article class="notify-status ${isNew?"notification-new":""}" data-notification-id="${esc(x.id||"")}">
-          <img class="notify-avatar" data-profile="${esc(a.id||"")}" src="${esc(a.avatar_static||a.avatar||"")}" alt="">
-          <div class="notify-body">
-            <div class="notify-head">
-              <div><b>${renderEmojiText(a.display_name||a.username||"알림",a.emojis||[])}</b> <span>@${esc(a.acct||"")} · ${fmtTime(x.created_at)}</span></div>
-              <button class="status-more" data-action="statusmenu" data-id="${esc(st.id||"")}">${lentonIcon("more")}</button>
-            </div>
-            ${replyMeta}
-            <div class="notify-content">${renderRichText(st.content||"")}</div>
-            <div class="actions lenton-actions notify-actions">
-              <button data-action="reply" data-id="${esc(st.id||"")}">${lentonIcon("reply")}</button>
-              <button class="boost ${st.reblogged?"on":""}" data-action="boost" data-id="${esc(st.id||"")}">${lentonIcon("boost")} <span class="count">${st.reblogs_count||""}</span></button>
-              <button class="fav ${st.favourited?"on":""}" data-action="fav" data-id="${esc(st.id||"")}">${lentonIcon(st.favourited?"heartFill":"heart")} <span class="count">${st.favourites_count||""}</span></button>
-              <button class="bookmark ${st.bookmarked?"on":""}" data-action="bookmark" data-id="${esc(st.id||"")}">${lentonIcon(st.bookmarked?"bookmarkFill":"bookmark")}</button>
-              <button data-action="share" data-id="${esc(st.id||"")}" data-url="${esc(st.url||"")}">${lentonIcon("share")}</button>
-            </div>
-          </div>
-        </article>`;
-      }
-      const simpleLabels={follow:"나를 팔로우했습니다",follow_request:"팔로우를 요청했습니다",favourite:"내 게시물을 좋아해요",reblog:"내 게시물을 부스트했어요",poll:"투표가 종료됐어요",status:"새 게시물을 올렸어요",update:"게시물을 수정했어요"}; const label=simpleLabels[x.type]||"새 알림";
-      const isNew=(new Date(x.created_at||0).getTime()||0)>seenAt; return `<article class="notify-simple ${isNew?"notification-new":""}">
-        <img class="notify-avatar" data-profile="${esc(a.id||"")}" src="${esc(a.avatar_static||a.avatar||"")}" alt="">
-        <div><b>${renderEmojiText(a.display_name||a.username||"알림",a.emojis||[])}님이 ${esc(label)}</b><div class="notify-date">${fmtTime(x.created_at)}</div></div>
-      </article>`;
+    const query={limit:"40"};if(mentionsOnly)query["types[]"]="mention";
+    const items=await api("/api/v1/notifications",{query});
+    const tabLabels=ANDROID?.renderer?.notificationTabs||["전체","멘션"];
+    const tabs='<div class="notify-tabs lenton-notify-tabs"><button data-notify="all" class="'+(mentionsOnly?"":"active")+'">'+esc(tabLabels[0]||"전체")+'</button><button data-notify="mention" class="'+(mentionsOnly?"active":"")+'">'+esc(tabLabels[1]||"멘션")+'</button></div>';
+    const labels=ANDROID?.renderer?.notificationLabels||{};
+    const glyphs=ANDROID?.renderer?.notificationGlyphs||{};
+    const colors={favourite:"fav",reblog:"boost",mention:"mention",follow:"follow",follow_request:"follow"};
+    const rows=items.length?items.map(n=>{
+      const a=n.account||{},st=n.status||null,type=n.type||"";
+      const label=labels[type]||type||"새 알림",glyph=glyphs[type]||glyphs.default||"♢";
+      const body=st?'<div class="notify-content">'+renderRichText(st.content||"")+'</div>':"";
+      return '<article class="android-notify-card '+(st?"has-status":"")+'" '+(st?'data-notify-status="'+esc(st.id||"")+'"':"")+'>'+
+        '<div class="android-notify-glyph '+(colors[type]||"default")+'">'+esc(glyph)+'</div>'+
+        '<div class="android-notify-main">'+
+          '<button class="android-notify-person" data-profile="'+esc(a.id||"")+'"><img src="'+esc(a.avatar_static||a.avatar||"")+'" alt=""><b>'+renderEmojiText(a.display_name||a.username||"알림",a.emojis||[])+' · '+esc(label)+'</b></button>'+
+          body+
+        '</div></article>';
     }).join(""):'<div class="center">새 알림이 없어요.</div>';
     renderMainStable("알림",tabs+rows,{view:"notifications",fab:true});
-    store.set(scopedKey("notifications_seen_at"),newest)
-  }catch(e){renderMainStable("알림",`<div class="center">${esc(e.message)}</div>`,{view:"notifications",fab:true})}
+  }catch(e){renderMainStable("알림",'<div class="center">'+esc(e.message)+'</div>',{view:"notifications",fab:true})}
 }
 function dmConversationKey(c){
   const ids=(c?.accounts||[]).map(a=>String(a.id||a.acct||"")).filter(Boolean).sort();
@@ -621,7 +609,13 @@ function groupDmConversations(cs){
   }
   for(const group of groups.values()){
     group.sort((a,b)=>String(b.last_status?.created_at||"").localeCompare(String(a.last_status?.created_at||"")));
-    if(group.length>1)group.forEach((c,i)=>c._threadLabel="타래 "+(i+1)+"/"+group.length);
+    const ids=group.map(c=>String(c.id));
+    group.forEach((c,i)=>{
+      c._threadIndex=i;
+      c._threadSiblingIds=ids;
+      c._threadLabel=group.length>1?"타래 "+(i+1)+"/"+group.length:"";
+      c._previousConversationId=group[i+1]?.id||"";
+    });
   }
   return [...(cs||[])].sort((a,b)=>String(b.last_status?.created_at||"").localeCompare(String(a.last_status?.created_at||"")));
 }
@@ -736,7 +730,8 @@ async function openConversation(id){
     const uniq=new Map();for(const st of all)if(st?.id)uniq.set(String(st.id),st);
     const statuses=[...uniq.values()].sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")));
     const title=(c.accounts?.[0]?.display_name||"DM")+(c._threadLabel?" · "+c._threadLabel:"");
-    const body='<div class="dm-thread-bubbles">'+statuses.map(dmBubble).join("")+'</div>'+
+    const previous=c._previousConversationId?'<button class="dm-previous-conversation" data-dm-previous="'+esc(c._previousConversationId)+'">이전 대화 보기  ›</button>':"";
+    const body=previous+'<div class="dm-thread-bubbles">'+statuses.map(dmBubble).join("")+'</div>'+
       '<div class="dm-inline-compose"><button class="dm-attach-btn" id="dmInlineAttach" aria-label="이미지 첨부">▧</button>'+
       '<input id="dmInlineFile" type="file" accept="image/*,video/*" multiple hidden>'+
       '<textarea id="dmInlineInput" rows="1" placeholder="메시지 보내기"></textarea>'+
@@ -772,13 +767,14 @@ function profileMarkup(a,opts={}){
   const privateNote=own?"":'<div class="private-note-card" data-action="editPrivateNote" style="color:'+noteColor+'"><div class="label">비밀 메모</div><div class="note">'+esc(note.trim()?note:"메모를 추가하려면 탭하세요.")+'</div></div>';
   const header=a.header_static||a.header||"",avatar=a.avatar_static||a.avatar||"";
   const fields=(a.fields||[]).map(f=>'<div class="profile-field"><span>'+renderRichText(f.name||"")+'</span><b>'+renderRichText(f.value||"")+'</b></div>').join("");
-  const tabs=[["posts","게시물","profilePosts"],["replies","답글","profileReplies"]];
+  const profileLabels=ANDROID?.renderer?.profileTabs||["게시물","답글"];
+  const tabs=[["posts",profileLabels[0]||"게시물","profilePosts"],["replies",profileLabels[1]||"답글","profileReplies"]];
   return '<div class="profile-hero">'+
     (header?'<button class="profile-header-button" data-media-url="'+esc(header)+'" data-media-alt="프로필 헤더"><img class="profile-header" src="'+esc(header)+'" alt=""></button>':'<div class="profile-header"></div>')+
     (avatar?'<button class="profile-avatar-button" data-media-url="'+esc(avatar)+'" data-media-alt="프로필 사진"><img class="profile-avatar" src="'+esc(avatar)+'" alt=""></button>':"")+
     '</div><div class="profile-info"><div class="profile-name-row"><div class="profile-names"><h2>'+renderEmojiText(a.display_name||a.username,a.emojis||[])+'</h2><div class="profile-handle">@'+esc(a.acct)+'</div></div>'+controls+'</div>'+
     '<div class="profile-bio">'+renderRichText(a.note||"")+'</div>'+(fields?'<div class="profile-fields">'+fields+'</div>':"")+privateNote+
-    '<div class="profile-count-grid"><div><b>'+Number(a.statuses_count||0).toLocaleString()+'</b><span>게시물</span></div><div><b>'+Number(a.following_count||0).toLocaleString()+'</b><span>팔로잉</span></div><div><b>'+Number(a.followers_count||0).toLocaleString()+'</b><span>팔로워</span></div></div></div>'+
+    '<div class="profile-count-grid">'+((ANDROID?.renderer?.profileCounts||["following","followers"]).map(key=>key==="statuses"?'<div><b>'+Number(a.statuses_count||0).toLocaleString()+'</b><span>게시물</span></div>':key==="following"?'<div><b>'+Number(a.following_count||0).toLocaleString()+'</b><span>팔로잉</span></div>':'<div><b>'+Number(a.followers_count||0).toLocaleString()+'</b><span>팔로워</span></div>').join(""))+'</div></div>'+
     '<div class="profile-tabs-2">'+tabs.map(x=>'<button data-action="'+x[2]+'" class="'+(mode===x[0]?"active":"")+'">'+x[1]+'</button>').join("")+'</div>';
 }
 async function profileView(mode=state.profileMode||"posts"){
@@ -885,6 +881,35 @@ async function bookmarksView(){
   }catch(e){toast(e.message)}
 }
 
+function drawerMenuRows(){
+  const iconMap={profile:"profile",profileedit:"edit",favourites:"heart",bookmarks:"bookmark",followrequests:"personAdd",layoutedit:"edit",lists:"list",settings:"settings",update:"update",history:"update",theme:"settings"};
+  const fallback=[
+    {id:"profile",label:"프로필"},{id:"profileedit",label:"프로필 편집"},{id:"favourites",label:"좋아요"},
+    {id:"bookmarks",label:"북마크"},{id:"followrequests",label:"팔로우 요청"},{id:"layoutedit",label:"화면 구성 편집"},
+    {id:"lists",label:"리스트"},{id:"settings",label:"설정"}
+  ];
+  let rows=Array.isArray(ANDROID?.renderer?.drawerRows)&&ANDROID.renderer.drawerRows.length?ANDROID.renderer.drawerRows:fallback;
+  rows=rows.filter(x=>x?.id&&x.id!=="realtime");
+  if(ANDROID?.features?.lists&&!rows.some(x=>x.id==="lists")){
+    const settingsIndex=rows.findIndex(x=>x.id==="settings"||x.id==="update");
+    const listRow={id:"lists",label:"리스트"};
+    if(settingsIndex>=0)rows=[...rows.slice(0,settingsIndex),listRow,...rows.slice(settingsIndex)];
+    else rows=[...rows,listRow];
+  }
+  const mapped=rows.map(x=>{
+    let label=x.label||x.id;
+    if(x.id==="theme")label=(state.theme==="dark"?"라이트 모드":"다크 모드");
+    return {id:x.id==="update"?"history":x.id,label,icon:iconMap[x.id]||"more"};
+  });
+  if(!mapped.some(x=>x.id==="history"))mapped.push({id:"history",label:"업데이트 내역",icon:"update"});
+  return mapped;
+}
+function drawerMenuMarkup(){
+  return drawerMenuRows().map((x,i)=>{
+    const divider=(x.id==="lists"||x.id==="settings"||x.id==="history")?'<div class="drawer-divider"></div>':"";
+    return divider+'<button class="drawer-row '+(x.id==="lists"?"drawer-list-row":"")+'" data-drawer="'+esc(x.id)+'"><span class="glyph">'+lentonIcon(x.icon)+'</span>'+esc(x.label)+'</button>';
+  }).join("");
+}
 function buildDrawerElement(){
   const m=state.me||{},shade=document.createElement("div");
   const allAccounts=savedAccounts(),currentKey=state.session?.host+"|"+m.id;const otherAccounts=allAccounts.filter(x=>x&&x.avatar&&x.key!==currentKey).slice(0,3);
@@ -900,18 +925,8 @@ function buildDrawerElement(){
     <div class="drawer-name">${renderEmojiText(m.display_name||m.username||"렌톤",m.emojis||[])}</div>
     <div class="drawer-handle">@${esc(m.acct||"")}${m.acct?.includes("@")?"":"@"+esc(state.session?.host||"")}</div>
     <div class="drawer-counts"><b>${m.following_count||0}</b> 팔로잉&nbsp;&nbsp;&nbsp;<b>${m.followers_count||0}</b> 팔로워</div>
-    <div class="drawer-divider"></div>
-    <button class="drawer-row" data-drawer="profile"><span class="glyph">${lentonIcon("profile")}</span>프로필</button>
-    <button class="drawer-row" data-drawer="profileedit"><span class="glyph">${lentonIcon("edit")}</span>프로필 편집</button>
-    <button class="drawer-row" data-drawer="favourites"><span class="glyph">${lentonIcon("heart")}</span>좋아요</button>
-    <button class="drawer-row" data-drawer="bookmarks"><span class="glyph">${lentonIcon("bookmark")}</span>북마크</button>
-    <button class="drawer-row" data-drawer="followrequests"><span class="glyph">${lentonIcon("personAdd")}</span>팔로우 요청</button>
-    <button class="drawer-row" data-drawer="layoutedit"><span class="glyph">${lentonIcon("edit")}</span>화면 구성 편집</button>
-    <div class="drawer-spacer"></div>
-    <button class="drawer-row drawer-list-row" data-drawer="lists"><span class="glyph">${lentonIcon("list")}</span>리스트</button>
-    <div class="drawer-divider"></div>
-    <button class="drawer-row" data-drawer="settings"><span class="glyph">${lentonIcon("settings")}</span>설정</button>
-    <button class="drawer-row" data-drawer="history"><span class="glyph">${lentonIcon("update")}</span>업데이트 내역</button>
+    ${drawerMenuMarkup()}
+
   </aside>`;
   document.body.append(shade);
   shade.addEventListener("click",e=>{if(e.target===shade)closeDrawer()});
@@ -926,6 +941,7 @@ function buildDrawerElement(){
     else if(v==="profileedit"){pushNavSnapshot();closeDrawer();profileEditScreen()}
     else if(v==="layoutedit"){pushNavSnapshot();closeDrawer();screenLayoutEditor()}
     else if(v==="history"){pushNavSnapshot();closeDrawer();updateHistoryScreen()}
+    else if(v==="theme"){state.theme=state.theme==="dark"?"light":"dark";store.set("lenton_theme",state.theme);document.documentElement.dataset.theme=state.theme;closeDrawer();render()}
     else if(v==="addaccount"){closeDrawer();addAccountFlow()}
   });
   shade.querySelectorAll("[data-switch-account-key]").forEach(b=>b.onclick=()=>{
@@ -1192,7 +1208,7 @@ async function updateHistoryScreen(){
     <div class="notice">새 버전은 백그라운드에서 준비되며 작성 중인 글이나 DM을 강제로 새로고침하지 않습니다. 앱을 다음에 열 때 최신 버전이 적용됩니다.</div>
   </div>`;
   const support=`<div class="section update-support"><h3>문의 / 기능 건의</h3><div class="notice">업데이트 후 문제가 생겼거나 원하는 기능이 있다면 여기서 바로 보낼 수 있어요.</div><div class="update-support-actions"><button class="outline-btn" data-action="inquiry" data-inquiry-type="오류 신고">오류 신고</button><button class="primary" data-action="inquiry" data-inquiry-type="기능 건의">기능 건의</button></div></div>`;
-  $("#app").innerHTML=standaloneShell("업데이트 내역",`<div class="settings">${info}<div class="section"><h3>변경사항</h3>${rows||'<div class="center">변경 내역을 불러오지 못했어요.</div>'}</div>${support}</div>`);bind();
+  $("#app").innerHTML=standaloneShell("앱 업데이트",`<div class="settings">${info}<div class="section"><h3>업데이트 내역</h3>${rows||'<div class="center">변경 내역을 불러오지 못했어요.</div>'}</div>${support}</div>`);bind();
 }
 async function settingsView(){
   const d=await pushDiagnostics();
@@ -1386,6 +1402,23 @@ async function uploadComposerFile(file){
   try{return await apiMultipart("/api/v2/media",fd)}
   catch{return await apiMultipart("/api/v1/media",fd)}
 }
+function composeToolMarkup(ct={}){
+  const order=Array.isArray(ct.toolOrder)&&ct.toolOrder.length?ct.toolOrder:["photo","camera","gif","poll","cw","plus"];
+  const enabled={
+    photo:ct.hasPhoto!==false,camera:ct.hasCamera!==false,gif:ct.hasGif!==false,
+    poll:ct.hasPoll!==false,cw:ct.cw!==""&&ct.cw!==false,plus:ct.hasThread!==false
+  };
+  const html={
+    photo:'<button type="button" id="composeAttach" aria-label="사진">▧</button>',
+    camera:'<button type="button" id="composeCamera" aria-label="카메라">◉</button>',
+    gif:'<button type="button" id="composeGif" aria-label="GIF">GIF</button>',
+    poll:'<button type="button" id="composePoll" aria-label="투표">☷</button>',
+    cw:'<button type="button" class="compose-cw-toggle" id="composeCW" aria-label="CW">CW</button>',
+    plus:'<button type="button" class="part-add" id="addPart" aria-label="타래 추가">＋</button>'
+  };
+  return order.filter(x=>enabled[x]&&html[x]).map(x=>html[x]).join("")+
+    '<button type="button" id="composeEmoji" class="compose-emoji-secondary" aria-label="서버 이모지">☺</button>';
+}
 function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
   let historyPushed=false;
   let parts=[{text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[],poll:null}];
@@ -1432,13 +1465,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
         </div></div>
       </div>`).join("")}</div>
       <div class="compose-tools android-compose-tools">
-        <button type="button" id="composeAttach" aria-label="사진">▧</button>
-        <button type="button" id="composeCamera" aria-label="카메라">◉</button>
-        <button type="button" id="composeGif" aria-label="GIF">GIF</button>
-        <button type="button" id="composePoll" aria-label="투표">☷</button>
-        <button type="button" class="compose-cw-toggle" id="composeCW" aria-label="CW">CW</button>
-        <button type="button" class="part-add" id="addPart" aria-label="타래 추가">＋</button>
-        <button type="button" id="composeEmoji" class="compose-emoji-secondary" aria-label="서버 이모지">☺</button>
+        ${composeToolMarkup(ct)}
         <input id="composeFile" type="file" accept="image/*,video/*" multiple hidden>
         <input id="composeCameraFile" type="file" accept="image/*" capture="environment" hidden>
         <input id="composeGifFile" type="file" accept="image/gif" hidden>
@@ -1465,12 +1492,12 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
     m.querySelectorAll("[data-poll-expire]").forEach(x=>x.onchange=e=>{const pi=+e.currentTarget.dataset.pollExpire;if(parts[pi].poll)parts[pi].poll.expires=+e.currentTarget.value});
     m.querySelectorAll("[data-poll-multiple]").forEach(x=>x.onchange=e=>{const pi=+e.currentTarget.dataset.pollMultiple;if(parts[pi].poll)parts[pi].poll.multiple=e.currentTarget.checked});
     $("#composeVisibility",m).onchange=e=>visibility=e.target.value;
-    $("#addPart",m).onclick=()=>{parts.push({text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[],poll:null});activePart=parts.length-1;draw()};
-    $("#composeCW",m).onclick=()=>{parts[activePart].cw=!parts[activePart].cw;if(parts[activePart].cw&&!parts[activePart].spoiler&&reply?.spoiler_text)parts[activePart].spoiler=reply.spoiler_text;draw()};
+    $("#addPart",m)?.addEventListener("click",()=>{parts.push({text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[],poll:null});activePart=parts.length-1;draw()});
+    $("#composeCW",m)?.addEventListener("click",()=>{parts[activePart].cw=!parts[activePart].cw;if(parts[activePart].cw&&!parts[activePart].spoiler&&reply?.spoiler_text)parts[activePart].spoiler=reply.spoiler_text;draw()});
     $("#closeCompose",m).onclick=()=>{if(!confirmClose())return;if(historyPushed){window.__lentonComposeBypass=true;history.back()}else window.__lentonComposeClose?.()};
-    $("#composeAttach",m).onclick=()=>$("#composeFile",m).click();
-    $("#composeCamera",m).onclick=()=>$("#composeCameraFile",m).click();
-    $("#composeGif",m).onclick=()=>$("#composeGifFile",m).click();
+    $("#composeAttach",m)?.addEventListener("click",()=>$("#composeFile",m)?.click());
+    $("#composeCamera",m)?.addEventListener("click",()=>$("#composeCameraFile",m)?.click());
+    $("#composeGif",m)?.addEventListener("click",()=>$("#composeGifFile",m)?.click());
     $("#composePoll",m).onclick=()=>{
       const p=parts[activePart];
       p.poll=p.poll?null:{options:["",""],expires:86400,multiple:false};
@@ -1873,10 +1900,12 @@ function bind(){
   document.querySelectorAll("[data-home-mode]").forEach(b=>b.onclick=()=>{state.homeMode=b.dataset.homeMode;state.listId=null;render()});
   document.querySelectorAll("[data-list]").forEach(b=>b.onclick=()=>{state.listId=state.listId===b.dataset.list?null:b.dataset.list;render()});
   document.querySelectorAll("[data-conv]").forEach(b=>b.onclick=()=>{pushNavSnapshot();openConversation(b.dataset.conv)});
+  document.querySelectorAll("[data-dm-previous]").forEach(b=>b.onclick=()=>{pushNavSnapshot();openConversation(b.dataset.dmPrevious)});
   document.querySelectorAll("[data-media-url]").forEach(b=>b.onclick=e=>{e.stopPropagation();openMediaViewer(b.dataset.mediaUrl,b.dataset.mediaAlt||"")});
   document.querySelectorAll(".status[data-status-id]").forEach(card=>card.onclick=e=>{if(e.target.closest("button,a,video,audio"))return;pushNavSnapshot();openThread(card.dataset.statusId)});
   document.querySelectorAll("[data-thread-older]").forEach(b=>b.onclick=()=>openThread(b.dataset.threadOlder,true));
   document.querySelectorAll("[data-notify]").forEach(b=>b.onclick=()=>notificationsView(b.dataset.notify==="mention"));
+  document.querySelectorAll("[data-notify-status]").forEach(card=>card.onclick=e=>{if(e.target.closest("[data-profile]"))return;pushNavSnapshot();openThread(card.dataset.notifyStatus)});
   document.querySelectorAll("[data-follow-accept]").forEach(b=>b.onclick=()=>decideFollowRequest(b.dataset.followAccept,true));
   document.querySelectorAll("[data-follow-reject]").forEach(b=>b.onclick=()=>decideFollowRequest(b.dataset.followReject,false));
   document.querySelectorAll("[data-account-switch]").forEach(b=>b.onclick=()=>switchSavedAccount(Number(b.dataset.accountSwitch)));
