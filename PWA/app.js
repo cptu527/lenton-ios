@@ -283,6 +283,12 @@ function statusCard(raw){
   </article>`;
 }
 
+function hiddenListIds(){return new Set(store.get(scopedKey("hidden_lists"),[])||[])}
+function setListHidden(id,hidden){
+  const set=hiddenListIds();
+  if(hidden)set.add(id);else set.delete(id);
+  store.set(scopedKey("hidden_lists"),[...set]);
+}
 async function loadLists(){try{state.lists=await api("/api/v1/lists")}catch{state.lists=[]}}
 async function loadAllFollowing(){
   if(!state.me) state.me=await api("/api/v1/accounts/verify_credentials");
@@ -374,7 +380,7 @@ async function homeView(){
     else data=await loadLentonHome(state.homeMode!=="public");
     const chronologicalLabel=ANDROID?.homeTabs?.chronological||"시간순", publicLabel=ANDROID?.homeTabs?.public||"퍼블릭";
     const tabs=`<div class="home-tabs"><button data-home-mode="home" class="${state.homeMode==="home"&&!state.listId?"active":""}">${esc(chronologicalLabel)}</button><button data-home-mode="public" class="${state.homeMode==="public"&&!state.listId?"active":""}">${esc(publicLabel)}</button></div>`;
-    const chips=state.lists.length?`<div class="chips">${state.lists.map(x=>`<button class="chip ${state.listId===x.id?"active":""}" data-list="${x.id}">${esc(x.title)}</button>`).join("")}<button class="chip" data-action="newlist">＋ 리스트</button></div>`:"";
+    const visibleLists=state.lists.filter(x=>!hiddenListIds().has(x.id)); const chips=(visibleLists.length||state.lists.length)?`<div class="chips">${visibleLists.map(x=>`<button class="chip ${state.listId===x.id?"active":""}" data-list="${x.id}">${esc(x.title)}</button>`).join("")}<button class="chip" data-action="newlist">＋ 리스트</button></div>`:"";
     $("#app").innerHTML=shell(state.listId?(state.lists.find(x=>x.id===state.listId)?.title||"리스트"):"홈",tabs+chips+(data.length?data.map(statusCard).join(""):'<div class="center">표시할 게시물이 없어요.</div>'),{fab:true});
   }catch(e){$("#app").innerHTML=shell("홈",`<div class="center">타임라인을 불러오지 못했어요.<br><br>${esc(e.message)}<br><br><button class="primary" data-action="reload">다시 시도</button></div>`,{fab:true})}
   state.busy=false; bind();
@@ -618,7 +624,7 @@ function openDrawer(){
     else if(v==="lists"){closeDrawer();listsScreen()}
     else if(v==="settings"){closeDrawer();state.view="settings";render()}
     else if(v==="profileedit"){closeDrawer();toast("프로필 편집을 준비 중이에요.")}
-    else if(v==="layoutedit"){closeDrawer();toast("화면 구성 편집을 준비 중이에요.")}
+    else if(v==="layoutedit"){closeDrawer();screenLayoutEditor()}
     else if(v==="realtime"){closeDrawer();toast("실시간 연결 상태 표시 설정을 준비 중이에요.")}
     else if(v==="update"){closeDrawer();applyAutomaticUpdate();toast("최신 버전을 확인했어요.")}
     else if(v==="addaccount"){closeDrawer();toast("계정 추가를 준비 중이에요.")}
@@ -630,8 +636,96 @@ async function favouritesView(){
 }
 async function listsScreen(){
   closeDrawer();$("#app").innerHTML=standaloneShell("리스트",'<div class="center">불러오는 중…</div>');bind();
-  try{const lists=await api("/api/v1/lists");const rows=lists.length?lists.map(x=>`<button class="row" data-open-list="${esc(x.id)}"><div class="grow"><div class="row-title"><b>${esc(x.title||"리스트")}</b></div></div></button>`).join(""):'<div class="center">리스트가 없어요.</div>';$("#app").innerHTML=standaloneShell("리스트",rows);bind()}catch(e){toast(e.message)}
+  try{
+    const lists=await api("/api/v1/lists");state.lists=lists;
+    const hidden=hiddenListIds();
+    const rows=lists.map(x=>`<div class="list-manage-row">
+      <button class="list-open grow" data-open-list="${esc(x.id)}"><b>${esc(x.title||"리스트")}</b><span>${esc(x.replies_policy||"list")}</span></button>
+      <button class="list-eye ${hidden.has(x.id)?"off":""}" data-list-visible="${esc(x.id)}">${hidden.has(x.id)?"숨김":"표시"}</button>
+      <button class="list-more" data-list-manage="${esc(x.id)}">⋮</button>
+    </div>`).join("");
+    const body=`<div class="list-toolbar"><button class="primary" data-action="newlist">＋ 새 리스트</button></div>${rows||'<div class="center">리스트가 없어요.</div>'}`;
+    $("#app").innerHTML=standaloneShell("리스트",body);bind();
+  }catch(e){toast(e.message)}
 }
+async function listManageScreen(id){
+  $("#app").innerHTML=standaloneShell("리스트 관리",'<div class="center">불러오는 중…</div>');bind();
+  try{
+    const [list,members]=await Promise.all([
+      api(`/api/v1/lists/${id}`),
+      api(`/api/v1/lists/${id}/accounts`,{query:{limit:"80"}})
+    ]);
+    const hidden=hiddenListIds().has(id);
+    const rows=(members||[]).map(a=>`<button class="row" data-profile="${esc(a.id)}"><img class="avatar" src="${esc(a.avatar_static||a.avatar||"")}" alt=""><div class="grow"><b>${renderEmojiText(a.display_name||a.username,a.emojis||[])}</b><div class="muted">@${esc(a.acct||"")}</div></div></button>`).join("");
+    const body=`<div class="list-editor">
+      <label>이름<input id="listTitleEdit" class="field" value="${esc(list.title||"")}"></label>
+      <label>답글 표시 범위<select id="listRepliesEdit" class="field">
+        <option value="followed">팔로우 중인 사람의 답글</option>
+        <option value="list">리스트 멤버의 답글</option>
+        <option value="none">답글 숨김</option>
+      </select></label>
+      <label class="check-row"><input id="listExclusiveEdit" type="checkbox" ${list.exclusive?"checked":""}> 홈 타임라인에서 제외</label>
+      <label class="check-row"><input id="listVisibleEdit" type="checkbox" ${hidden?"":"checked"}> 홈에 리스트 표시</label>
+      <div class="android-dialog-actions"><button data-list-save="${esc(id)}">저장</button><button class="danger-text" data-list-delete="${esc(id)}">삭제</button></div>
+    </div>
+    <div class="section-title">멤버 ${members?.length||0}</div>${rows||'<div class="center">멤버가 없어요.</div>'}`;
+    $("#app").innerHTML=standaloneShell(list.title||"리스트 관리",body);$("#listRepliesEdit").value=list.replies_policy||"list";bind();
+  }catch(e){toast(e.message)}
+}
+async function saveListSettings(id){
+  const title=$("#listTitleEdit")?.value.trim();if(!title){toast("리스트 이름을 입력해 주세요.");return}
+  const replies_policy=$("#listRepliesEdit")?.value||"list";
+  const exclusive=!!$("#listExclusiveEdit")?.checked;
+  try{
+    await api(`/api/v1/lists/${id}`,{method:"PUT",form:{title,replies_policy,exclusive:String(exclusive)}});
+    setListHidden(id,!$("#listVisibleEdit")?.checked);
+    await loadLists();toast("리스트를 저장했어요.");listsScreen();
+  }catch(e){
+    try{
+      await api(`/api/v1/lists/${id}`,{method:"PUT",form:{title,replies_policy}});
+      setListHidden(id,!$("#listVisibleEdit")?.checked);
+      await loadLists();toast("리스트를 저장했어요.");listsScreen();
+    }catch(e2){toast(e2.message)}
+  }
+}
+async function deleteList(id){
+  if(!confirm("이 리스트를 삭제할까요?"))return;
+  try{await api(`/api/v1/lists/${id}`,{method:"DELETE"});await loadLists();toast("리스트를 삭제했어요.");listsScreen()}catch(e){toast(e.message)}
+}
+
+function tabLabel(id){return id==="home"?"홈":id==="search"?"검색":id==="notifications"?"알림":"DM"}
+function screenLayoutEditor(){
+  closeDrawer();
+  const cfg=mainTabLayout();
+  const rows=cfg.order.map((id,i)=>`<div class="layout-tab-row" data-layout-id="${id}">
+    <span class="layout-grip">☰</span><b>${tabLabel(id)}</b>
+    <button data-layout-up="${id}" ${i===0?"disabled":""}>↑</button>
+    <button data-layout-down="${id}" ${i===cfg.order.length-1?"disabled":""}>↓</button>
+    <button class="layout-toggle ${cfg.hidden.has(id)?"off":""}" data-layout-toggle="${id}">${cfg.hidden.has(id)?"숨김":"표시"}</button>
+  </div>`).join("");
+  const body=`<div class="layout-guide">하단 탭의 순서와 표시 여부를 편집할 수 있습니다. 숨긴 탭은 화면과 데이터를 지우지 않고 하단 메뉴와 좌우 스와이프 대상에서만 제외됩니다.</div>
+    <div class="section-title">하단 탭</div>${rows}
+    <div class="section-title">초기화</div><button class="row reset-layout" data-action="resetLayout">기본값으로 초기화</button>`;
+  $("#app").innerHTML=standaloneShell("화면 구성 편집",body);bind();
+}
+function mutateLayout(id,dir){
+  const cfg=mainTabLayout(),i=cfg.order.indexOf(id);if(i<0)return;
+  if(dir){
+    const n=i+dir;if(n<0||n>=cfg.order.length)return;
+    [cfg.order[i],cfg.order[n]]=[cfg.order[n],cfg.order[i]];
+  }else{
+    if(cfg.hidden.has(id))cfg.hidden.delete(id);
+    else{
+      if(cfg.hidden.size>=cfg.order.length-1){toast("하단 탭은 최소 1개 이상 표시해야 합니다.");return}
+      cfg.hidden.add(id);
+    }
+  }
+  saveMainTabLayout(cfg.order,cfg.hidden);
+  const visible=visibleNavItems().map(x=>x.id);
+  if(!visible.includes(state.view))state.view=visible[0]||"home";
+  screenLayoutEditor();
+}
+function resetMainTabLayout(){store.del("lenton_main_tab_layout");screenLayoutEditor()}
 async function followRequestsScreen(){
   closeDrawer();$("#app").innerHTML=standaloneShell("팔로우 요청",'<div class="center">불러오는 중…</div>');bind();
   try{const a=await api("/api/v1/follow_requests",{query:{limit:"40"}});const rows=a.length?a.map(x=>`<div class="row"><img class="avatar" data-profile="${esc(x.id||"")}" style="width:48px;height:48px" src="${esc(x.avatar_static||x.avatar||"")}" alt=""><div class="grow"><b>${esc(x.display_name||x.username)}</b><div class="muted">@${esc(x.acct)}</div></div></div>`).join(""):'<div class="center">팔로우 요청이 없어요.</div>';$("#app").innerHTML=standaloneShell("팔로우 요청",rows);bind()}catch(e){toast(e.message)}
@@ -944,6 +1038,13 @@ function attachLentonGestures(){
 function bind(){
   document.querySelectorAll("[data-profile]").forEach(b=>b.onclick=e=>{e.stopPropagation();openProfile(b.dataset.profile)});
   document.querySelectorAll("[data-open-list]").forEach(b=>b.onclick=()=>{state.view="home";state.listId=b.dataset.openList;render()});
+  document.querySelectorAll("[data-list-manage]").forEach(b=>b.onclick=()=>listManageScreen(b.dataset.listManage));
+  document.querySelectorAll("[data-list-visible]").forEach(b=>b.onclick=()=>{const id=b.dataset.listVisible;setListHidden(id,!hiddenListIds().has(id));listsScreen()});
+  document.querySelectorAll("[data-list-save]").forEach(b=>b.onclick=()=>saveListSettings(b.dataset.listSave));
+  document.querySelectorAll("[data-list-delete]").forEach(b=>b.onclick=()=>deleteList(b.dataset.listDelete));
+  document.querySelectorAll("[data-layout-up]").forEach(b=>b.onclick=()=>mutateLayout(b.dataset.layoutUp,-1));
+  document.querySelectorAll("[data-layout-down]").forEach(b=>b.onclick=()=>mutateLayout(b.dataset.layoutDown,1));
+  document.querySelectorAll("[data-layout-toggle]").forEach(b=>b.onclick=()=>mutateLayout(b.dataset.layoutToggle,0));
   document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{state.view=b.dataset.view;state.listId=null;render()});
   document.querySelectorAll("[data-action]").forEach(b=>b.onclick=async()=>{
     const a=b.dataset.action;
@@ -958,6 +1059,7 @@ function bind(){
     else if(a==="topmenu")openDrawer()
     else if(a==="statusmenu")openStatusMenu(b.dataset.id)
     else if(a==="newlist")newList()
+    else if(a==="resetLayout")resetMainTabLayout()
     else if(a==="runsearch")runSearch()
     else if(a==="togglecw"){const body=b.closest(".status-main").querySelector("[data-cwbody]");body.style.display=body.style.display==="none"?"block":"none"}
     else if(a==="reply")replyById(b.dataset.id)
