@@ -1,7 +1,7 @@
 const $ = (s, r=document) => r.querySelector(s);
 const esc = (s="") => String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
 const plain = (html="") => { const d=document.createElement("div"); d.innerHTML=html; return d.textContent||""; };
-const fmtTime = (v) => { try { return new Intl.DateTimeFormat("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}).format(new Date(v)); } catch { return ""; } };
+const fmtTime = (v) => { try { const sec=Math.max(0,Math.floor((Date.now()-new Date(v).getTime())/1000)); if(sec<60)return "지금"; if(sec<3600)return Math.floor(sec/60)+"분"; if(sec<86400)return Math.floor(sec/3600)+"시간"; if(sec<604800)return Math.floor(sec/86400)+"일"; const d=new Date(v); return (d.getMonth()+1)+"월 "+d.getDate()+"일"; } catch { return ""; } };
 const store = {
   get(k,d=null){try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}},
   set(k,v){localStorage.setItem(k,JSON.stringify(v))},
@@ -11,7 +11,7 @@ const state = {
   session: store.get("lenton_session"),
   me:null, view:"home", homeMode:"home", listId:null, lists:[], busy:false,
   theme:store.get("lenton_theme","system"), accent:store.get("lenton_accent","#1d9bf0"),
-  pushError:"", toast:"", currentConversation:null
+  pushError:"", toast:"", currentConversation:null, profileReplies:false, profileAccount:null, profileRelationship:null, returnView:"home"
 };
 const REDIRECT_URI = location.origin + location.pathname;
 document.documentElement.style.setProperty("--accent",state.accent);
@@ -132,7 +132,7 @@ function statusCard(raw){
     <div class="status-head">
       <img class="avatar" src="\${esc(a.avatar_static||a.avatar||"")}" alt="">
       <div class="status-main">
-        <div class="author-line"><span class="name">\${esc(a.display_name||a.username||"")}</span><span class="acctline">&nbsp;@\${esc(a.acct||"")} · \${fmtTime(st.created_at)}</span></div>
+        <div class="author-line" data-profile="${esc(a.id||"")}"><span class="name">\${esc(a.display_name||a.username||"")}</span><span class="acctline">&nbsp;@\${esc(a.acct||"")} · \${fmtTime(st.created_at)}</span></div>
         \${cw}<div class="content"\${hidden}>\${esc(plain(st.content||""))}</div>
         \${media}
         <div class="actions">
@@ -197,17 +197,103 @@ async function openConversation(id){
     api(`/api/v1/conversations/${id}/read`,{method:"POST",form:{}}).catch(()=>{});
   }catch(e){toast(e.message)}
 }
-async function profileView(){
+
+function accentTextColor(){
+  let h=String(state.accent||"#1d9bf0").replace("#","");
+  if(h.length===3) h=h.split("").map(x=>x+x).join("");
+  const r=parseInt(h.slice(0,2),16)||0,g=parseInt(h.slice(2,4),16)||0,b=parseInt(h.slice(4,6),16)||0;
+  return ((r*299+g*587+b*114)/1000)>=160?"#000":"#fff";
+}
+function standaloneShell(title,body,right=""){
+  return `<div class="standalone-page"><header class="standalone-top"><button class="back" data-action="backMain">‹</button><h1>${esc(title)}</h1>${right}</header><main class="main">${body}</main></div>`;
+}
+function profileMarkup(a,{own=false,replies=false,relationship=null}={}){
+  const note=relationship?.note||"";
+  const noteColor=accentTextColor();
+  const controls=own?"":`<button class="outline-btn" data-action="followProfile">${relationship?.following?"팔로잉":"팔로우"}</button>`;
+  const privateNote=own?"":`<div class="private-note-card" data-action="editPrivateNote" style="color:${noteColor}"><div class="label">비밀 메모</div><div class="note">${esc(note.trim()?note:"메모를 추가하려면 탭하세요.")}</div></div>`;
+  return `<div class="profile-hero"><img class="profile-header" src="${esc(a.header_static||a.header||"")}" alt=""><img class="profile-avatar" src="${esc(a.avatar_static||a.avatar||"")}" alt=""></div>
+    <div class="profile-info"><div class="profile-name-row"><div class="profile-names"><h2>${esc(a.display_name||a.username)}</h2><div class="profile-handle">@${esc(a.acct)}</div></div>${controls}</div><div class="profile-bio">${esc(plain(a.note||""))}</div>${privateNote}<div class="profile-counts"><b style="color:var(--fg)">${a.following_count||0}</b> 팔로잉&nbsp;&nbsp;&nbsp;<b style="color:var(--fg)">${a.followers_count||0}</b> 팔로워</div></div>
+    <div class="home-tabs"><button data-action="profilePosts" class="${replies?"":"active"}">게시물</button><button data-action="profileReplies" class="${replies?"active":""}">답글</button></div>`;
+}
+async function profileView(replies=state.profileReplies){
+  state.profileAccount=null; state.profileRelationship=null; state.profileReplies=!!replies;
   renderLoadingShell("프로필");
   try{
     if(!state.me) state.me=await api("/api/v1/accounts/verify_credentials");
-    const a=state.me;
-    const statuses=await api(\`/api/v1/accounts/\${a.id}/statuses\`,{query:{limit:"25",exclude_replies:"true"}});
-    const head=\`<div class="profile-hero"><img class="profile-header" src="\${esc(a.header_static||a.header||"")}" alt=""><img class="profile-avatar" src="\${esc(a.avatar_static||a.avatar||"")}" alt=""></div>
-      <div class="profile-info"><div class="profile-name-row"><div class="profile-names"><h2>\${esc(a.display_name||a.username)}</h2><div class="profile-handle">@\${esc(a.acct)}</div></div></div><div class="profile-bio">\${esc(plain(a.note||""))}</div><div class="profile-counts"><b style="color:var(--fg)">\${a.following_count||0}</b> 팔로잉&nbsp;&nbsp;&nbsp;<b style="color:var(--fg)">\${a.followers_count||0}</b> 팔로워</div></div>
-      <div class="home-tabs"><button class="active">게시물</button><button data-action="profileReplies">답글</button></div>\`;
-    $("#app").innerHTML=shell("프로필",head+(statuses.length?statuses.map(statusCard).join(""):'<div class="center">게시물이 없어요.</div>'));bind()
-  }catch(e){$("#app").innerHTML=shell("프로필",\`<div class="center">\${esc(e.message)}</div>\`);bind()}
+    const a=state.me, query={limit:"25"}; if(!state.profileReplies)query.exclude_replies="true";
+    const statuses=await api(`/api/v1/accounts/${a.id}/statuses`,{query});
+    $("#app").innerHTML=shell("프로필",profileMarkup(a,{own:true,replies:state.profileReplies})+(statuses.length?statuses.map(statusCard).join(""):'<div class="center">게시물이 없어요.</div>'));bind()
+  }catch(e){$("#app").innerHTML=shell("프로필",`<div class="center">${esc(e.message)}</div>`);bind()}
+}
+async function openProfile(id,replies=false){
+  if(!id)return;
+  state.returnView=state.view; state.profileReplies=!!replies;
+  $("#app").innerHTML=standaloneShell("프로필",'<div class="center">불러오는 중…</div>');bind();
+  try{
+    const [a,rels]=await Promise.all([
+      api(`/api/v1/accounts/${id}`),
+      api("/api/v1/accounts/relationships",{query:{"id[]":id}})
+    ]);
+    const relationship=Array.isArray(rels)?(rels[0]||{}):{};
+    const query={limit:"25"}; if(!state.profileReplies)query.exclude_replies="true";
+    const statuses=await api(`/api/v1/accounts/${id}/statuses`,{query});
+    state.profileAccount=a; state.profileRelationship=relationship;
+    const more='<button class="profile-more" data-action="profileMenu" aria-label="프로필 관리">⋮</button>';
+    $("#app").innerHTML=standaloneShell("프로필",profileMarkup(a,{own:false,replies:state.profileReplies,relationship})+(statuses.length?statuses.map(statusCard).join(""):'<div class="center">게시물이 없어요.</div>'),more);bind();
+  }catch(e){$("#app").innerHTML=standaloneShell("프로필",`<div class="center">${esc(e.message)}</div>`);bind()}
+}
+function closePopup(){document.querySelector(".android-popup-shade")?.remove()}
+function openProfilePopup(){
+  closePopup(); const a=state.profileAccount,rel=state.profileRelationship||{}; if(!a)return;
+  const shade=document.createElement("div");shade.className="android-popup-shade";
+  shade.innerHTML=`<div class="android-popup">
+    <button data-pm="lists">리스트 관리</button>
+    <button data-pm="mute">${rel.muting?"뮤트 해제":"뮤트"}</button>
+    <button data-pm="block">${rel.blocking?"차단 해제":"차단"}</button>
+    <button data-pm="report">신고</button>
+    <button data-pm="copy">프로필 링크 복사</button>
+  </div>`;
+  document.body.append(shade);shade.onclick=e=>{if(e.target===shade)closePopup()};
+  shade.querySelectorAll("[data-pm]").forEach(b=>b.onclick=async()=>{const x=b.dataset.pm;closePopup();if(x==="lists")await showProfileListManager();else if(x==="mute")await toggleProfileRelation(rel.muting?"unmute":"mute");else if(x==="block")await toggleProfileRelation(rel.blocking?"unblock":"block");else if(x==="report")await reportProfile();else if(x==="copy"){try{await navigator.clipboard.writeText(a.url||"");toast("프로필 링크를 복사했어요.")}catch{toast("프로필 링크를 복사하지 못했어요.")}}});
+}
+function dialogBox(title,message,bodyHtml){
+  document.querySelector(".android-dialog-shade")?.remove();
+  const shade=document.createElement("div");shade.className="android-dialog-shade";
+  shade.innerHTML=`<div class="android-dialog"><h3>${esc(title)}</h3>${message?`<p>${esc(message)}</p>`:""}${bodyHtml}</div>`;document.body.append(shade);return shade;
+}
+async function editPrivateNote(){
+  const a=state.profileAccount,rel=state.profileRelationship;if(!a||!rel)return;
+  const shade=dialogBox("비밀 메모","상대방에게는 보이지 않습니다. 비워서 저장하면 메모가 삭제됩니다.",`<textarea id="privateNoteInput" placeholder="나만 볼 수 있는 메모">${esc(rel.note||"")}</textarea><div class="android-dialog-actions"><button data-cancel>취소</button><button data-save>저장</button></div>`);
+  shade.querySelector("[data-cancel]").onclick=()=>shade.remove();
+  shade.querySelector("[data-save]").onclick=async()=>{const btn=shade.querySelector("[data-save]"),value=$("#privateNoteInput",shade).value.trim();btn.disabled=true;try{const r=await api(`/api/v1/accounts/${a.id}/note`,{method:"POST",form:{comment:value}});state.profileRelationship={...rel,...r,note:r?.note??value};shade.remove();toast(value?"비밀 메모를 저장했어요.":"비밀 메모를 삭제했어요.");openProfile(a.id,state.profileReplies)}catch(e){btn.disabled=false;toast(e.message)}};
+}
+async function toggleProfileRelation(endpoint){
+  const a=state.profileAccount;if(!a)return;
+  const title=endpoint==="mute"?"뮤트":endpoint==="unmute"?"뮤트 해제":endpoint==="block"?"차단":"차단 해제";
+  if(!confirm(endpoint==="block"?"이 계정을 차단할까요?\n\n차단하면 현재 팔로우 중인 상태가 해제될 수 있어요.":`이 계정을 ${title}할까요?`))return;
+  try{const r=await api(`/api/v1/accounts/${a.id}/${endpoint}`,{method:"POST",form:{}});state.profileRelationship={...(state.profileRelationship||{}),...r};toast(title+" 완료");openProfile(a.id,state.profileReplies)}catch(e){toast(e.message)}
+}
+async function toggleFollowProfile(){
+  const a=state.profileAccount,rel=state.profileRelationship||{};if(!a)return;
+  try{const r=await api(`/api/v1/accounts/${a.id}/${rel.following?"unfollow":"follow"}`,{method:"POST",form:{}});state.profileRelationship={...rel,...r};openProfile(a.id,state.profileReplies)}catch(e){toast(e.message)}
+}
+async function reportProfile(){
+  const a=state.profileAccount;if(!a)return;
+  const shade=dialogBox("신고","신고 사유를 입력해 주세요.",'<textarea id="reportInput" placeholder="신고 내용"></textarea><div class="android-dialog-actions"><button data-cancel>취소</button><button data-save>신고</button></div>');
+  shade.querySelector("[data-cancel]").onclick=()=>shade.remove();
+  shade.querySelector("[data-save]").onclick=async()=>{const comment=$("#reportInput",shade).value.trim();try{await api("/api/v1/reports",{method:"POST",form:{account_id:a.id,comment,forward:"false"}});shade.remove();toast("신고를 접수했어요.")}catch(e){toast(e.message)}};
+}
+async function showProfileListManager(){
+  const a=state.profileAccount;if(!a)return;
+  try{
+    const [all,member]=await Promise.all([api("/api/v1/lists"),api(`/api/v1/accounts/${a.id}/lists`)]);
+    if(!all.length){toast("리스트가 없어요.");return}
+    const have=new Set((member||[]).map(x=>x.id));
+    const shade=dialogBox("리스트 관리","",`<div class="choices">${all.map((x,i)=>`<label><input type="checkbox" data-list-choice="${esc(x.id)}" ${have.has(x.id)?"checked":""}> ${esc(x.title||"리스트")}</label>`).join("")}</div><div class="android-dialog-actions"><button data-cancel>취소</button><button data-save>저장</button></div>`);
+    shade.querySelector("[data-cancel]").onclick=()=>shade.remove();
+    shade.querySelector("[data-save]").onclick=async()=>{const selected=new Set([...shade.querySelectorAll("[data-list-choice]:checked")].map(x=>x.dataset.listChoice));try{for(const list of all){const was=have.has(list.id),now=selected.has(list.id);if(was===now)continue;await api(`/api/v1/lists/${list.id}/accounts`,{method:now?"POST":"DELETE",form:{"account_ids[]":a.id}})}shade.remove();toast("리스트 설정을 저장했어요.")}catch(e){toast(e.message)}};
+  }catch(e){toast(e.message)}
 }
 
 async function searchView(){
@@ -246,6 +332,7 @@ function openDrawer(){
     <button class="drawer-row" data-drawer="profile"><span class="glyph">♙</span>프로필</button>
     <button class="drawer-row" data-drawer="bookmarks"><span class="glyph">▢</span>북마크</button>
     <button class="drawer-row" data-drawer="lists"><span class="glyph">☷</span>리스트</button>
+    <button class="drawer-row" data-drawer="followrequests"><span class="glyph">♧</span>팔로우 요청</button>
     <button class="drawer-row" data-drawer="settings"><span class="glyph">⚙</span>설정</button>
     <button class="drawer-row" data-drawer="theme"><span class="glyph">\${state.theme==="dark"?"☀":"◐"}</span>\${state.theme==="dark"?"라이트 모드":"다크 모드"}</button>
   </aside>\`;
@@ -255,11 +342,21 @@ function openDrawer(){
     const v=b.dataset.drawer;
     if(v==="profile"){closeDrawer();state.view="profile";render()}
     else if(v==="bookmarks")bookmarksView();
-    else if(v==="lists"){closeDrawer();state.view="home";state.listId=null;render();toast("홈의 리스트 버튼에서 바로 열 수 있어요.")}
+    else if(v==="lists"){closeDrawer();listsScreen()}
+    else if(v==="followrequests"){closeDrawer();followRequestsScreen()}
     else if(v==="settings"){closeDrawer();state.view="settings";render()}
     else if(v==="theme"){state.theme=state.theme==="dark"?"light":"dark";store.set("lenton_theme",state.theme);document.documentElement.dataset.theme=state.theme;closeDrawer();render()}
   });
 }
+async function listsScreen(){
+  closeDrawer();$("#app").innerHTML=standaloneShell("리스트",'<div class="center">불러오는 중…</div>');bind();
+  try{const lists=await api("/api/v1/lists");const rows=lists.length?lists.map(x=>`<button class="row" data-open-list="${esc(x.id)}"><div class="grow"><div class="row-title"><b>${esc(x.title||"리스트")}</b></div></div></button>`).join(""):'<div class="center">리스트가 없어요.</div>';$("#app").innerHTML=standaloneShell("리스트",rows);bind()}catch(e){toast(e.message)}
+}
+async function followRequestsScreen(){
+  closeDrawer();$("#app").innerHTML=standaloneShell("팔로우 요청",'<div class="center">불러오는 중…</div>');bind();
+  try{const a=await api("/api/v1/follow_requests",{query:{limit:"40"}});const rows=a.length?a.map(x=>`<div class="row"><img class="avatar" data-profile="${esc(x.id||"")}" style="width:48px;height:48px" src="${esc(x.avatar_static||x.avatar||"")}" alt=""><div class="grow"><b>${esc(x.display_name||x.username)}</b><div class="muted">@${esc(x.acct)}</div></div></div>`).join(""):'<div class="center">팔로우 요청이 없어요.</div>';$("#app").innerHTML=standaloneShell("팔로우 요청",rows);bind()}catch(e){toast(e.message)}
+}
+
 function closeDrawer(){document.querySelector(".drawer-shade")?.remove()}
 
 async function pushDiagnostics(){
@@ -328,10 +425,10 @@ function compose(reply=null,forcedVisibility=null){
   const draw=()=>{
     let old=$(".modal");if(old)old.remove();
     const m=document.createElement("div");m.className="modal";
-    m.innerHTML=`<div class="sheet"><div class="sheet-head"><button class="iconbtn" id="closeCompose">닫기</button><h2>${reply?"답글":"새 게시물"}</h2><button class="primary" id="sendCompose">게시</button></div>
+    m.innerHTML=`<div class="sheet"><div class="sheet-head"><button class="iconbtn" id="closeCompose">×</button><h2>${reply?"답글":"새 게시물"}</h2><button class="primary" id="sendCompose">${reply?"답글":"게시"}</button></div>
       ${recips.length?`<div class="recips">${recips.map((r,i)=>`<button data-r="${i}" class="${r.on?"":"off"}">@${esc(r.acct)}</button>`).join("")}</div>`:""}
-      <div id="parts">${parts.map((p,i)=>`<div class="part" data-p="${i}"><div><b>게시물 ${i+1}</b> <label style="float:right"><input type="checkbox" data-cw="${i}" ${p.cw?"checked":""}> CW</label></div>${p.cw?`<input data-sp="${i}" placeholder="내용 경고" value="${esc(p.spoiler)}">`:""}<textarea data-t="${i}" placeholder="내용을 입력하세요">${esc(p.text)}</textarea></div>`).join("")}</div>
-      <button class="pill" id="addPart">＋ 다른 게시물 추가</button></div>`;
+      <div id="parts">${parts.map((p,i)=>`<div class="part" data-p="${i}"><div class="part-head"><b>게시물 ${i+1}</b><label><input type="checkbox" data-cw="${i}" ${p.cw?"checked":""}> CW</label></div><div class="part-body"><img class="avatar" src="${esc(state.me?.avatar_static||state.me?.avatar||"")}" alt=""><div class="part-fields">${p.cw?`<input type="text" data-sp="${i}" placeholder="내용 경고" value="${esc(p.spoiler)}">`:""}<textarea data-t="${i}" placeholder="${reply?"답글을 입력하세요":"무슨 일이 일어나고 있나요?"}">${esc(p.text)}</textarea></div></div></div>`).join("")}</div>
+      <div class="compose-tools"><button type="button">▧</button><button type="button" class="gif">GIF</button><button type="button">☷</button><button type="button">⌖</button><button type="button" class="part-add" id="addPart">＋ 타래</button></div></div>`;
     document.body.append(m);
     m.querySelectorAll("[data-t]").forEach(x=>x.addEventListener("input",e=>parts[+e.target.dataset.t].text=e.target.value));
     m.querySelectorAll("[data-sp]").forEach(x=>x.addEventListener("input",e=>parts[+e.target.dataset.sp].spoiler=e.target.value));
@@ -395,6 +492,8 @@ function urlBase64ToUint8Array(s){const p="=".repeat((4-s.length%4)%4),b=(s+p).r
 
 
 function bind(){
+  document.querySelectorAll("[data-profile]").forEach(b=>b.onclick=e=>{e.stopPropagation();openProfile(b.dataset.profile)});
+  document.querySelectorAll("[data-open-list]").forEach(b=>b.onclick=()=>{state.view="home";state.listId=b.dataset.openList;render()});
   document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{state.view=b.dataset.view;state.listId=null;render()});
   document.querySelectorAll("[data-action]").forEach(b=>b.onclick=async()=>{
     const a=b.dataset.action;
@@ -410,7 +509,12 @@ function bind(){
     else if(a==="reply")replyById(b.dataset.id)
     else if(a==="fav"||a==="boost"||a==="bookmark")statusAction(b.dataset.id,a)
     else if(a==="replydm"){if(state.currentConversation?.last_status)compose(state.currentConversation.last_status,"direct")}
-    else if(a==="profileReplies")toast("답글 탭은 다음 패치에서 Android와 동일하게 연결할게요.")
+    else if(a==="profileReplies"){if(state.profileAccount)openProfile(state.profileAccount.id,true);else profileView(true)}
+    else if(a==="profilePosts"){if(state.profileAccount)openProfile(state.profileAccount.id,false);else profileView(false)}
+    else if(a==="profileMenu")openProfilePopup()
+    else if(a==="editPrivateNote")editPrivateNote()
+    else if(a==="followProfile")toggleFollowProfile()
+    else if(a==="backMain"){state.profileAccount=null;state.profileRelationship=null;render()}
   });
   document.querySelectorAll("[data-home-mode]").forEach(b=>b.onclick=()=>{state.homeMode=b.dataset.homeMode;state.listId=null;render()});
   document.querySelectorAll("[data-list]").forEach(b=>b.onclick=()=>{state.listId=state.listId===b.dataset.list?null:b.dataset.list;render()});
