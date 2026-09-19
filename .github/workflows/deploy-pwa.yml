@@ -153,6 +153,7 @@ jobs:
               "versionCode":latest["versionCode"],
               "versionName":latest["versionName"],
               "apkSha256":latest["sha256"],
+              "notes":latest.get("notes",""),
               "pwaRevision":revision,
               "cacheToken":token,
           },ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
