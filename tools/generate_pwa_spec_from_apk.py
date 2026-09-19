@@ -432,6 +432,7 @@ def main():
       "게시물과 답글","고정","미디어","GIF","CW","타래","이전 대화 보기",
       "문의 유형","이메일로 보내기","계정 추가","앱 업데이트","업데이트 내역",
       "HomeSwipeRecyclerView","positionHomeIndicator","renderProfile","loadNotifications",
+      "MainNavIconView","StatusActionIconView","DrawerIconView","ComposerToolView",
       "알림","프로필","답글","게시물"
     ]
     contexts={}
