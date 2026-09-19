@@ -39,7 +39,7 @@ jobs:
           from pathlib import Path
           from PIL import Image
 
-          encoded = Path("PWA/lenton-official-icon.b64").read_text().strip()
+          encoded = "".join(Path("PWA/lenton-official-icon.b64").read_text().split())
           encoded += "=" * (-len(encoded) % 4)
           source = Path("dist-pwa/lenton-official-source.jpg")
           source.write_bytes(base64.b64decode(encoded, validate=True))
