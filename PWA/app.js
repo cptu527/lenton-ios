@@ -814,6 +814,37 @@ async function deleteList(id){
 }
 
 function tabLabel(id){return id==="home"?"홈":id==="search"?"검색":id==="notifications"?"알림":"DM"}
+function attachLayoutEditorDrag(){
+  const container=document.querySelector(".layout-tab-row")?.parentElement;if(!container||container.dataset.dragReady==="1")return;
+  container.dataset.dragReady="1";
+  let row=null,timer=null,dragging=false,startY=0;
+  container.querySelectorAll(".layout-grip").forEach(grip=>{
+    grip.addEventListener("pointerdown",e=>{
+      row=grip.closest(".layout-tab-row");if(!row)return;startY=e.clientY;dragging=false;
+      try{grip.setPointerCapture(e.pointerId)}catch{}
+      timer=setTimeout(()=>{if(!row)return;dragging=true;row.classList.add("dragging");},220);
+    });
+    grip.addEventListener("pointermove",e=>{
+      if(!row)return;
+      if(!dragging&&Math.abs(e.clientY-startY)>8){clearTimeout(timer);timer=null;row=null;return}
+      if(!dragging)return;
+      e.preventDefault();
+      const rows=[...container.querySelectorAll(".layout-tab-row")].filter(x=>x!==row);
+      const target=rows.find(x=>e.clientY<x.getBoundingClientRect().top+x.getBoundingClientRect().height/2);
+      if(target)container.insertBefore(row,target);else container.appendChild(row);
+    });
+    const finish=()=>{
+      clearTimeout(timer);timer=null;if(!row)return;
+      if(dragging){
+        row.classList.remove("dragging");
+        const cfg=mainTabLayout(),order=[...container.querySelectorAll(".layout-tab-row")].map(x=>x.dataset.layoutId);
+        saveMainTabLayout(order,cfg.hidden);screenLayoutEditor();
+      }
+      row=null;dragging=false;
+    };
+    grip.addEventListener("pointerup",finish);grip.addEventListener("pointercancel",finish);
+  });
+}
 function screenLayoutEditor(){
   closeDrawer();
   const cfg=mainTabLayout();
@@ -1501,6 +1532,7 @@ function bind(){
   }
   attachLentonGestures();
   restoreScroll();
+  attachLayoutEditorDrag();
 }
 
 let pendingAutomaticUpdate=false;
