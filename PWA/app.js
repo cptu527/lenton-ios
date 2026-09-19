@@ -82,6 +82,13 @@ async function finishOAuth(){
 function logout(){ if(!confirm("로그아웃할까요?"))return; store.del("lenton_session");state.session=null;state.me=null;render() }
 function standalone(){return matchMedia("(display-mode: standalone)").matches||navigator.standalone===true}
 
+function navIcon(v){
+  const common='class="nav-svg" viewBox="0 0 32 32" aria-hidden="true"';
+  if(v==="home")return `<svg ${common}><path d="M5 14.2 16 5l11 9.2v12.3h-7.1v-8.1h-7.8v8.1H5z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>`;
+  if(v==="search")return `<svg ${common}><circle cx="13.5" cy="13.5" r="7.8" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="m19.2 19.2 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>`;
+  if(v==="notifications")return `<svg ${common}><path d="M16 5 27 16 16 27 5 16Z" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
+  return `<svg ${common}><rect x="4.5" y="7.5" width="23" height="17" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="m5.5 9 10.5 8 10.5-8" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>`;
+}
 function shell(title,body,opts={}){
   const av=state.me?.avatar_static||state.me?.avatar||"";
   const avatar=av
@@ -96,13 +103,12 @@ function shell(title,body,opts={}){
     </header>
     <main class="main">${body}</main>
     <nav class="bottom">
-      ${nav("home","⌂")}${nav("search","⌕")}${nav("notifications","♢")}${nav("dm","✉")}${nav("profile","○")}
+      ${nav("home")}${nav("search")}${nav("notifications")}${nav("dm")}
     </nav>
     ${opts.fab?'<button class="fab" data-action="compose">✎</button>':""}
   </div>`;
 }
-
-function nav(v,icon){return `<button data-view="${v}" class="${state.view===v?"active":""}" aria-label="${v}">${icon}</button>`}
+function nav(v){return `<button data-view="${v}" class="${state.view===v?"active":""}" aria-label="${v}">${navIcon(v)}</button>`}
 
 function loginView(){
   const install=!standalone()?'<div class="install-card"><b>아이폰/아이패드 설치</b><p>Safari 공유 버튼 → <b>홈 화면에 추가</b> → <b>웹 앱으로 열기</b></p></div>':"";
@@ -147,13 +153,75 @@ function statusCard(raw){
 }
 
 async function loadLists(){try{state.lists=await api("/api/v1/lists")}catch{state.lists=[]}}
+async function loadAllFollowing(){
+  if(!state.me) state.me=await api("/api/v1/accounts/verify_credentials");
+  const out=[],seen=new Set();let maxId="";
+  for(let page=0;page<50;page++){
+    const query={limit:"80"};if(maxId)query.max_id=maxId;
+    const a=await api(`/api/v1/accounts/${state.me.id}/following`,{query});
+    if(!Array.isArray(a)||!a.length)break;
+    for(const ac of a){if(ac?.id&&!seen.has(ac.id)){seen.add(ac.id);out.push(ac)}}
+    if(a.length<80)break;
+    const next=a[a.length-1]?.id||"";
+    if(!next||next===maxId)break;maxId=next;
+  }
+  return out;
+}
+function statusId(raw){return raw?.id||raw?.reblog?.id||""}
+function nonDirect(raw){return raw&&raw.visibility!=="direct"}
+function lentonPublicStatus(raw,allowed){
+  if(!raw||!raw.account)return false;
+  const author=raw.account.id||"",me=state.me?.id||"";
+  if(!author||author===me||!allowed.has(author))return false;
+  if(raw.visibility==="direct")return false;
+  if(raw.reblog)return false;
+  if(raw.in_reply_to_id!==null&&raw.in_reply_to_id!==undefined&&String(raw.in_reply_to_id)!=="")return false;
+  return true;
+}
+function mergeChronological(home,pub,allowed){
+  const out=[],seen=new Set();
+  const add=raw=>{if(!nonDirect(raw))return;const id=statusId(raw);if(id&&seen.has(id))return;if(id)seen.add(id);out.push(raw)};
+  for(const raw of home||[])add(raw);
+  for(const raw of pub||[]){const author=raw?.account?.id||"";if(author&&allowed.has(author))add(raw)}
+  out.sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
+  return out;
+}
+async function loadLentonHome(chronological){
+  const following=await loadAllFollowing(),allowed=new Set(following.map(x=>x.id));
+  if(chronological){
+    const [home,pub]=await Promise.all([
+      api("/api/v1/timelines/home",{query:{limit:"40"}}),
+      api("/api/v1/timelines/public",{query:{limit:"40"}})
+    ]);
+    return mergeChronological(home,pub,allowed);
+  }
+  const collected=[],seen=new Set();let homeCursor="",pubCursor="",homeDone=false,pubDone=false;
+  for(let scan=0;scan<8&&collected.length<30;scan++){
+    const hq={limit:"40"},pq={limit:"40"};if(homeCursor)hq.max_id=homeCursor;if(pubCursor)pq.max_id=pubCursor;
+    const [home,pub]=await Promise.all([
+      homeDone?Promise.resolve([]):api("/api/v1/timelines/home",{query:hq}).catch(()=>[]),
+      pubDone?Promise.resolve([]):api("/api/v1/timelines/public",{query:pq}).catch(()=>[])
+    ]);
+    for(const src of [home,pub])for(const raw of src||[]){
+      if(!lentonPublicStatus(raw,allowed))continue;
+      const id=statusId(raw);if(id&&seen.has(id))continue;if(id)seen.add(id);collected.push(raw);
+      if(collected.length>=30)break;
+    }
+    const nextHome=home?.[home.length-1]?.id||"",nextPub=pub?.[pub.length-1]?.id||"";
+    if(!home?.length||!nextHome||nextHome===homeCursor)homeDone=true;else homeCursor=nextHome;
+    if(!pub?.length||!nextPub||nextPub===pubCursor)pubDone=true;else pubCursor=nextPub;
+    if(homeDone&&pubDone)break;
+  }
+  collected.sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
+  return collected.slice(0,80);
+}
 async function homeView(){
   let data=[]; state.busy=true;renderLoadingShell("홈");
   try{
     if(!state.lists.length) await loadLists();
     if(state.listId) data=await api(`/api/v1/timelines/list/${state.listId}`,{query:{limit:"30"}});
-    else data=await api(state.homeMode==="public"?"/api/v1/timelines/public":"/api/v1/timelines/home",{query:{limit:"30"}});
-    const tabs=`<div class="home-tabs"><button data-home-mode="home" class="${state.homeMode==="home"&&!state.listId?"active":""}">팔로잉</button><button data-home-mode="public" class="${state.homeMode==="public"&&!state.listId?"active":""}">공개</button></div>`;
+    else data=await loadLentonHome(state.homeMode!=="public");
+    const tabs=`<div class="home-tabs"><button data-home-mode="home" class="${state.homeMode==="home"&&!state.listId?"active":""}">시간순</button><button data-home-mode="public" class="${state.homeMode==="public"&&!state.listId?"active":""}">퍼블릭</button></div>`;
     const chips=state.lists.length?`<div class="chips">${state.lists.map(x=>`<button class="chip ${state.listId===x.id?"active":""}" data-list="${x.id}">${esc(x.title)}</button>`).join("")}<button class="chip" data-action="newlist">＋ 리스트</button></div>`:"";
     $("#app").innerHTML=shell(state.listId?(state.lists.find(x=>x.id===state.listId)?.title||"리스트"):"홈",tabs+chips+(data.length?data.map(statusCard).join(""):'<div class="center">표시할 게시물이 없어요.</div>'),{fab:true});
   }catch(e){$("#app").innerHTML=shell("홈",`<div class="center">타임라인을 불러오지 못했어요.<br><br>${esc(e.message)}<br><br><button class="primary" data-action="reload">다시 시도</button></div>`,{fab:true})}
