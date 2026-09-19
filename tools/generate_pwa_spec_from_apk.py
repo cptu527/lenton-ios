@@ -477,6 +477,7 @@ def main():
       "문의 유형","이메일로 보내기","계정 추가","앱 업데이트","업데이트 내역",
       "HomeSwipeRecyclerView","positionHomeIndicator","renderProfile","loadNotifications",
       "MainNavIconView","StatusActionIconView","DrawerIconView","ComposerToolView",
+      "/api/v1/conversations","새 DM","DM 보내기","메시지 보내기","showConversation","loadMessages",
       "알림","프로필","답글","게시물"
     ]
     contexts={}
@@ -504,6 +505,8 @@ def main():
         "public": spec["timeline"]["public"],
         "homeTabs": spec["homeTabs"],
         "profileTabs": spec["renderer"]["profileTabs"],
+        "profileCounts": spec["renderer"].get("profileCounts"),
+        "notificationTabs": spec["renderer"].get("notificationTabs"),
         "drawerRows": spec["renderer"]["drawerRows"],
         "compose": spec["renderer"]["compose"],
         "features": spec["features"],
