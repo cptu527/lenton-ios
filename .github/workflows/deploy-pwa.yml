@@ -1,12 +1,18 @@
-name: Deploy Lenton PWA
+name: Deploy Lenton PWA from Android source
 
 on:
   push:
-    branches: [ main, pwa/exact-android-v02517 ]
+    branches: [ main, pwa/android-single-source-v02517 ]
     paths:
       - 'PWA/**'
+      - 'tools/sync_android_to_pwa.py'
       - '.github/workflows/deploy-pwa.yml'
   workflow_dispatch:
+    inputs:
+      android_ref:
+        description: 'mastoflow-android branch/tag/SHA to mirror'
+        required: false
+        default: 'build/v02517-private-note-accent'
 
 permissions:
   contents: write
@@ -15,94 +21,93 @@ concurrency:
   group: lenton-pwa-deploy
   cancel-in-progress: true
 
+env:
+  ANDROID_REPO: cptu527/mastoflow-android
+  ANDROID_REF: ${{ inputs.android_ref || 'build/v02517-private-note-accent' }}
+
 jobs:
   deploy:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate JavaScript
+      - name: Checkout canonical Android Lenton
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.ANDROID_REPO }}
+          ref: ${{ env.ANDROID_REF }}
+          path: android-source
+
+      - name: Resolve Android version and source SHA
+        id: android
+        run: |
+          echo "commit=$(git -C android-source rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "main_sha=$(git -C android-source rev-parse HEAD:app/src/main/java/com/mastoflow/app/MainActivity.java)" >> "$GITHUB_OUTPUT"
+          VERSION_NAME="$(grep -RhoE 'versionName[ =]+"?[0-9]+\.[0-9]+\.[0-9]+' android-source/app android-source/*.gradle* 2>/dev/null | head -n1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)"
+          test -n "$VERSION_NAME"
+          echo "version=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "Android version: $VERSION_NAME"
+          echo "Android commit: $(git -C android-source rev-parse HEAD)"
+
+      - name: Generate PWA contract from Android source
+        run: |
+          python3 tools/sync_android_to_pwa.py             android-source/app/src/main/java/com/mastoflow/app/MainActivity.java             "${{ steps.android.outputs.main_sha }}"             "${{ env.ANDROID_REF }}"
+
+      - name: Validate web runtime
         run: |
           node --check PWA/app.js
           node --check PWA/sw.js
+          node --check PWA/generated/android-contract.js
 
-      - name: Extract launcher from published Android APK
+      - name: Build PWA using exact Android release artwork
         run: |
           rm -rf dist-pwa
           cp -R PWA dist-pwa
-          python3 - <<'PY'
-          from pathlib import Path
+          VERSION="${{ steps.android.outputs.version }}"
+          APK="/tmp/Lenton-v${VERSION}-test.apk"
+          URL="https://raw.githubusercontent.com/cptu527/lenton-updates/main/Lenton-v${VERSION}-test.apk"
+          python3 - "$URL" "$APK" <<'PY'
+          import sys
           from urllib.request import urlretrieve
-          import zipfile
-
-          apk = Path("/tmp/Lenton-v0.25.17-test.apk")
-          urlretrieve(
-              "https://raw.githubusercontent.com/cptu527/lenton-updates/main/Lenton-v0.25.17-test.apk",
-              apk,
-          )
-          print("APK bytes:", apk.stat().st_size)
-
+          urlretrieve(sys.argv[1],sys.argv[2])
+          PY
+          test -s "$APK"
+          python3 - "$APK" <<'PY'
+          from pathlib import Path
+          import struct,sys,zipfile
+          apk=Path(sys.argv[1])
           with zipfile.ZipFile(apk) as z:
-              names = z.namelist()
-              images = [
-                  n for n in names
-                  if ("launcher" in n.lower() or "mipmap" in n.lower()
-                      or n.lower().endswith(".png") or n.lower().endswith(".webp"))
-              ]
-              print("Packaged image/resource candidates:")
-              for n in images[:300]:
-                  print(n)
-
-              import struct
-              pngs = []
-              for n in names:
-                  if not n.lower().endswith(".png") or ".9.png" in n.lower():
-                      continue
-                  data = z.read(n)
-                  if not data.startswith(bytes([137,80,78,71,13,10,26,10])) or len(data) < 24:
-                      continue
-                  width, height = struct.unpack(">II", data[16:24])
-                  pngs.append((n, width, height, len(data)))
-                  print("PNG", n, width, height, len(data))
-
-              legacy = [x for x in pngs if x[1] == 192 and x[2] == 192]
-              if not legacy:
-                  legacy = [x for x in pngs if x[1] == x[2] and x[1] in (48,72,96,144,192)]
-              if not legacy:
-                  legacy = [x for x in pngs if x[1] == x[2]]
-
-              if not legacy:
-                  raise SystemExit("No square PNG launcher candidate found in APK")
-
-              launcher = sorted(legacy, key=lambda x: (x[1] == 192, x[3], x[1]))[-1]
-              print("Using Android launcher candidate:", launcher)
+              pngs=[]
+              for n in z.namelist():
+                  if not n.lower().endswith(".png") or ".9.png" in n.lower(): continue
+                  data=z.read(n)
+                  if not data.startswith(bytes([137,80,78,71,13,10,26,10])) or len(data)<24: continue
+                  w,h=struct.unpack(">II",data[16:24])
+                  if w==h and w in (48,72,96,144,192):
+                      pngs.append((n,w,len(data)))
+              if not pngs: raise SystemExit("No Android launcher candidate")
+              launcher=sorted(pngs,key=lambda x:(x[1]==192,x[2],x[1]))[-1]
+              print("Android launcher:",launcher)
               Path("/tmp/lenton-android-launcher.png").write_bytes(z.read(launcher[0]))
           PY
-
-          test -s /tmp/lenton-android-launcher.png
           cp /tmp/lenton-android-launcher.png dist-pwa/icon-192.png
           cp /tmp/lenton-android-launcher.png dist-pwa/icon-512.png
           cp /tmp/lenton-android-launcher.png dist-pwa/icon-1024.png
           sips -z 192 192 dist-pwa/icon-192.png >/dev/null
           sips -z 512 512 dist-pwa/icon-512.png >/dev/null
           sips -z 1024 1024 dist-pwa/icon-1024.png >/dev/null
-          rm -f dist-pwa/lenton-official-icon.b64
           printf '%s\n' '' > dist-pwa/.nojekyll
 
-      - name: Verify generated icon sizes
+      - name: Verify Android/PWA lockstep
         run: |
           python3 - <<'PY'
-          import struct
+          import json
           from pathlib import Path
-          for size in (192, 512, 1024):
-              p = Path(f"dist-pwa/icon-{size}.png")
-              data = p.read_bytes()
-              if data[:8] != b"\x89PNG\r\n\x1a\n":
-                  raise SystemExit(f"{p} is not PNG")
-              w, h = struct.unpack(">II", data[16:24])
-              if (w, h) != (size, size):
-                  raise SystemExit(f"{p}: {(w,h)}")
-              print(p, w, h, len(data))
+          c=json.loads(Path("dist-pwa/generated/android-contract.json").read_text())
+          assert c["navigation"]==["home","search","notifications","messages"]
+          assert c["home_tabs"]==["chronological","public"]
+          assert c["android_mainactivity_sha"]=="${{ steps.android.outputs.main_sha }}"
+          print("PWA locked to Android MainActivity",c["android_mainactivity_sha"])
           PY
 
       - name: Publish gh-pages branch
