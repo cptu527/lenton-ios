@@ -1863,8 +1863,11 @@ function bind(){
     else if(a==="reply")replyById(b.dataset.id)
     else if(a==="fav"||a==="boost"||a==="bookmark")statusAction(b.dataset.id,a)
     else if(a==="replydm"){if(state.currentConversation?.last_status)compose(state.currentConversation.last_status,"direct")}
-    else if(a==="profileReplies"){if(state.profileAccount)openProfile(state.profileAccount.id,true);else profileView(true)}
-    else if(a==="profilePosts"){if(state.profileAccount)openProfile(state.profileAccount.id,false);else profileView(false)}
+    else if(a==="profileReplies"){if(state.profileAccount)openProfile(state.profileAccount.id,"replies");else profileView("replies")}
+    else if(a==="profilePosts"){if(state.profileAccount)openProfile(state.profileAccount.id,"posts");else profileView("posts")}
+    else if(a==="profilePinned"){if(state.profileAccount)openProfile(state.profileAccount.id,"pinned");else profileView("pinned")}
+    else if(a==="profileMedia"){if(state.profileAccount)openProfile(state.profileAccount.id,"media");else profileView("media")}
+    else if(a==="profileEditOwn"){pushNavSnapshot();profileEditScreen()}
     else if(a==="profileMenu")openProfilePopup()
     else if(a==="editPrivateNote")editPrivateNote()
     else if(a==="followProfile")toggleFollowProfile()
