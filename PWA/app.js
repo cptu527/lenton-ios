@@ -491,11 +491,11 @@ async function notificationsView(replyMentions=false){
           <img class="notify-avatar" data-profile="${esc(a.id||"")}" src="${esc(a.avatar_static||a.avatar||"")}" alt="">
           <div class="notify-body">
             <div class="notify-head">
-              <div><b>${esc(a.display_name||a.username||"알림")}</b> <span>@${esc(a.acct||"")} · ${fmtTime(x.created_at)}</span></div>
+              <div><b>${renderEmojiText(a.display_name||a.username||"알림",a.emojis||[])}</b> <span>@${esc(a.acct||"")} · ${fmtTime(x.created_at)}</span></div>
               <button class="status-more" data-action="statusmenu" data-id="${esc(st.id||"")}">⋮</button>
             </div>
             ${replyMeta}
-            <div class="notify-content">${esc(plain(st.content||""))}</div>
+            <div class="notify-content">${renderRichText(st.content||"")}</div>
             <div class="actions lenton-actions notify-actions">
               <button data-action="reply" data-id="${esc(st.id||"")}">▢</button>
               <button class="boost ${st.reblogged?"on":""}" data-action="boost" data-id="${esc(st.id||"")}">↔ <span class="count">${st.reblogs_count||""}</span></button>
@@ -509,7 +509,7 @@ async function notificationsView(replyMentions=false){
       const label=x.type==="follow"?"나를 팔로우했습니다":x.type==="follow_request"?"팔로우를 요청했습니다":"새 알림";
       const isNew=(new Date(x.created_at||0).getTime()||0)>seenAt; return `<article class="notify-simple ${isNew?"notification-new":""}">
         <img class="notify-avatar" data-profile="${esc(a.id||"")}" src="${esc(a.avatar_static||a.avatar||"")}" alt="">
-        <div><b>${esc(a.display_name||a.username||"알림")}님이 ${esc(label)}</b><div class="notify-date">${fmtTime(x.created_at)}</div></div>
+        <div><b>${renderEmojiText(a.display_name||a.username||"알림",a.emojis||[])}님이 ${esc(label)}</b><div class="notify-date">${fmtTime(x.created_at)}</div></div>
       </article>`;
     }).join(""):'<div class="center">새 알림이 없어요.</div>';
     $("#app").innerHTML=shell("알림",tabs+rows,{view:"notifications",fab:true});bind();
@@ -525,7 +525,7 @@ async function dmView(){
       return `<button class="message-row ${c.unread?"unread":""}" data-conv="${c.id}">
         <img class="message-avatar" src="${esc(a?.avatar_static||a?.avatar||"")}" alt="">
         <div class="message-main">
-          <div class="message-name">${esc(a?.display_name||a?.username||"대화")}</div>
+          <div class="message-name">${renderEmojiText(a?.display_name||a?.username||"대화",a?.emojis||[])}</div>
           <div class="message-handle">@${esc(a?.acct||"")}</div>
           <div class="message-preview">${esc(txt)}</div>
         </div>
