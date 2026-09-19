@@ -124,6 +124,10 @@ function applyAndroidSpecMetrics(){
   root.style.setProperty("--android-status-padding",sp.map(x=>String(x)+"px").join(" "));
   const dp=ui.drawerPadding||[24,24,24,20];
   root.style.setProperty("--android-drawer-padding",dp.map(x=>String(x)+"px").join(" "));
+  const np=ui.notificationPadding||[16,12,14,10];
+  root.style.setProperty("--android-notification-padding",np.map(x=>String(x)+"px").join(" "));
+  const mp=ui.messagePadding||[16,12,14,12];
+  root.style.setProperty("--android-message-padding",mp.map(x=>String(x)+"px").join(" "));
 }
 applyAndroidSpecMetrics();
 
