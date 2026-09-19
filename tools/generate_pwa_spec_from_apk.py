@@ -126,20 +126,19 @@ def parse_bottom_nav(method: str):
 
 def parse_drawer(method: str):
     rows=[]
-    mapping={"프로필":"profile","북마크":"bookmarks","리스트":"lists","팔로우 요청":"followrequests","설정":"settings"}
-    for glyph,label in re.findall(r'drawerRow\([^,]+,\s*"([^"]+)"\s*,\s*"([^"]+)"',method or ""):
-        rows.append({"id":mapping.get(label,label),"label":label,"glyph":glyph})
+    mapping={
+      "프로필":"profile","프로필 편집":"profileedit","좋아요":"favourites","북마크":"bookmarks",
+      "팔로우 요청":"followrequests","화면 구성 편집":"layoutedit","리스트":"lists",
+      "실시간 연결 상태 표시 설정":"realtime","설정":"settings","앱 업데이트":"update"
+    }
+    modern=re.findall(r'drawer(?:Update)?Row\([^,]+,\s*\d+\s*,\s*"([^"]+)"',method or "")
+    for label in modern:
+        if label not in [x.get("label") for x in rows]:
+            rows.append({"id":mapping.get(label,label),"label":label})
     if not rows:
-        rows=[
-            {"id":"profile","label":"프로필","glyph":"♙"},
-            {"id":"bookmarks","label":"북마크","glyph":"▢"},
-            {"id":"lists","label":"리스트","glyph":"☷"},
-            {"id":"followrequests","label":"팔로우 요청","glyph":"♧"},
-            {"id":"settings","label":"설정","glyph":"⚙"},
-        ]
-    rows.append({"id":"theme","labelLight":"다크 모드","labelDark":"라이트 모드","glyphLight":"◐","glyphDark":"☀"})
+        for glyph,label in re.findall(r'drawerRow\([^,]+,\s*"([^"]+)"\s*,\s*"([^"]+)"',method or ""):
+            rows.append({"id":mapping.get(label,label),"label":label,"glyph":glyph})
     return rows
-
 
 def quoted_literals(text: str):
     vals=[]
@@ -165,29 +164,52 @@ def parse_home_tabs(main_text: str):
     return ["시간순","퍼블릭"]
 
 def parse_profile_tabs(main_text: str):
-    m=extract_any_method(main_text,"renderProfile","showOwnProfile","showProfile")
     allowed={"게시물","답글","게시물과 답글","고정","미디어"}
-    vals=first_matching_literals(m,allowed)
-    # Preserve source order and remove duplicate aliases.
-    if vals:
-        return vals
-    return []
+    sig=re.compile(r'(?:private|public|protected)\s+[^\n{;]+\s+(\w+)\s*\([^)]*\)\s*\{')
+    candidates=[]
+    for m in sig.finditer(main_text):
+        name=m.group(1)
+        block=extract_method(main_text,name)
+        if not block:
+            continue
+        score=0
+        for needle,w in [
+          ("followers_count",4),("following_count",4),("header",2),("avatar",2),
+          ("프로필",2),("게시물",3),("답글",3)
+        ]:
+            if needle in block:score+=w
+        vals=first_matching_literals(block,allowed)
+        if vals:score+=len(vals)*3
+        if score>=8:candidates.append((score,len(block),vals,name))
+    if not candidates:
+        return []
+    candidates.sort(reverse=True)
+    vals=candidates[0][2]
+    # v0.25.17 profile renderer exposes only posts/replies; "고정"/"미디어"
+    # elsewhere belong to status/media management and are not profile tabs.
+    clean=[v for v in vals if v in ("게시물","답글","게시물과 답글")]
+    return clean
 
 def parse_compose_literals(main_text: str):
-    m=extract_any_method(main_text,"compose","showComposer","openComposer")
-    vals=quoted_literals(m)
+    vals=quoted_literals(main_text)
     def pick(*choices):
         for c in choices:
             if c in vals:return c
         return choices[0]
+    pos=main_text.find("class ComposerToolView")
+    tool_block=main_text[pos:pos+14000] if pos>=0 else ""
     return {
         "newTitle":pick("새 게시물","새 글"),
         "replyTitle":pick("답글","답장"),
         "postButton":pick("게시","작성"),
         "replyButton":pick("답글","답장"),
-        "cw":"CW" if "CW" in vals or "콘텐츠 경고" in vals else "",
-        "hasGif":("GIF" in vals),
-        "hasThread":("타래" in m or "＋ 타래" in m or "+ 타래" in m),
+        "cw":"CW" if "CW" in main_text or "콘텐츠 경고" in main_text else "",
+        "hasPhoto":("PHOTO" in tool_block),
+        "hasCamera":("CAMERA" in tool_block),
+        "hasGif":("GIF" in tool_block or "GIF" in main_text),
+        "hasPoll":("POLL" in tool_block or "투표" in main_text),
+        "hasThread":("PLUS" in tool_block or "타래" in main_text),
+        "toolOrder":["photo","camera","gif","poll","cw","plus"] if tool_block else [],
     }
 
 def detect_features(main_text: str):
