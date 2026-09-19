@@ -407,9 +407,9 @@ async function notificationsView(replyMentions=false){
             <div class="notify-content">${esc(plain(st.content||""))}</div>
             <div class="actions lenton-actions notify-actions">
               <button data-action="reply" data-id="${esc(st.id||"")}">▢</button>
-              <button data-action="boost" data-id="${esc(st.id||"")}">↔</button>
-              <button data-action="fav" data-id="${esc(st.id||"")}">${st.favourited?"♥":"♡"}</button>
-              <button data-action="bookmark" data-id="${esc(st.id||"")}">${st.bookmarked?"▮":"♧"}</button>
+              <button class="boost ${st.reblogged?"on":""}" data-action="boost" data-id="${esc(st.id||"")}">↔ <span class="count">${st.reblogs_count||""}</span></button>
+              <button class="fav ${st.favourited?"on":""}" data-action="fav" data-id="${esc(st.id||"")}">${st.favourited?"♥":"♡"} <span class="count">${st.favourites_count||""}</span></button>
+              <button class="bookmark ${st.bookmarked?"on":""}" data-action="bookmark" data-id="${esc(st.id||"")}">${st.bookmarked?"▮":"♧"}</button>
               <button data-action="share" data-id="${esc(st.id||"")}" data-url="${esc(st.url||"")}">⌯</button>
             </div>
           </div>
@@ -685,12 +685,108 @@ function render(){
   else settingsView();
 }
 
+function updateActionButtons(id,kind,on,delta=0){
+  document.querySelectorAll(`[data-action="${kind}"][data-id="${CSS.escape(String(id))}"]`).forEach(btn=>{
+    btn.classList.toggle("on",on);
+    if(kind==="fav") btn.childNodes[0].nodeValue=(on?"♥":"♡")+" ";
+    if(kind==="bookmark") btn.childNodes[0].nodeValue=(on?"▮":"♧")+" ";
+    const c=btn.querySelector(".count");
+    if(c&&delta){
+      const n=parseInt(c.textContent||"0",10)||0;
+      c.textContent=String(Math.max(0,n+delta));
+    }
+  });
+}
 async function statusAction(id,kind){
+  const btn=document.querySelector(`[data-action="${kind}"][data-id="${CSS.escape(String(id))}"]`);
+  const wasOn=!!btn?.classList.contains("on");
+  const next=!wasOn;
+  updateActionButtons(id,kind,next,next?1:-1);
+  const endpoint=kind==="fav"?(next?"favourite":"unfavourite"):kind==="boost"?(next?"reblog":"unreblog"):(next?"bookmark":"unbookmark");
   try{
-    const map={fav:"favourite",boost:"reblog",bookmark:"bookmark"};
-    await api(`/api/v1/statuses/${id}/${map[kind]}`,{method:"POST",form:{}});
-    toast(kind==="fav"?"좋아요 완료":kind==="boost"?"부스트 완료":"북마크 완료");
-    if(state.view==="home")render();
+    const st=await api(`/api/v1/statuses/${id}/${endpoint}`,{method:"POST",form:{}});
+    const truth=kind==="fav"?!!st.favourited:kind==="boost"?!!st.reblogged:!!st.bookmarked;
+    if(truth!==next)updateActionButtons(id,kind,truth,truth?1:-1);
+  }catch(e){
+    updateActionButtons(id,kind,wasOn,wasOn?1:-1);
+    toast(e.message);
+  }
+}
+function closeStatusPopup(){document.querySelector(".android-popup-shade.status-popup")?.remove()}
+async function openStatusMenu(id){
+  closeStatusPopup();
+  try{
+    const st=await api(`/api/v1/statuses/${id}`);
+    const own=st.account?.id===state.me?.id;
+    let rel=null;
+    if(!own){
+      try{const a=await api("/api/v1/accounts/relationships",{query:{"id[]":st.account.id}});rel=Array.isArray(a)?a[0]:null}catch{}
+    }
+    const shade=document.createElement("div");shade.className="android-popup-shade status-popup";
+    const items=own?[
+      ["pin",st.pinned?"고정 해제":"툿 고정"],
+      ["delete","삭제"],
+      ["copy","링크 복사"]
+    ]:[
+      ["profile","프로필 보기"],
+      ["mute",rel?.muting?"뮤트 해제":"뮤트"],
+      ["block",rel?.blocking?"차단 해제":"차단"],
+      ["report","신고"],
+      ["copy","링크 복사"]
+    ];
+    shade.innerHTML=`<div class="android-popup">${items.map(x=>`<button data-status-menu="${x[0]}">${esc(x[1])}</button>`).join("")}</div>`;
+    document.body.append(shade);
+    shade.onclick=e=>{if(e.target===shade)closeStatusPopup()};
+    shade.querySelectorAll("[data-status-menu]").forEach(b=>b.onclick=async()=>{
+      const action=b.dataset.statusMenu;closeStatusPopup();
+      try{
+        if(action==="copy"){await navigator.clipboard.writeText(st.url||"");toast("링크를 복사했어요.")}
+        else if(action==="profile")openProfile(st.account.id);
+        else if(action==="pin"){await api(`/api/v1/statuses/${id}/${st.pinned?"unpin":"pin"}`,{method:"POST",form:{}});toast(st.pinned?"고정을 해제했어요.":"고정했어요.")}
+        else if(action==="delete"){
+          if(!confirm("이 게시물을 삭제할까요?"))return;
+          await api(`/api/v1/statuses/${id}`,{method:"DELETE"});
+          document.querySelectorAll(`[data-status-id="${CSS.escape(String(id))}"]`).forEach(x=>x.remove());
+          toast("삭제했어요.");
+        }else if(action==="mute"){
+          const endpoint=rel?.muting?"unmute":"mute";
+          await api(`/api/v1/accounts/${st.account.id}/${endpoint}`,{method:"POST",form:{}});
+          toast(rel?.muting?"뮤트를 해제했어요.":"뮤트했어요.");
+        }else if(action==="block"){
+          if(!rel?.blocking&&!confirm("이 계정을 차단할까요?"))return;
+          const endpoint=rel?.blocking?"unblock":"block";
+          await api(`/api/v1/accounts/${st.account.id}/${endpoint}`,{method:"POST",form:{}});
+          toast(rel?.blocking?"차단을 해제했어요.":"차단했어요.");
+        }else if(action==="report"){
+          const reason=prompt("신고 사유를 입력해 주세요.")||"";
+          await api("/api/v1/reports",{method:"POST",form:{account_id:st.account.id,"status_ids[]":st.id,comment:reason,forward:"false"}});
+          toast("신고를 접수했어요.");
+        }
+      }catch(e){toast(e.message)}
+    });
+  }catch(e){toast(e.message)}
+}
+function openMediaViewer(url,alt=""){
+  document.querySelector(".media-viewer")?.remove();
+  const v=document.createElement("div");v.className="media-viewer";
+  v.innerHTML=`<button class="media-viewer-close" aria-label="닫기">×</button><div class="media-viewer-stage"><img src="${esc(url)}" alt="${esc(alt)}"></div>`;
+  document.body.append(v);
+  v.querySelector(".media-viewer-close").onclick=()=>v.remove();
+  v.onclick=e=>{if(e.target===v||e.target.classList.contains("media-viewer-stage"))v.remove()};
+}
+async function openThread(id,showAllAncestors=false){
+  state.returnView=state.view;
+  $("#app").innerHTML=standaloneShell("게시물",'<div class="center">불러오는 중…</div>');bind();
+  try{
+    const [st,ctx]=await Promise.all([
+      api(`/api/v1/statuses/${id}`),
+      api(`/api/v1/statuses/${id}/context`)
+    ]);
+    const ancestors=ctx.ancestors||[],desc=ctx.descendants||[];
+    const visibleAnc=showAllAncestors?ancestors:ancestors.slice(-2);
+    const older=ancestors.length>visibleAnc.length?`<button class="thread-older" data-thread-older="${esc(id)}">이전 대화 보기  ›</button>`:"";
+    const body=older+visibleAnc.map(statusCard).join("")+`<div class="thread-current">${statusCard(st)}</div>`+desc.map(statusCard).join("");
+    $("#app").innerHTML=standaloneShell("게시물",body);bind();
   }catch(e){toast(e.message)}
 }
 
@@ -860,7 +956,7 @@ function bind(){
     else if(a==="clearNotifications"){try{await api("/api/v1/notifications/clear",{method:"POST",form:{}});notificationsView(false)}catch(e){toast(e.message)}}
     else if(a==="share"){const u=b.dataset.url||"";try{if(navigator.share)await navigator.share({url:u});else{await navigator.clipboard.writeText(u);toast("링크를 복사했어요.")}}catch{}}
     else if(a==="topmenu")openDrawer()
-    else if(a==="statusmenu")toast("게시물 메뉴")
+    else if(a==="statusmenu")openStatusMenu(b.dataset.id)
     else if(a==="newlist")newList()
     else if(a==="runsearch")runSearch()
     else if(a==="togglecw"){const body=b.closest(".status-main").querySelector("[data-cwbody]");body.style.display=body.style.display==="none"?"block":"none"}
@@ -877,6 +973,9 @@ function bind(){
   document.querySelectorAll("[data-home-mode]").forEach(b=>b.onclick=()=>{state.homeMode=b.dataset.homeMode;state.listId=null;render()});
   document.querySelectorAll("[data-list]").forEach(b=>b.onclick=()=>{state.listId=state.listId===b.dataset.list?null:b.dataset.list;render()});
   document.querySelectorAll("[data-conv]").forEach(b=>b.onclick=()=>openConversation(b.dataset.conv));
+  document.querySelectorAll("[data-media-url]").forEach(b=>b.onclick=e=>{e.stopPropagation();openMediaViewer(b.dataset.mediaUrl,b.dataset.mediaAlt||"")});
+  document.querySelectorAll(".status[data-status-id]").forEach(card=>card.onclick=e=>{if(e.target.closest("button,a,video,audio"))return;openThread(card.dataset.statusId)});
+  document.querySelectorAll("[data-thread-older]").forEach(b=>b.onclick=()=>openThread(b.dataset.threadOlder,true));
   document.querySelectorAll("[data-notify]").forEach(b=>b.onclick=()=>notificationsView(b.dataset.notify==="mention"));
   $("#searchInput")?.addEventListener("keydown",e=>{if(e.key==="Enter")runSearch()});
   $("#themeSel")?.addEventListener("change",e=>{state.theme=e.target.value;store.set("lenton_theme",state.theme);if(state.theme==="system")delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=state.theme});
