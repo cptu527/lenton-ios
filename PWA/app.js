@@ -754,10 +754,12 @@ function accentTextColor(){
 function standaloneShell(title,body,right=""){
   return `<div class="standalone-page"><header class="standalone-top"><button class="back" data-action="backScreen" aria-label="뒤로가기">‹</button><h1>${esc(title)}</h1>${right}</header><main class="main">${body}</main></div>`;
 }
-function normalizeProfileMode(mode){return mode==="replies"?"replies":"posts"}
+function normalizeProfileMode(mode){return ["posts","replies","pinned","media"].includes(mode)?mode:"posts"}
 function profileQuery(mode){
   const q={limit:"25"};
   if(mode==="posts")q.exclude_replies="true";
+  else if(mode==="pinned")q.pinned="true";
+  else if(mode==="media")q.only_media="true";
   return q;
 }
 function profileMarkup(a,opts={}){
@@ -768,14 +770,14 @@ function profileMarkup(a,opts={}){
   const header=a.header_static||a.header||"",avatar=a.avatar_static||a.avatar||"";
   const fields=(a.fields||[]).map(f=>'<div class="profile-field"><span>'+renderRichText(f.name||"")+'</span><b>'+renderRichText(f.value||"")+'</b></div>').join("");
   const profileLabels=ANDROID?.renderer?.profileTabs||["게시물","답글"];
-  const tabs=[["posts",profileLabels[0]||"게시물","profilePosts"],["replies",profileLabels[1]||"답글","profileReplies"]];
+  const tabs=[["posts","게시물","profilePosts"],["replies","답글","profileReplies"],["pinned","고정","profilePinned"],["media","미디어","profileMedia"]];
   return '<div class="profile-hero">'+
     (header?'<button class="profile-header-button" data-media-url="'+esc(header)+'" data-media-alt="프로필 헤더"><img class="profile-header" src="'+esc(header)+'" alt=""></button>':'<div class="profile-header"></div>')+
     (avatar?'<button class="profile-avatar-button" data-media-url="'+esc(avatar)+'" data-media-alt="프로필 사진"><img class="profile-avatar" src="'+esc(avatar)+'" alt=""></button>':"")+
     '</div><div class="profile-info"><div class="profile-name-row"><div class="profile-names"><h2>'+renderEmojiText(a.display_name||a.username,a.emojis||[])+'</h2><div class="profile-handle">@'+esc(a.acct)+'</div></div>'+controls+'</div>'+
     '<div class="profile-bio">'+renderRichText(a.note||"")+'</div>'+(fields?'<div class="profile-fields">'+fields+'</div>':"")+privateNote+
     '<div class="profile-count-grid">'+((ANDROID?.renderer?.profileCounts||["following","followers"]).map(key=>key==="statuses"?'<div><b>'+Number(a.statuses_count||0).toLocaleString()+'</b><span>게시물</span></div>':key==="following"?'<div><b>'+Number(a.following_count||0).toLocaleString()+'</b><span>팔로잉</span></div>':'<div><b>'+Number(a.followers_count||0).toLocaleString()+'</b><span>팔로워</span></div>').join(""))+'</div></div>'+
-    '<div class="profile-tabs-2">'+tabs.map(x=>'<button data-action="'+x[2]+'" class="'+(mode===x[0]?"active":"")+'">'+x[1]+'</button>').join("")+'</div>';
+    '<div class="profile-tabs-4">'+tabs.map(x=>'<button data-action="'+x[2]+'" class="'+(mode===x[0]?"active":"")+'">'+x[1]+'</button>').join("")+'</div>';
 }
 async function profileView(mode=state.profileMode||"posts"){
   if(typeof mode==="boolean")mode=mode?"replies":"posts";
@@ -916,15 +918,13 @@ function buildDrawerElement(){
   shade.className="drawer-shade";
   shade.innerHTML=`<aside class="drawer lenton-drawer">
     <div class="drawer-account-strip">
-      <img class="drawer-avatar" src="${esc(m.avatar_static||m.avatar||"")}" alt="">
+      <button class="drawer-profile-avatar-button" data-drawer="profile" aria-label="프로필"><img class="drawer-avatar" src="${esc(m.avatar_static||m.avatar||"")}" alt=""></button>
       <div class="drawer-switchers">
         ${otherAccounts.map(x=>`<button class="drawer-account-btn" data-switch-account-key="${esc(x.key)}"><img class="drawer-switch-avatar" src="${esc(x.avatar)}" alt=""></button>`).join("")}
         <button class="drawer-add-account" data-drawer="addaccount">＋</button>
       </div>
     </div>
-    <div class="drawer-name">${renderEmojiText(m.display_name||m.username||"렌톤",m.emojis||[])}</div>
-    <div class="drawer-handle">@${esc(m.acct||"")}${m.acct?.includes("@")?"":"@"+esc(state.session?.host||"")}</div>
-    <div class="drawer-counts"><b>${m.following_count||0}</b> 팔로잉&nbsp;&nbsp;&nbsp;<b>${m.followers_count||0}</b> 팔로워</div>
+    <button class="drawer-profile-summary" data-drawer="profile"><div class="drawer-name">${renderEmojiText(m.display_name||m.username||"렌톤",m.emojis||[])}</div><div class="drawer-handle">@${esc(m.acct||"")}${m.acct?.includes("@")?"":"@"+esc(state.session?.host||"")}</div><div class="drawer-counts"><b>${m.following_count||0}</b> 팔로잉&nbsp;&nbsp;&nbsp;<b>${m.followers_count||0}</b> 팔로워</div></button>
     ${drawerMenuMarkup()}
 
   </aside>`;
@@ -1196,19 +1196,35 @@ async function sendInquiry(){
   toast(files.length?"메일 앱에서 선택한 스크린샷을 첨부해 주세요.":"메일 앱을 엽니다.");
   location.href="mailto:cptu527@gmail.com?subject="+encodeURIComponent("[Lenton] "+title)+"&body="+encodeURIComponent(info);
 }
-async function updateHistoryScreen(){
-  let build=null,entries=[];
-  try{const r=await fetch("./build.json?ts="+Date.now(),{cache:"no-store"});if(r.ok)build=await r.json()}catch{}
+async function showCurrentReleaseNotes(){
+  let entries=[];
   try{const r=await fetch("./changelog.json?ts="+Date.now(),{cache:"no-store"});if(r.ok)entries=await r.json()}catch{}
-  const rows=(Array.isArray(entries)?entries:[]).map(x=>`<div class="update-entry"><div class="update-head"><b>${esc(x.title||x.version||"업데이트")}</b><span>${esc(x.date||"")}</span></div><ul>${(x.changes||[]).map(v=>`<li>${esc(v)}</li>`).join("")}</ul></div>`).join("");
-  const info=`<div class="section"><h3>현재 버전</h3>
-    <div class="kv"><span>Android 원본</span><b>v${esc(ANDROID?.versionName||"?")} · code ${esc(ANDROID?.versionCode||"?")}</b></div>
-    <div class="kv"><span>PWA revision</span><b>${esc(build?.pwaRevision||currentPwaToken()||"unknown")}</b></div>
-    <div class="kv"><span>업데이트 방식</span><b>자동</b></div>
-    <div class="notice">새 버전은 백그라운드에서 준비되며 작성 중인 글이나 DM을 강제로 새로고침하지 않습니다. 앱을 다음에 열 때 최신 버전이 적용됩니다.</div>
-  </div>`;
-  const support=`<div class="section update-support"><h3>문의 / 기능 건의</h3><div class="notice">업데이트 후 문제가 생겼거나 원하는 기능이 있다면 여기서 바로 보낼 수 있어요.</div><div class="update-support-actions"><button class="outline-btn" data-action="inquiry" data-inquiry-type="오류 신고">오류 신고</button><button class="primary" data-action="inquiry" data-inquiry-type="기능 건의">기능 건의</button></div></div>`;
-  $("#app").innerHTML=standaloneShell("앱 업데이트",`<div class="settings">${info}<div class="section"><h3>업데이트 내역</h3>${rows||'<div class="center">변경 내역을 불러오지 못했어요.</div>'}</div>${support}</div>`);bind();
+  const x=Array.isArray(entries)&&entries.length?entries[0]:null;
+  const body=x?'<div class="settings"><div class="section update-entry current-release"><div class="update-head"><b>'+esc(x.title||x.version||"업데이트")+'</b><span>'+esc(x.date||"")+'</span></div><ul>'+((x.changes||[]).map(v=>'<li>'+esc(v)+'</li>').join(""))+'</ul></div></div>':'<div class="center">현재 버전의 업데이트 내용을 불러오지 못했어요.</div>';
+  $("#app").innerHTML=standaloneShell("업데이트 내용",body);bind();
+}
+async function checkPwaUpdate(){
+  toast("업데이트를 확인하고 있어요.");
+  await applyAutomaticUpdate();
+  toast(state.updateAvailable?"새 버전이 준비됐어요. 앱을 다시 열면 적용됩니다.":"현재 최신 버전이에요.");
+}
+async function updateHistoryScreen(){
+  let build=null;
+  try{const r=await fetch("./build.json?ts="+Date.now(),{cache:"no-store"});if(r.ok)build=await r.json()}catch{}
+  const info='<div class="section"><h3>현재 버전</h3>'+
+    '<div class="kv"><span>Android 원본</span><b>v'+esc(ANDROID?.versionName||"?")+' · code '+esc(ANDROID?.versionCode||"?")+'</b></div>'+
+    '<div class="kv"><span>PWA revision</span><b>'+esc(build?.pwaRevision||currentPwaToken()||"unknown")+'</b></div>'+
+    '<div class="kv"><span>업데이트 방식</span><b>자동 업데이트</b></div></div>';
+  const body='<div class="settings">'+info+
+    '<div class="section"><h3>업데이트</h3>'+
+      '<button class="settings-link" data-action="currentReleaseNotes"><span><b>업데이트 내용 확인</b><small>현재 버전의 변경사항 보기</small></span><span>›</span></button>'+
+      '<button class="settings-link" data-action="checkPwaUpdate"><span><b>업데이트 확인</b><small>새 버전이 있는지 확인</small></span><span>›</span></button>'+
+    '</div>'+
+    '<div class="section"><h3>도움말</h3>'+
+      '<button class="settings-link" data-action="inquiry" data-inquiry-type="오류 신고"><span><b>문제 신고하기</b><small>버그 · 오류 · 문의 내용을 이메일로 보내기</small></span><span>›</span></button>'+
+      '<button class="settings-link" data-action="inquiry" data-inquiry-type="기능 건의"><span><b>기능 건의</b><small>렌톤에 원하는 기능을 알려주세요</small></span><span>›</span></button>'+
+    '</div></div>';
+  $("#app").innerHTML=standaloneShell("앱 업데이트",body);bind();
 }
 async function settingsView(){
   const d=await pushDiagnostics();
@@ -1627,31 +1643,63 @@ function previewForMainView(view){
 function attachInteractiveMainSwipe(bottom){
   if(!bottom||bottom.dataset.interactiveSwipe==="1")return;
   bottom.dataset.interactiveSwipe="1";
-  let start=null,tracking=false,consuming=false;
-  const reset=()=>{start=null;tracking=false;consuming=false};
+  let start=null,active=false,target=null,preview=null,current=null,width=0,dir=0;
+  const cleanup=()=>{
+    if(current){current.style.transition="";current.style.transform="";current.classList.remove("swipe-moving")}
+    preview?.remove();preview=null;start=null;active=false;target=null;current=null;width=0;dir=0;
+  };
   bottom.addEventListener("touchstart",e=>{
     if(e.touches?.length!==1)return;
-    start=gesturePoint(e);tracking=true;consuming=false;
+    start=gesturePoint(e);current=document.querySelector("#app>.app");
+    if(!current){start=null;return}
+    width=Math.max(1,current.getBoundingClientRect().width);
   },{passive:true});
   bottom.addEventListener("touchmove",e=>{
-    if(!tracking||!start||e.touches?.length!==1)return;
+    if(!start||!current||e.touches?.length!==1)return;
     const p=gesturePoint(e),dx=p.x-start.x,dy=p.y-start.y;
-    if(!consuming&&Math.abs(dx)>40&&Math.abs(dx)>Math.abs(dy)*1.25){
-      consuming=true;
-      try{e.preventDefault()}catch{}
-      return;
+    if(!active){
+      if(Math.abs(dy)>18&&Math.abs(dy)>=Math.abs(dx)){cleanup();return}
+      if(Math.abs(dx)<10||Math.abs(dx)<=Math.abs(dy)*1.15)return;
+      const order=visibleNavItems().map(x=>x.id),i=order.indexOf(state.view);
+      dir=dx<0?1:-1;target=order[i+dir]||null;active=true;
+      current.classList.add("swipe-moving");current.style.transition="none";
+      if(target){
+        const html=previewForMainView(target);
+        preview=buildSwipePreview(html,"main-swipe-preview",current.getBoundingClientRect());
+        preview.style.transform="translate3d("+(dir>0?width:-width)+"px,0,0)";
+      }
     }
-    if(!consuming&&Math.abs(dy)>40&&Math.abs(dy)>=Math.abs(dx))reset();
-    if(consuming){try{e.preventDefault()}catch{}}
+    if(!active)return;
+    e.preventDefault();
+    const shown=target?dx:dx*.18;
+    current.style.transform="translate3d("+shown+"px,0,0)";
+    if(preview)preview.style.transform="translate3d("+(shown+(dir>0?width:-width))+"px,0,0)";
   },{passive:false});
   bottom.addEventListener("touchend",e=>{
-    if(!tracking||!start){reset();return}
-    const p=gesturePoint(e),dx=p.x-start.x;
-    const commit=consuming&&Math.abs(dx)>40;
-    reset();
-    if(commit)moveMainView(dx<0?1:-1);
+    if(!start||!current){cleanup();return}
+    const p=gesturePoint(e),dx=p.x-start.x,dt=Math.max(1,p.time-start.time),vx=dx/dt;
+    if(!active){cleanup();return}
+    const commit=!!target&&(Math.abs(dx)>width*.20||Math.abs(vx)>.65);
+    if(commit){
+      current.style.transition="transform 180ms cubic-bezier(.2,.75,.25,1)";
+      if(preview)preview.style.transition=current.style.transition;
+      requestAnimationFrame(()=>{
+        current.style.transform="translate3d("+(dir>0?-width:width)+"px,0,0)";
+        if(preview)preview.style.transform="translate3d(0,0,0)";
+      });
+      const next=target;
+      setTimeout(()=>{cleanup();rememberScroll();state.view=next;state.listId=null;render()},190);
+    }else{
+      current.style.transition="transform 160ms cubic-bezier(.2,.75,.25,1)";
+      if(preview)preview.style.transition=current.style.transition;
+      requestAnimationFrame(()=>{
+        current.style.transform="translate3d(0,0,0)";
+        if(preview)preview.style.transform="translate3d("+(dir>0?width:-width)+"px,0,0)";
+      });
+      setTimeout(cleanup,175);
+    }
   },{passive:true});
-  bottom.addEventListener("touchcancel",reset,{passive:true});
+  bottom.addEventListener("touchcancel",cleanup,{passive:true});
 }
 function attachInteractiveHomeSwipe(main){
   if(!main||main.dataset.homeSwipe==="1"||state.listId)return;
@@ -1787,7 +1835,7 @@ function attachDrawerCloseSwipe(drawer){
 function attachInteractiveProfileSwipe(host){
   if(!host||host.dataset.profileSwipe==="1")return;host.dataset.profileSwipe="1";
   let start=null,active=false,targetMode=null,preview=null,width=0,dir=0,hostRect=null;
-  const modes=["posts","replies"],accountId=state.profileAccount?.id||state.me?.id||"me";
+  const modes=["posts","replies","pinned","media"],accountId=state.profileAccount?.id||state.me?.id||"me";
   const cleanup=()=>{host.style.transition="";host.style.transform="";host.classList.remove("swipe-moving");preview?.remove();preview=null;start=null;active=false;targetMode=null};
   host.addEventListener("touchstart",e=>{if(e.touches?.length!==1)return;const p=gesturePoint(e);if(p.x<=28)return;start=p;hostRect=host.getBoundingClientRect();width=Math.max(1,hostRect.width)},{passive:true});
   host.addEventListener("touchmove",e=>{
@@ -1843,7 +1891,7 @@ function attachLentonGestures(){
   if(state.view==="home")attachInteractiveHomeSwipe(document.querySelector(".main"));
 
   attachStandaloneBackSwipe(document.querySelector(".standalone-page"));
-  const profileTabs=document.querySelector(".profile-tabs-2,.profile-info + .home-tabs,.profile-hero ~ .home-tabs");
+  const profileTabs=document.querySelector(".profile-tabs-4,.profile-tabs-2,.profile-info + .home-tabs,.profile-hero ~ .home-tabs");
   if(profileTabs){
     const host=document.querySelector(".standalone-page .main")||document.querySelector(".app .main");
     attachInteractiveProfileSwipe(host);
@@ -1873,6 +1921,8 @@ function bind(){
     else if(a==="inquiry"){pushNavSnapshot();inquiryScreen(b.dataset.inquiryType||"")}
     else if(a==="sendInquiry")sendInquiry()
     else if(a==="updateHistory"){pushNavSnapshot();updateHistoryScreen()}
+    else if(a==="currentReleaseNotes"){pushNavSnapshot();showCurrentReleaseNotes()}
+    else if(a==="checkPwaUpdate")checkPwaUpdate()
     else if(a==="layoutSettings"){pushNavSnapshot();screenLayoutEditor()}
     else if(a==="reload")render()
     else if(a==="logout")logout()
@@ -1892,6 +1942,8 @@ function bind(){
     else if(a==="replydm"){if(state.currentConversation?.last_status)compose(state.currentConversation.last_status,"direct")}
     else if(a==="profileReplies"){if(state.profileAccount)openProfile(state.profileAccount.id,"replies");else profileView("replies")}
     else if(a==="profilePosts"){if(state.profileAccount)openProfile(state.profileAccount.id,"posts");else profileView("posts")}
+    else if(a==="profilePinned"){if(state.profileAccount)openProfile(state.profileAccount.id,"pinned");else profileView("pinned")}
+    else if(a==="profileMedia"){if(state.profileAccount)openProfile(state.profileAccount.id,"media");else profileView("media")}
     else if(a==="profileEditOwn"){pushNavSnapshot();profileEditScreen()}
     else if(a==="profileMenu")openProfilePopup()
     else if(a==="editPrivateNote")editPrivateNote()
