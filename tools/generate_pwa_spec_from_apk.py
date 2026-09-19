@@ -97,14 +97,14 @@ def extract_any_method(text: str, *names) -> str:
     return ""
 
 def dp_list(method: str):
-    return [int(x) for x in re.findall(r"dp\\((\\d+)\\)",method or "")]
+    return [int(x) for x in re.findall(r"dp\((\d+)\)",method or "")]
 
 def first_int(pattern: str, text: str, default: int) -> int:
     m=re.search(pattern,text or "",re.S)
     return int(m.group(1)) if m else default
 
 def padding4(method: str, default):
-    m=re.search(r"setPadding\\(dp\\((\\d+)\\),\\s*(?:dp\\((\\d+)\\)|0),\\s*dp\\((\\d+)\\),\\s*dp\\((\\d+)\\)\\)",method or "")
+    m=re.search(r"setPadding\(dp\((\d+)\),\s*(?:dp\((\d+)\)|0),\s*dp\((\d+)\),\s*dp\((\d+)\)\)",method or "")
     if not m:
         return default
     a,b,c,d=m.groups()
@@ -112,7 +112,7 @@ def padding4(method: str, default):
 
 def parse_bottom_nav(method: str):
     items=[]
-    for glyph,page in re.findall(r'addNav\\([^,]+,\\s*"([^"]+)"\\s*,\\s*"([^"]+)"',method or ""):
+    for glyph,page in re.findall(r'addNav\([^,]+,\s*"([^"]+)"\s*,\s*"([^"]+)"',method or ""):
         key="dm" if page=="messages" else page
         items.append({"id":key,"androidPage":page,"glyph":glyph})
     if not items:
@@ -127,7 +127,7 @@ def parse_bottom_nav(method: str):
 def parse_drawer(method: str):
     rows=[]
     mapping={"프로필":"profile","북마크":"bookmarks","리스트":"lists","팔로우 요청":"followrequests","설정":"settings"}
-    for glyph,label in re.findall(r'drawerRow\\([^,]+,\\s*"([^"]+)"\\s*,\\s*"([^"]+)"',method or ""):
+    for glyph,label in re.findall(r'drawerRow\([^,]+,\s*"([^"]+)"\s*,\s*"([^"]+)"',method or ""):
         rows.append({"id":mapping.get(label,label),"label":label,"glyph":glyph})
     if not rows:
         rows=[
@@ -141,7 +141,7 @@ def parse_drawer(method: str):
     return rows
 
 def parse_action_glyphs(method: str):
-    calls=re.findall(r'addAction\\([^,]+,\\s*(?:([^,]+)\\?\\s*"([^"]+)"\\s*:\\s*"([^"]+)"|"([^"]+)")',method or "")
+    calls=re.findall(r'addAction\([^,]+,\s*(?:([^,]+)\?\s*"([^"]+)"\s*:\s*"([^"]+)"|"([^"]+)")',method or "")
     # Current Lenton action order is stable; source hash below protects structural drift.
     return {
         "reply":"○",
@@ -205,42 +205,42 @@ def build_spec(main_text: str, latest: dict, apk_sha: str, source_path: str):
     status_padding=padding4(status_method,[16,10,14,8])
     drawer_padding=padding4(drawer_method,[24,24,24,20])
     ui={
-        "topBarDp": first_int(r"root\\.addView\\(mainTopBar\\(\\).*?dp\\((\\d+)\\)",main_text,62),
-        "bottomBarDp": first_int(r"root\\.addView\\(bottomNav\\(\\).*?dp\\((\\d+)\\)",main_text,64),
+        "topBarDp": first_int(r"root\.addView\(mainTopBar\(\).*?dp\((\d+)\)",main_text,62),
+        "bottomBarDp": first_int(r"root\.addView\(bottomNav\(\).*?dp\((\d+)\)",main_text,64),
         "topBarPadding":[16,0,8,0],
-        "topBarAvatarDp": first_int(r"avatar\\([^;]+?,\\s*(\\d+)\\)",topbar_method,40),
-        "topBarTitleSp": first_int(r'pageTitle=tv\\([^,]+,\\s*(\\d+)',topbar_method,20),
-        "topBarSearchDp": first_int(r'addView\\(search,new LinearLayout\\.LayoutParams\\(dp\\((\\d+)\\)',topbar_method,48),
-        "topBarMoreDp": first_int(r'addView\\(more,new LinearLayout\\.LayoutParams\\(dp\\((\\d+)\\)',topbar_method,44),
+        "topBarAvatarDp": first_int(r"avatar\([^;]+?,\s*(\d+)\)",topbar_method,40),
+        "topBarTitleSp": first_int(r'pageTitle=tv\([^,]+,\s*(\d+)',topbar_method,20),
+        "topBarSearchDp": first_int(r'addView\(search,new LinearLayout\.LayoutParams\(dp\((\d+)\)',topbar_method,48),
+        "topBarMoreDp": first_int(r'addView\(more,new LinearLayout\.LayoutParams\(dp\((\d+)\)',topbar_method,44),
         "statusPadding": status_padding,
-        "avatarDp": first_int(r'avatar\\([^;]+?,\\s*(\\d+)\\)',status_method,46),
-        "statusContentInsetDp": first_int(r'c\\.setPadding\\(dp\\((\\d+)\\)',status_method,12),
-        "authorLineDp": first_int(r'addView\\(au,new LinearLayout\\.LayoutParams\\(-1,dp\\((\\d+)\\)',status_method,28),
-        "bodySp": first_int(r'body\\.setTextSize\\((\\d+)\\)',status_method,16),
-        "bodyLineExtraDp": first_int(r'body\\.setLineSpacing\\(dp\\((\\d+)\\)',status_method,2),
-        "actionRowDp": first_int(r'c\\.addView\\(actionRow\\(st\\),new LinearLayout\\.LayoutParams\\(-1,dp\\((\\d+)\\)',status_method,48),
-        "actionGlyphSp": first_int(r'TextView i=tv\\(glyph,\\s*(\\d+)',add_action_method,22),
-        "actionItemDp": first_int(r'new LinearLayout\\.LayoutParams\\(0,dp\\((\\d+)\\),1\\)',add_action_method,46),
-        "mediaSingleDp": first_int(r'media\\.length\\(\\)>1\\?(?:\\d+):(\\d+)',media_method,260),
-        "mediaMultiDp": first_int(r'media\\.length\\(\\)>1\\?(\\d+):',media_method,220),
+        "avatarDp": first_int(r'avatar\([^;]+?,\s*(\d+)\)',status_method,46),
+        "statusContentInsetDp": first_int(r'c\.setPadding\(dp\((\d+)\)',status_method,12),
+        "authorLineDp": first_int(r'addView\(au,new LinearLayout\.LayoutParams\(-1,dp\((\d+)\)',status_method,28),
+        "bodySp": first_int(r'body\.setTextSize\((\d+)\)',status_method,16),
+        "bodyLineExtraDp": first_int(r'body\.setLineSpacing\(dp\((\d+)\)',status_method,2),
+        "actionRowDp": first_int(r'c\.addView\(actionRow\(st\),new LinearLayout\.LayoutParams\(-1,dp\((\d+)\)',status_method,48),
+        "actionGlyphSp": first_int(r'TextView i=tv\(glyph,\s*(\d+)',add_action_method,22),
+        "actionItemDp": first_int(r'new LinearLayout\.LayoutParams\(0,dp\((\d+)\),1\)',add_action_method,46),
+        "mediaSingleDp": first_int(r'media\.length\(\)>1\?(?:\d+):(\d+)',media_method,260),
+        "mediaMultiDp": first_int(r'media\.length\(\)>1\?(\d+):',media_method,220),
         "drawerWidthRatio": 0.88 if ".88f" in drawer_method else 0.88,
         "drawerPadding": drawer_padding,
-        "drawerAvatarDp": first_int(r'avatar\\([^;]+?,\\s*(\\d+)\\)',drawer_method,64),
-        "drawerRowDp": first_int(r'LayoutParams\\(dp\\(52\\),dp\\((\\d+)\\)\\)',drawer_row_method,58),
-        "drawerGlyphDp": first_int(r'icon\\(g,fg\\(\\),(\\d+)\\)',drawer_row_method,25),
-        "drawerTextSp": first_int(r'tv\\(label,(\\d+),fg\\(\\)\\)',drawer_row_method,19),
-        "profileHeaderDp": first_int(r'FrameLayout\\.LayoutParams\\(-1,dp\\((\\d+)\\)\\)',profile_method,170),
-        "profileAvatarDp": first_int(r'avatar\\([^;]+?,\\s*(\\d+)\\)',profile_method,92),
-        "profileAvatarLeftDp": first_int(r'ap\\.leftMargin=dp\\((\\d+)\\)',profile_method,18),
-        "profileAvatarTopDp": first_int(r'ap\\.topMargin=dp\\((\\d+)\\)',profile_method,126),
-        "profileHeroDp": first_int(r'feed\\.addView\\(hero,new LinearLayout\\.LayoutParams\\(-1,dp\\((\\d+)\\)',profile_method,226),
-        "profileNameSp": first_int(r'tv\\(displayName\\(ac\\),(\\d+),fg\\(\\)\\)',profile_method,22),
-        "profileTabDp": first_int(r'tabs\\.addView\\(posts,new LinearLayout\\.LayoutParams\\(0,dp\\((\\d+)\\)',profile_method,50),
+        "drawerAvatarDp": first_int(r'avatar\([^;]+?,\s*(\d+)\)',drawer_method,64),
+        "drawerRowDp": first_int(r'LayoutParams\(dp\(52\),dp\((\d+)\)\)',drawer_row_method,58),
+        "drawerGlyphDp": first_int(r'icon\(g,fg\(\),(\d+)\)',drawer_row_method,25),
+        "drawerTextSp": first_int(r'tv\(label,(\d+),fg\(\)\)',drawer_row_method,19),
+        "profileHeaderDp": first_int(r'FrameLayout\.LayoutParams\(-1,dp\((\d+)\)\)',profile_method,170),
+        "profileAvatarDp": first_int(r'avatar\([^;]+?,\s*(\d+)\)',profile_method,92),
+        "profileAvatarLeftDp": first_int(r'ap\.leftMargin=dp\((\d+)\)',profile_method,18),
+        "profileAvatarTopDp": first_int(r'ap\.topMargin=dp\((\d+)\)',profile_method,126),
+        "profileHeroDp": first_int(r'feed\.addView\(hero,new LinearLayout\.LayoutParams\(-1,dp\((\d+)\)',profile_method,226),
+        "profileNameSp": first_int(r'tv\(displayName\(ac\),(\d+),fg\(\)\)',profile_method,22),
+        "profileTabDp": first_int(r'tabs\.addView\(posts,new LinearLayout\.LayoutParams\(0,dp\((\d+)\)',profile_method,50),
         "notificationPadding": padding4(notification_method,[16,12,14,10]),
-        "notificationGlyphDp": first_int(r'tv\\(notificationGlyph\\(type\\),(\\d+)',notification_method,25),
+        "notificationGlyphDp": first_int(r'tv\(notificationGlyph\(type\),(\d+)',notification_method,25),
         "messagePadding": padding4(conversation_method,[16,12,14,12]),
-        "messageAvatarDp": first_int(r'avatar\\([^;]+?,\\s*(\\d+)\\)',conversation_method,48),
-        "standaloneTopDp": first_int(r'new LinearLayout\\.LayoutParams\\(dp\\(52\\),dp\\((\\d+)\\)\\)',standalone_method,60),
+        "messageAvatarDp": first_int(r'avatar\([^;]+?,\s*(\d+)\)',conversation_method,48),
+        "standaloneTopDp": first_int(r'new LinearLayout\.LayoutParams\(dp\(52\),dp\((\d+)\)\)',standalone_method,60),
     }
     renderer={
         "bottomNavItems":nav_items,
