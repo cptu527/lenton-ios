@@ -537,18 +537,58 @@ async function loadLentonHome(chronological){
   collected.sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
   return collected.slice(0,80);
 }
+function homeModes(){return ["home","public"]}
+function homePageHtml(items,mode){
+  return (items?.length?items.map(statusCard).join(""):'<div class="center">표시할 게시물이 없어요.</div>')+
+    '<button class="load-more" data-action="loadmorehome" data-home-load-mode="'+mode+'">더 불러오기</button>';
+}
+function buildHomePager(mode,data){
+  const modes=homeModes(),index=Math.max(0,modes.indexOf(mode));
+  return '<div class="home-pager" data-home-pager><div class="home-pager-track" data-home-track style="transform:translate3d(-'+(index*100)+'%,0,0)">'+
+    modes.map(m=>'<section class="home-pager-page" data-home-page="'+m+'">'+homePageHtml(data[m]||[],m)+'</section>').join("")+
+    '</div></div>';
+}
+function syncHomePagerUi(mode,animate=true){
+  const modes=homeModes(),index=Math.max(0,modes.indexOf(mode));
+  const pager=document.querySelector("[data-home-pager]"),track=document.querySelector("[data-home-track]"),tabs=document.querySelector("[data-home-tabs]");
+  if(!pager||!track||!tabs)return;
+  const width=Math.max(1,pager.clientWidth);
+  track.style.transition=animate?"transform 190ms cubic-bezier(.2,.75,.25,1)":"none";
+  track.style.transform="translate3d("+(-index*width)+"px,0,0)";
+  tabs.querySelectorAll("[data-home-mode]").forEach(b=>b.classList.toggle("active",b.dataset.homeMode===mode));
+  const indicator=tabs.querySelector(".home-tab-indicator"),tabW=tabs.clientWidth/modes.length;
+  if(indicator){indicator.style.transition=animate?"transform 190ms cubic-bezier(.2,.75,.25,1)":"none";indicator.style.transform="translate3d("+(index*tabW+(tabW-36)/2)+"px,0,0)"}
+  const page=track.querySelector('[data-home-page="'+mode+'"]');
+  if(page)requestAnimationFrame(()=>{pager.style.height=Math.max(1,page.scrollHeight)+"px"});
+}
+function setHomePagerMode(mode,animate=true){
+  if(!homeModes().includes(mode))mode="home";
+  state.homeMode=mode;state.listId=null;state.timelineItems=state.homePagerData?.[mode]||[];
+  syncHomePagerUi(mode,animate);
+}
 async function homeView(){
-  let data=[]; state.busy=true;renderLoadingShell("홈");
+  state.busy=true;renderLoadingShell("홈");
   try{
-    if(!state.lists.length) await loadLists();
-    if(state.listId) data=await api(`/api/v1/timelines/list/${state.listId}`,{query:{limit:"30"}});
-    else data=await loadLentonHome(state.homeMode!=="public");
-    const chronologicalLabel=ANDROID?.homeTabs?.chronological||"시간순", publicLabel=ANDROID?.homeTabs?.public||"퍼블릭";
-    const tabs=`<div class="home-tabs"><button data-home-mode="home" class="${state.homeMode==="home"&&!state.listId?"active":""}">${esc(chronologicalLabel)}</button><button data-home-mode="public" class="${state.homeMode==="public"&&!state.listId?"active":""}">${esc(publicLabel)}</button></div>`;
-    const visibleLists=state.lists.filter(x=>!hiddenListIds().has(x.id)); const chips=(visibleLists.length||state.lists.length)?`<div class="chips">${visibleLists.map(x=>`<button class="chip ${state.listId===x.id?"active":""}" data-list="${x.id}">${esc(x.title)}</button>`).join("")}<button class="chip" data-action="newlist">＋ 리스트</button></div>`:"";
-    state.timelineItems=data; renderMainStable(state.listId?(state.lists.find(x=>x.id===state.listId)?.title||"리스트"):"홈",tabs+chips+(data.length?data.map(statusCard).join(""):'<div class="center">표시할 게시물이 없어요.</div>')+'<button class="load-more" data-action="loadmorehome">더 불러오기</button>',{view:"home",fab:true});
-  }catch(e){renderMainStable("홈",`<div class="center">타임라인을 불러오지 못했어요.<br><br>${esc(e.message)}<br><br><button class="primary" data-action="reload">다시 시도</button></div>`,{view:"home",fab:true})}
-  state.busy=false; bind();
+    if(!state.lists.length)await loadLists();
+    const chronologicalLabel=ANDROID?.homeTabs?.chronological||"시간순",publicLabel=ANDROID?.homeTabs?.public||"퍼블릭";
+    if(state.listId){
+      const data=await api("/api/v1/timelines/list/"+state.listId,{query:{limit:"30"}});
+      const visibleLists=state.lists.filter(x=>!hiddenListIds().has(x.id));
+      const chips=(visibleLists.length||state.lists.length)?'<div class="chips">'+visibleLists.map(x=>'<button class="chip '+(state.listId===x.id?"active":"")+'" data-list="'+x.id+'">'+esc(x.title)+'</button>').join("")+'<button class="chip" data-action="newlist">＋ 리스트</button></div>':"";
+      state.timelineItems=data;
+      renderMainStable(state.lists.find(x=>x.id===state.listId)?.title||"리스트",chips+homePageHtml(data,"list"),{view:"home",fab:true});
+      state.busy=false;bind();return;
+    }
+    const [homeData,publicData]=await Promise.all([loadLentonHome(true),loadLentonHome(false)]);
+    state.homePagerData={home:homeData,public:publicData};
+    state.timelineItems=state.homePagerData[state.homeMode]||homeData;
+    const tabs='<div class="home-tabs" data-home-tabs><button data-home-mode="home" class="'+(state.homeMode==="home"?"active":"")+'">'+esc(chronologicalLabel)+'</button><button data-home-mode="public" class="'+(state.homeMode==="public"?"active":"")+'">'+esc(publicLabel)+'</button><span class="home-tab-indicator" aria-hidden="true"></span></div>';
+    const visibleLists=state.lists.filter(x=>!hiddenListIds().has(x.id));
+    const chips=(visibleLists.length||state.lists.length)?'<div class="chips">'+visibleLists.map(x=>'<button class="chip" data-list="'+x.id+'">'+esc(x.title)+'</button>').join("")+'<button class="chip" data-action="newlist">＋ 리스트</button></div>':"";
+    renderMainStable("홈",tabs+chips+buildHomePager(state.homeMode,state.homePagerData),{view:"home",fab:true});
+    requestAnimationFrame(()=>syncHomePagerUi(state.homeMode,false));
+  }catch(e){renderMainStable("홈",'<div class="center">타임라인을 불러오지 못했어요.<br><br>'+esc(e.message)+'<br><br><button class="primary" data-action="reload">다시 시도</button></div>',{view:"home",fab:true})}
+  state.busy=false;bind();
 }
 
 async function loadMoreHome(){
@@ -1807,53 +1847,42 @@ function attachInteractiveMainSwipe(bottom){
   },{passive:true});
   bottom.addEventListener("touchcancel",cleanup,{passive:true});
 }
-function attachInteractiveHomeSwipe(main){
-  if(!main||main.dataset.homeSwipe==="1"||state.listId)return;
-  main.dataset.homeSwipe="1";
-  let start=null,active=false,target=null,preview=null,width=0,dir=0;
-  const cleanup=()=>{main.style.transition="";main.style.transform="";main.classList.remove("swipe-moving");preview?.remove();preview=null;start=null;active=false;target=null};
-  main.addEventListener("touchstart",e=>{
-    if(e.touches?.length!==1)return;const p=gesturePoint(e);if(p.x<=28)return;
-    start=p;width=Math.max(1,main.getBoundingClientRect().width);active=false;
+function attachInteractiveHomeSwipe(pager){
+  if(!pager||pager.dataset.homeSwipe==="1"||state.listId)return;pager.dataset.homeSwipe="1";
+  const track=pager.querySelector("[data-home-track]"),tabs=document.querySelector("[data-home-tabs]");
+  if(!track||!tabs)return;
+  const modes=homeModes();let start=null,active=false,width=0,startIndex=0;
+  const indicator=tabs.querySelector(".home-tab-indicator");
+  const settle=(index,animate=true)=>{
+    const mode=modes[Math.max(0,Math.min(modes.length-1,index))];
+    setHomePagerMode(mode,animate);
+  };
+  pager.addEventListener("touchstart",e=>{
+    if(e.touches?.length!==1)return;const p=gesturePoint(e);start=p;active=false;width=Math.max(1,pager.clientWidth);startIndex=Math.max(0,modes.indexOf(state.homeMode||"home"));
+    track.style.transition="none";if(indicator)indicator.style.transition="none";
   },{passive:true});
-  main.addEventListener("touchmove",e=>{
-    if(!start||e.touches?.length!==1)return;
-    const p=gesturePoint(e),dx=p.x-start.x,dy=p.y-start.y;
+  pager.addEventListener("touchmove",e=>{
+    if(!start||e.touches?.length!==1)return;const p=gesturePoint(e),dx=p.x-start.x,dy=p.y-start.y;
     if(!active){
-      if(Math.abs(dy)>18&&Math.abs(dy)>=Math.abs(dx)){cleanup();return}
-      if(Math.abs(dx)<10||Math.abs(dx)<=Math.abs(dy)*1.15)return;
-      dir=dx<0?1:-1;
-      target=dir>0?(state.homeMode==="home"?"public":null):(state.homeMode==="public"?"home":null);
-      active=true;main.classList.add("swipe-moving");main.style.transition="none";
-      if(target){
-        const html=state.homeCache[target]||'<div class="center">불러오는 중…</div>';
-        preview=buildSwipePreview(html,"home-swipe-preview",main.getBoundingClientRect());
-        preview.style.transform=`translate3d(${dir>0?width:-width}px,0,0)`;
-      }
+      if(Math.abs(dy)>12&&Math.abs(dy)>=Math.abs(dx)){start=null;return}
+      if(Math.abs(dx)<6||Math.abs(dx)<=Math.abs(dy))return;
+      active=true;
     }
-    if(!active)return;e.preventDefault();
-    const shown=target?dx:dx*.18;main.style.transform=`translate3d(${shown}px,0,0)`;
-    if(preview)preview.style.transform=`translate3d(${shown+(dir>0?width:-width)}px,0,0)`;
+    e.preventDefault();
+    let shown=dx;if((startIndex===0&&dx>0)||(startIndex===modes.length-1&&dx<0))shown=dx*.22;
+    track.style.transform="translate3d("+(-startIndex*width+shown)+"px,0,0)";
+    const frac=Math.max(0,Math.min(modes.length-1,startIndex-shown/width)),tabW=tabs.clientWidth/modes.length;
+    if(indicator)indicator.style.transform="translate3d("+(frac*tabW+(tabW-36)/2)+"px,0,0)";
   },{passive:false});
-  main.addEventListener("touchend",async e=>{
-    if(!start){cleanup();return}
-    const p=gesturePoint(e),dx=p.x-start.x,dt=Math.max(1,p.time-start.time),vx=dx/dt;
-    if(!active){cleanup();return}
-    const commit=!!target&&(Math.abs(dx)>width*.20||Math.abs(vx)>.65);
-    if(commit){
-      main.style.transition="transform 180ms cubic-bezier(.2,.75,.25,1)";
-      if(preview)preview.style.transition=main.style.transition;
-      requestAnimationFrame(()=>{main.style.transform=`translate3d(${dir>0?-width:width}px,0,0)`;if(preview)preview.style.transform="translate3d(0,0,0)"});
-      await new Promise(r=>setTimeout(r,195));
-      const mode=target;cleanup();rememberScroll();state.homeMode=mode;render();
-    }else{
-      main.style.transition="transform 160ms cubic-bezier(.2,.75,.25,1)";
-      if(preview)preview.style.transition=main.style.transition;
-      requestAnimationFrame(()=>{main.style.transform="translate3d(0,0,0)";if(preview)preview.style.transform=`translate3d(${dir>0?width:-width}px,0,0)`});
-      setTimeout(cleanup,180);
-    }
+  pager.addEventListener("touchend",e=>{
+    if(!start)return;const p=gesturePoint(e),dx=p.x-start.x,dt=Math.max(1,p.time-start.time),vx=dx/dt;
+    if(!active){start=null;return}
+    let target=startIndex;
+    if(dx<0&&startIndex<modes.length-1&&(Math.abs(dx)>width*.18||vx<-.45))target=startIndex+1;
+    else if(dx>0&&startIndex>0&&(Math.abs(dx)>width*.18||vx>.45))target=startIndex-1;
+    start=null;active=false;settle(target,true);
   },{passive:true});
-  main.addEventListener("touchcancel",cleanup,{passive:true});
+  pager.addEventListener("touchcancel",()=>{if(start){start=null;active=false;settle(startIndex,true)}},{passive:true});
 }
 function attachSwipe(el,{onLeft,onRight,edgeOnly=false,threshold=40,ratio=1.25,startMaxX=28}={}){
   if(!el||el.dataset.lentonSwipe==="1")return;
@@ -1995,7 +2024,7 @@ function attachLentonGestures(){
   const drawer=document.querySelector(".drawer");
   attachDrawerCloseSwipe(drawer);
 
-  if(state.view==="home")attachInteractiveHomeSwipe(document.querySelector(".main"));
+  if(state.view==="home")attachInteractiveHomeSwipe(document.querySelector("[data-home-pager]"));
 
   attachStandaloneBackSwipe(document.querySelector(".standalone-page"));
   const profilePager=document.querySelector("[data-profile-pager]");
@@ -2037,7 +2066,7 @@ function bind(){
     else if(a==="statusmenu")openStatusMenu(b.dataset.id)
     else if(a==="newlist")newList()
     else if(a==="resetLayout")resetMainTabLayout()
-    else if(a==="loadmorehome")loadMoreHome()
+    else if(a==="loadmorehome"){const m=b.dataset.homeLoadMode;if(m&&homeModes().includes(m))setHomePagerMode(m,false);loadMoreHome()}
     else if(a==="saveProfileEdit")saveProfileEdit()
     else if(a==="runsearch")runSearch()
     else if(a==="togglecw"){const body=b.closest(".status-main").querySelector("[data-cwbody]");body.style.display=body.style.display==="none"?"block":"none"}
@@ -2053,7 +2082,7 @@ function bind(){
     else if(a==="editPrivateNote")editPrivateNote()
     else if(a==="followProfile")toggleFollowProfile()
   });
-  document.querySelectorAll("[data-home-mode]").forEach(b=>b.onclick=()=>{state.homeMode=b.dataset.homeMode;state.listId=null;render()});
+  document.querySelectorAll("[data-home-mode]").forEach(b=>b.onclick=()=>{if(document.querySelector("[data-home-pager]"))setHomePagerMode(b.dataset.homeMode,true);else{state.homeMode=b.dataset.homeMode;state.listId=null;render()}});
   document.querySelectorAll("[data-list]").forEach(b=>b.onclick=()=>{state.listId=state.listId===b.dataset.list?null:b.dataset.list;render()});
   document.querySelectorAll("[data-conv]").forEach(b=>b.onclick=()=>{pushNavSnapshot();openConversation(b.dataset.conv)});
   document.querySelectorAll("[data-dm-previous]").forEach(b=>b.onclick=()=>{pushNavSnapshot();openConversation(b.dataset.dmPrevious)});
