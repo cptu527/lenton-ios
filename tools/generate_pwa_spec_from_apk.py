@@ -193,7 +193,15 @@ def parse_profile_tabs(main_text: str):
     for label in ("게시물","답글","게시물과 답글"):
         if re.search(r'\btab\(\s*"'+re.escape(label)+r'"\s*,',main_text):
             explicit.append(label)
-    return explicit
+    if len(explicit)>=2:
+        return explicit
+    pos=main_text.find("renderProfile")
+    window=main_text[pos:pos+26000] if pos>=0 else ""
+    nearby=[label for label in ("게시물","답글","게시물과 답글") if '"'+label+'"' in window]
+    clean=[]
+    for label in nearby:
+        if label not in clean: clean.append(label)
+    return clean or explicit
 
 def parse_compose_literals(main_text: str):
     vals=quoted_literals(main_text)
@@ -253,16 +261,17 @@ def parse_action_glyphs(method: str):
 def parse_notification_tabs(main_text: str):
     allowed={"전체","멘션","답장할멘션"}
     sig=re.compile(r'(?:private|public|protected)\s+[^\n{;]+\s+(\w+)\s*\([^)]*\)\s*\{')
-    best=[]
     for m in sig.finditer(main_text):
         block=extract_method(main_text,m.group(1))
         if not block or "/api/v1/notifications" not in block:
             continue
         vals=first_matching_literals(block,allowed)
         if len(vals)>=2:
-            best=vals[:2]
-            break
-    return best or ["전체","멘션"]
+            return vals[:2]
+    pos=main_text.find("loadNotifications")
+    window=main_text[pos:pos+18000] if pos>=0 else ""
+    vals=[label for label in ("전체","멘션","답장할멘션") if '"'+label+'"' in window]
+    return vals[:2] if len(vals)>=2 else ["전체","멘션"]
 
 def parse_notification_glyphs(text: str):
     out={"mention":"@","favourite":"♥","reblog":"↻","follow":"+","follow_request":"+","default":"♢"}
