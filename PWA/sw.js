@@ -53,7 +53,7 @@ self.addEventListener("push",event=>{
   const title=data.title||n.title||"렌톤";
   const body=data.body||n.body||data.message||"새 알림이 도착했습니다.";
   const icon=data.icon||n.icon||"./icon-1024.png";
-  const target=n.navigate||data.url||"./?view=notifications";
+  const target=n.navigate||data.url||(data.notification_id?("./?notification_id="+encodeURIComponent(data.notification_id)):"./?view=notifications");
   const options={
     body,icon,badge:"./icon-1024.png",tag:data.notification_id||data.id||"lenton-notification",
     renotify:true,data:{url:target},silent:false
