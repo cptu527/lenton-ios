@@ -14,6 +14,7 @@ const state = {
   session: store.get("lenton_session"),
   me:null, view:"home", homeMode:"home", listId:null, lists:[], busy:false,
   theme:store.get("lenton_theme","system"), accent:store.get("lenton_accent",ANDROID?.theme?.accent||"#1d9bf0"),
+  uiScale:Math.max(.8,Math.min(1.2,Number(store.get("lenton_ui_scale",1))||1)),
   pushError:"", toast:"", currentConversation:null, profileReplies:false, profileMode:"posts", profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, profilePagerData:{}, homePagerData:{}, navStack:[], dmDraftRecipients:[], updateAvailable:null, buildInfo:null
 };
 
@@ -125,8 +126,9 @@ document.documentElement.style.setProperty("--accent",state.accent);
 if(state.theme!=="system") document.documentElement.dataset.theme=state.theme;
 
 function applyAndroidSpecMetrics(){
-  const ui=ANDROID?.ui||{}, root=document.documentElement;
-  const px=(name,value,fallback)=>root.style.setProperty(name,String(value??fallback)+"px");
+  const ui=ANDROID?.ui||{}, root=document.documentElement,scale=Math.max(.8,Math.min(1.2,Number(state.uiScale)||1));
+  root.style.setProperty("--lenton-ui-scale",String(scale));
+  const px=(name,value,fallback)=>root.style.setProperty(name,String(Math.round(Number(value??fallback)*scale*100)/100)+"px");
   px("--android-topbar",ui.topBarDp,62);
   px("--android-bottom",ui.bottomBarDp,64);
   px("--android-topbar-avatar",ui.topBarAvatarDp,40);
@@ -157,18 +159,19 @@ function applyAndroidSpecMetrics(){
   px("--android-message-avatar",ui.messageAvatarDp,48);
   px("--android-standalone-top",ui.standaloneTopDp,60);
   root.style.setProperty("--android-drawer-width",String(Math.round((ui.drawerWidthRatio||.88)*100))+"vw");
+  const scaled=x=>Math.round(Number(x)*scale*100)/100;
   const sp=ui.statusPadding||[16,10,14,8];
-  root.style.setProperty("--android-status-padding",sp.map(x=>String(x)+"px").join(" "));
+  root.style.setProperty("--android-status-padding",sp.map(x=>String(scaled(x))+"px").join(" "));
   const dp=ui.drawerPadding||[24,24,24,20];
-  root.style.setProperty("--android-drawer-padding",dp.map(x=>String(x)+"px").join(" "));
-  root.style.setProperty("--android-drawer-pad-top",String(dp[0])+"px");
-  root.style.setProperty("--android-drawer-pad-right",String(dp[1])+"px");
-  root.style.setProperty("--android-drawer-pad-bottom",String(dp[2])+"px");
-  root.style.setProperty("--android-drawer-pad-left",String(dp[3])+"px");
+  root.style.setProperty("--android-drawer-padding",dp.map(x=>String(scaled(x))+"px").join(" "));
+  root.style.setProperty("--android-drawer-pad-top",String(scaled(dp[0]))+"px");
+  root.style.setProperty("--android-drawer-pad-right",String(scaled(dp[1]))+"px");
+  root.style.setProperty("--android-drawer-pad-bottom",String(scaled(dp[2]))+"px");
+  root.style.setProperty("--android-drawer-pad-left",String(scaled(dp[3]))+"px");
   const np=ui.notificationPadding||[16,12,14,10];
-  root.style.setProperty("--android-notification-padding",np.map(x=>String(x)+"px").join(" "));
+  root.style.setProperty("--android-notification-padding",np.map(x=>String(scaled(x))+"px").join(" "));
   const mp=ui.messagePadding||[16,12,14,12];
-  root.style.setProperty("--android-message-padding",mp.map(x=>String(x)+"px").join(" "));
+  root.style.setProperty("--android-message-padding",mp.map(x=>String(scaled(x))+"px").join(" "));
 }
 applyAndroidSpecMetrics();
 
@@ -417,7 +420,7 @@ function shell(title,body,opts={}){
   if(view==="home"||view==="search"||view==="settings"){
     right=`<button class="top-icon search" data-view="search" aria-label="검색">${lentonIcon("search")}</button><button class="top-icon" data-action="topmenu" aria-label="더보기">${lentonIcon("more")}</button>`;
   }else if(view==="notifications"){
-    right=`<button class="top-icon" data-action="topmenu" aria-label="더보기">${lentonIcon("more")}</button>`;
+    right=`<button class="top-icon" data-action="notificationMenu" aria-label="알림 메뉴">${lentonIcon("more")}</button>`;
   }
   return `<div class="app lenton-view-${esc(view)}">
     <header class="topbar lenton-topbar">
@@ -750,11 +753,90 @@ function renderLoadingShell(title){
   bind();
 }
 
+
+const NOTIFICATION_FILTER_DEFS=[
+  ["mention","멘션/답글"],["status","계정 새 게시물"],["reblog","부스트"],["favourite","좋아요"],
+  ["follow","팔로워"],["follow_request","팔로우 요청"],["poll","투표 결과"],["update","게시물 수정"],
+  ["quote","Quotes"],["quoted_update","인용한 게시물 수정"],["added_to_collection","컬렉션 추가"],
+  ["collection_update","컬렉션 변경"],["admin.sign_up","관리자: 가입"],["admin.report","관리자: 신고"]
+];
+function notificationFilterPrefs(){
+  const saved=store.get(scopedKey("notification_filter"),null),out={};
+  for(const [key] of NOTIFICATION_FILTER_DEFS)out[key]=saved?.[key]!==false;
+  return out;
+}
+function saveNotificationFilterPrefs(prefs){store.set(scopedKey("notification_filter"),prefs)}
+function pushAlertPrefs(){
+  const d={dm:true,mention:true,status:true,interactions:true,follow:true};
+  return {...d,...(store.get(scopedKey("push_alerts"),{})||{})};
+}
+function savePushAlertPrefs(p){store.set(scopedKey("push_alerts"),p)}
+function pushAlertForm(prefs=pushAlertPrefs()){
+  const mention=!!(prefs.mention||prefs.dm);
+  return {
+    "data[alerts][mention]":mention?"true":"false",
+    "data[alerts][follow]":prefs.follow?"true":"false",
+    "data[alerts][follow_request]":prefs.follow?"true":"false",
+    "data[alerts][favourite]":prefs.interactions?"true":"false",
+    "data[alerts][reblog]":prefs.interactions?"true":"false",
+    "data[alerts][poll]":"true",
+    "data[alerts][status]":prefs.status?"true":"false",
+    "data[alerts][update]":"true",
+    "data[policy]":"all"
+  };
+}
+async function syncPushPreferences({quiet=false}={}){
+  try{
+    if(!("serviceWorker"in navigator)||!("PushManager"in window))return false;
+    const reg=await navigator.serviceWorker.ready,sub=await reg.pushManager.getSubscription();
+    if(!sub)return false;
+    await api("/api/v1/push/subscription",{method:"PUT",form:pushAlertForm()});
+    if(!quiet)toast("알림 종류를 저장했어요.");
+    return true;
+  }catch(e){
+    if(!quiet)toast("알림 종류 저장 실패: "+e.message);
+    return false;
+  }
+}
+function closeNotificationPopup(){document.querySelector(".notification-menu-shade")?.remove()}
+function openNotificationMenu(){
+  closeNotificationPopup();
+  const shade=document.createElement("div");shade.className="notification-menu-shade";
+  shade.innerHTML='<div class="notification-menu-popup"><button data-notification-menu="filter">알림 필터</button><button data-notification-menu="clear">알림 모두 지우기</button></div>';
+  document.body.append(shade);
+  shade.onclick=e=>{if(e.target===shade)closeNotificationPopup()};
+  shade.querySelectorAll("[data-notification-menu]").forEach(b=>b.onclick=async()=>{
+    const a=b.dataset.notificationMenu;closeNotificationPopup();
+    if(a==="filter")openNotificationFilter();
+    else if(a==="clear"){
+      if(!confirm("알림을 모두 지울까요?"))return;
+      try{await api("/api/v1/notifications/clear",{method:"POST",form:{}});notificationsView(false)}catch(e){toast(e.message)}
+    }
+  });
+}
+function openNotificationFilter(){
+  document.querySelector(".notification-filter-shade")?.remove();
+  const prefs=notificationFilterPrefs(),shade=document.createElement("div");shade.className="notification-filter-shade";
+  shade.innerHTML='<section class="notification-filter-dialog"><h2>알림 필터</h2><div class="notification-filter-list">'+
+    NOTIFICATION_FILTER_DEFS.map(([key,label])=>'<label><input type="checkbox" data-notification-filter="'+esc(key)+'" '+(prefs[key]?"checked":"")+'><span>'+esc(label)+'</span></label>').join("")+
+    '</div><footer><button type="button" data-filter-cancel>취소</button><button type="button" class="apply" data-filter-apply>적용</button></footer></section>';
+  document.body.append(shade);
+  shade.onclick=e=>{if(e.target===shade)shade.remove()};
+  shade.querySelector("[data-filter-cancel]").onclick=()=>shade.remove();
+  shade.querySelector("[data-filter-apply]").onclick=()=>{
+    shade.querySelectorAll("[data-notification-filter]").forEach(x=>prefs[x.dataset.notificationFilter]=x.checked);
+    saveNotificationFilterPrefs(prefs);shade.remove();notificationsView(false);
+  };
+}
 async function notificationsView(mentionsOnly=false){
   renderLoadingShell("알림");
   try{
     const query={limit:"40"};if(mentionsOnly)query["types[]"]="mention";
-    const items=await api("/api/v1/notifications",{query});
+    let items=await api("/api/v1/notifications",{query});
+    if(!mentionsOnly){
+      const filter=notificationFilterPrefs();
+      items=items.filter(n=>filter[n.type]!==false);
+    }
     const tabLabels=ANDROID?.renderer?.notificationTabs||["전체","멘션"];
     const tabs='<div class="notify-tabs lenton-notify-tabs"><button data-notify="all" class="'+(mentionsOnly?"":"active")+'">'+esc(tabLabels[0]||"전체")+'</button><button data-notify="mention" class="'+(mentionsOnly?"active":"")+'">'+esc(tabLabels[1]||"멘션")+'</button></div>';
     const labels=ANDROID?.renderer?.notificationLabels||{};
@@ -1549,43 +1631,72 @@ async function updateHistoryScreen(){
 async function settingsView(){
   const d=await pushDiagnostics();
   const notif=("Notification"in window)?Notification.permission:"unsupported";
+  const pushPrefs=pushAlertPrefs();
   let build=null;try{const r=await fetch("./build.json?ts="+Date.now(),{cache:"no-store"});if(r.ok)build=await r.json()}catch{}
   state.buildInfo=build;
-  const body=`<div class="settings">
-    ${!standalone()?'<div class="install-card"><b>홈 화면에 설치하기</b><p>Safari 공유 버튼 → 홈 화면에 추가 → 웹 앱으로 열기</p></div>':""}
-    <div class="section"><h3>빠른 알림</h3>
-      <div class="kv"><span>홈 화면 웹앱</span><b class="${standalone()?"ok":"bad"}">${standalone()?"예":"아니오"}</b></div>
-      <div class="kv"><span>Web Push 지원</span><b class="${d.supported?"ok":"bad"}">${d.supported?"지원":"미지원"}</b></div>
-      <div class="kv"><span>알림 권한</span><b>${esc(notif)}</b></div>
-      <div class="kv"><span>Push 등록</span><b class="${d.regd?"ok":"bad"}">${d.regd?"등록됨":"미등록"}</b></div>
-      <div class="kv"><span>마지막 Push 수신</span><b>${esc(d.last)}</b></div>
+  const permissionText=notif==="granted"?"허용됨":notif==="denied"?"차단됨":notif==="default"?"아직 묻지 않음":"지원 안 됨";
+  const pushState=d.regd?"켜짐":"꺼짐";
+  const body=`<div class="settings iphone-settings">
+    ${!standalone()?'<div class="install-card"><b>홈 화면에 설치하기</b><p>iPhone/iPad에서 백그라운드 알림을 받으려면 Safari 공유 → 홈 화면에 추가가 필요합니다.</p></div>':""}
+
+    <div class="section settings-group"><h3>화면</h3>
+      <div class="setting-row setting-split"><div><b>테마</b><small>렌톤 화면의 밝기를 선택합니다.</small></div><select id="themeSel" class="compact-select"><option value="system">시스템</option><option value="light">라이트</option><option value="dark">다크</option></select></div>
+      <div class="setting-row"><div class="setting-titleline"><div><b>강조 색상</b><small>버튼과 선택 표시의 색상입니다.</small></div><span id="accentName">사용자 색상</span></div>
+        <div class="accent-presets">
+          ${[["#249fe7","파랑"],["#f44fa0","핑크"],["#ff8b20","주황"],["#8751ef","보라"],["#ef5350","빨강"],["#37c6aa","민트"],["#60717b","회색"]].map(x=>`<button type="button" class="accent-dot ${state.accent.toLowerCase()===x[0]?"selected":""}" data-accent-preset="${x[0]}" aria-label="${x[1]}" style="--dot:${x[0]}"></button>`).join("")}
+          <label class="accent-custom" aria-label="직접 색상 선택"><input id="accentSel" type="color" value="${esc(state.accent)}"><span>＋</span></label>
+        </div>
+      </div>
+      <div class="setting-row ui-size-row">
+        <div class="setting-titleline"><div><b>UI 크기</b><small>글자·아이콘·버튼 크기를 함께 조절합니다.</small></div><strong id="uiScaleValue">${Math.round(state.uiScale*100)}%</strong></div>
+        <div class="ui-scale-control"><span>가</span><input id="uiScaleRange" type="range" min="80" max="120" step="5" value="${Math.round(state.uiScale*100)}"><span class="large">가</span></div>
+      </div>
+      <div class="setting-row"><button class="settings-link" data-action="layoutSettings"><span><b>화면 구성 편집</b><small>하단 메뉴의 순서와 표시 여부를 바꿉니다.</small></span><span>›</span></button></div>
+    </div>
+
+    <div class="section settings-group"><h3>알림</h3>
+      <div class="setting-intro"><b>휴대폰 알림</b><p>홈 화면에 설치한 렌톤이 닫혀 있어도 받을 알림을 선택합니다.</p></div>
+      ${[
+        ["dm","DM","나에게 비공개 직접 메시지가 왔을 때"],
+        ["mention","멘션과 답글","내 아이디가 언급되거나 내 게시물에 답글이 달릴 때"],
+        ["status","계정 새 게시물","프로필의 종 알림을 켠 계정이 새 게시물을 올릴 때"],
+        ["interactions","좋아요와 부스트","내 게시물이 좋아요 또는 부스트되었을 때"],
+        ["follow","팔로우","새 팔로워가 생기거나 팔로우 요청이 왔을 때"]
+      ].map(x=>`<label class="notification-setting-row"><span><b>${x[1]}</b><small>${x[2]}</small></span><input type="checkbox" class="lenton-switch" data-push-pref="${x[0]}" ${pushPrefs[x[0]]?"checked":""}></label>`).join("")}
+      <div class="setting-note">DM과 멘션은 Mastodon 서버 종류에 따라 하나의 ‘멘션’ 푸시로 함께 전달될 수 있습니다.</div>
+      <div class="push-summary">
+        <div><span>현재 알림 상태</span><b class="${d.regd?"ok":"bad"}">${pushState}</b></div>
+        <div><span>iPhone 알림 권한</span><b>${esc(permissionText)}</b></div>
+      </div>
+      <div class="setting-row"><button class="primary settings-push-button" data-action="enablepush">${d.regd?"알림 다시 등록":"휴대폰 알림 켜기"}</button></div>
       ${state.pushError?`<div class="notice bad">${esc(state.pushError)}</div>`:""}
-      <div class="setting-row"><button class="primary" data-action="enablepush">빠른 알림 켜기 / 재등록</button></div>
+      <details class="push-details"><summary>알림 연결 상태 자세히 보기</summary>
+        <div class="kv"><span>홈 화면 웹앱</span><b>${standalone()?"예":"아니오"}</b></div>
+        <div class="kv"><span>Web Push 지원</span><b>${d.supported?"지원":"미지원"}</b></div>
+        <div class="kv"><span>Push 등록</span><b>${d.regd?"등록됨":"미등록"}</b></div>
+        <div class="kv"><span>마지막 Push 수신</span><b>${esc(d.last)}</b></div>
+      </details>
     </div>
-    <div class="section"><h3>화면</h3>
-      <div class="setting-row"><b>모드</b><select id="themeSel" class="field" style="height:46px;margin-top:8px"><option value="system">시스템</option><option value="light">라이트</option><option value="dark">다크</option></select></div>
-      <div class="setting-row"><b>강조색</b><input id="accentSel" type="color" value="${esc(state.accent)}" style="width:54px;height:38px;border:0;background:none;margin-top:8px"></div>
-      <div class="setting-row"><button class="settings-link" data-action="layoutSettings">화면 구성 편집 <span>›</span></button></div>
+
+    <div class="section settings-group"><h3>계정</h3>
+      <div class="setting-row"><button class="settings-link" data-action="accountManager"><span><b>계정 추가 / 전환</b><small>렌톤에 연결된 계정을 관리합니다.</small></span><span>›</span></button></div>
+      <div class="setting-row setting-split"><div><b>서버</b><small>현재 로그인한 Mastodon 서버</small></div><span>${esc(state.session.host)}</span></div>
+      <div class="setting-row"><button class="danger settings-logout" data-action="logout">현재 계정 로그아웃</button></div>
     </div>
-    <div class="section"><h3>계정</h3>
-      <div class="setting-row"><b>서버</b><span>${esc(state.session.host)}</span></div>
-      <div class="setting-row"><button class="settings-link" data-action="accountManager">계정 추가 / 전환 <span>›</span></button></div>
-      <div class="setting-row"><button class="danger" data-action="logout">로그아웃</button></div>
+
+    <div class="section settings-group"><h3>지원</h3>
+      <div class="setting-row"><button class="settings-link" data-action="inquiry"><span><b>문의 / 기능 건의</b><small>오류 신고나 기능 의견을 보냅니다.</small></span><span>›</span></button></div>
+      <div class="setting-row"><button class="settings-link" data-action="updateHistory"><span><b>업데이트 내역</b><small>현재 버전과 변경 내용을 확인합니다.</small></span><span>›</span></button></div>
     </div>
-    <div class="section"><h3>지원</h3>
-      <div class="setting-row"><button class="settings-link" data-action="inquiry">문의 / 기능 건의 <span>›</span></button></div>
-      <div class="setting-row"><button class="settings-link" data-action="updateHistory">업데이트 내역 <span>›</span></button></div>
-    </div>
-    <div class="section"><h3>버전</h3>
-      <div class="setting-row"><b>Android 원본</b><span>v${esc(ANDROID?.versionName||"?")} · code ${esc(ANDROID?.versionCode||"?")}</span></div>
-      <div class="setting-row"><b>PWA revision</b><span>${esc(build?.pwaRevision||currentPwaToken()||"unknown")}</span></div>
-      <div class="setting-row"><b>업데이트</b><span>${state.updateAvailable?"새 버전 준비됨":"자동 업데이트"}</span></div>
+
+    <div class="section settings-group"><h3>버전</h3>
+      <div class="setting-row setting-split"><div><b>Android 원본</b></div><span>v${esc(ANDROID?.versionName||"?")} · code ${esc(ANDROID?.versionCode||"?")}</span></div>
+      <div class="setting-row setting-split"><div><b>PWA revision</b></div><span>${esc(build?.pwaRevision||currentPwaToken()||"unknown")}</span></div>
     </div>
   </div>`;
   $("#app").innerHTML=shell("설정",body,{gear:false});
   $("#themeSel").value=state.theme; bind();
 }
-
 async function openNotificationDeepLink(id){
   try{
     const n=await api(`/api/v1/notifications/${id}`);
@@ -1964,9 +2075,7 @@ async function enablePush(){
       "subscription[keys][p256dh]":j.keys.p256dh,
       "subscription[keys][auth]":j.keys.auth,
       "subscription[standard]":"true",
-      "data[alerts][mention]":"true","data[alerts][follow]":"true","data[alerts][follow_request]":"true",
-      "data[alerts][favourite]":"true","data[alerts][reblog]":"true","data[alerts][poll]":"true",
-      "data[alerts][status]":"false","data[alerts][update]":"true","data[policy]":"all"
+      ...pushAlertForm()
     };
     try {
       await api("/api/v1/push/subscription",{method:"POST",form});
@@ -2324,6 +2433,7 @@ function bind(){
     else if(a==="clearNotifications"){try{await api("/api/v1/notifications/clear",{method:"POST",form:{}});notificationsView(false)}catch(e){toast(e.message)}}
     else if(a==="share"){const u=b.dataset.url||"";try{if(navigator.share)await navigator.share({url:u});else{await navigator.clipboard.writeText(u);toast("링크를 복사했어요.")}}catch{}}
     else if(a==="topmenu")openDrawer()
+    else if(a==="notificationMenu")openNotificationMenu()
     else if(a==="statusmenu")openStatusMenu(b.dataset.id)
     else if(a==="newlist")newList()
     else if(a==="resetLayout")resetMainTabLayout()
@@ -2362,7 +2472,11 @@ function bind(){
   document.querySelectorAll("[data-account-remove]").forEach(b=>b.onclick=()=>removeSavedAccount(Number(b.dataset.accountRemove)));
   $("#searchInput")?.addEventListener("keydown",e=>{if(e.key==="Enter")runSearch()});
   $("#themeSel")?.addEventListener("change",e=>{state.theme=e.target.value;store.set("lenton_theme",state.theme);if(state.theme==="system")delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=state.theme});
-  $("#accentSel")?.addEventListener("input",e=>{state.accent=e.target.value;store.set("lenton_accent",state.accent);document.documentElement.style.setProperty("--accent",state.accent)});
+  const applyAccent=value=>{state.accent=value;store.set("lenton_accent",state.accent);document.documentElement.style.setProperty("--accent",state.accent);document.querySelectorAll("[data-accent-preset]").forEach(b=>b.classList.toggle("selected",b.dataset.accentPreset.toLowerCase()===state.accent.toLowerCase()))};
+  $("#accentSel")?.addEventListener("input",e=>applyAccent(e.target.value));
+  document.querySelectorAll("[data-accent-preset]").forEach(b=>b.onclick=()=>{applyAccent(b.dataset.accentPreset);const input=$("#accentSel");if(input)input.value=b.dataset.accentPreset});
+  $("#uiScaleRange")?.addEventListener("input",e=>{state.uiScale=Math.max(.8,Math.min(1.2,Number(e.target.value||100)/100));store.set("lenton_ui_scale",state.uiScale);const label=$("#uiScaleValue");if(label)label.textContent=Math.round(state.uiScale*100)+"%";applyAndroidSpecMetrics()});
+  document.querySelectorAll("[data-push-pref]").forEach(x=>x.onchange=async()=>{const p=pushAlertPrefs();p[x.dataset.pushPref]=x.checked;savePushAlertPrefs(p);const ok=await syncPushPreferences({quiet:true});toast(ok?"알림 설정을 저장했어요.":"알림 종류를 저장했어요. 알림을 켜면 적용됩니다.")});
   const appRoot=document.querySelector("#app>.app");
   if(appRoot){
     appRoot.classList.remove("refreshing");
