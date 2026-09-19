@@ -153,8 +153,8 @@ def build_spec(main_text: str, latest: dict, apk_sha: str, source_path: str):
                 "excludeDirect": ("direct" in public_filter_text),
                 "excludeBoosts": ("reblog" in public_filter_text),
                 "excludeReplies": ("in_reply_to_id" in public_filter_text),
-                "excludeOwnPosts": ("authorId" in public_filter_text and ("meId" in public_filter_text or "me_id" in public_filter_text)),
-                "homeSourceTrusted": ("loadFollowingPublicPage" in main_text and "publicFeed" in main_text),
+                "excludeOwnPosts": ("me_id" in main_text),
+                "homeSourceTrusted": ("/api/v1/timelines/home" in main_text and "/api/v1/timelines/public" in main_text),
             }
         },
         "theme": theme,
@@ -196,7 +196,7 @@ def main():
     main_text = main_source.read_text(encoding="utf-8", errors="ignore")
     spec = build_spec(main_text, latest, apk_sha, str(main_source.relative_to(sources)))
 
-    required = ["시간순", "퍼블릭"]
+    required = ["시간순", "퍼블릭", "me_id", "/api/v1/timelines/home", "/api/v1/timelines/public", "in_reply_to_id"]
     missing = [x for x in required if x not in main_text]
     if missing:
         raise SystemExit("Decompiled Android source missing required Lenton UI markers: " + ", ".join(missing))
