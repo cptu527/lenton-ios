@@ -2224,3 +2224,136 @@ img{display:block}
   display:grid;
   place-items:center;
 }
+
+
+/* 2026-09-19 Android composer / DM bubble / pull-to-refresh parity */
+.reply-compose .android-compose-tools{
+  grid-template-columns:repeat(5,52px) minmax(0,1fr);
+}
+.reply-compose .part-head{
+  min-height:24px;
+}
+.reply-compose .part-head label{display:none!important}
+
+.dm-thread-list{
+  padding:10px 14px 96px;
+  background:var(--bg);
+}
+.dm-day-separator{
+  display:flex;
+  justify-content:center;
+  margin:16px 0 12px;
+}
+.dm-day-separator span{
+  padding:7px 14px;
+  border-radius:999px;
+  background:var(--surface);
+  color:var(--sub);
+  font-size:12px;
+  line-height:1;
+}
+.dm-chat-row{
+  display:grid;
+  align-items:end;
+  gap:8px;
+  margin:7px 0;
+}
+.dm-chat-row.theirs{
+  grid-template-columns:38px max-content auto;
+  justify-content:start;
+}
+.dm-chat-row.mine{
+  grid-template-columns:auto max-content;
+  justify-content:end;
+}
+.dm-chat-avatar{
+  width:38px;
+  height:38px;
+  border-radius:50%;
+  object-fit:cover;
+  align-self:end;
+}
+.dm-chat-bubble{
+  max-width:min(68vw,560px);
+  border-radius:18px;
+  padding:9px 13px;
+  font-size:15px;
+  line-height:1.42;
+  overflow-wrap:anywhere;
+}
+.dm-chat-row.theirs .dm-chat-bubble{
+  grid-column:2;
+  background:var(--surface);
+  color:var(--fg);
+  border-bottom-left-radius:7px;
+}
+.dm-chat-row.mine .dm-chat-bubble{
+  grid-column:2;
+  background:var(--accent);
+  color:white;
+  border-bottom-right-radius:7px;
+}
+.dm-chat-bubble p{margin:0}
+.dm-chat-bubble a{color:inherit}
+.dm-chat-time{
+  color:var(--sub);
+  font-size:11px;
+  white-space:nowrap;
+  align-self:end;
+  padding-bottom:2px;
+}
+.dm-chat-row.theirs .dm-chat-time{
+  grid-column:3;
+  grid-row:1;
+}
+.dm-chat-row.mine .dm-chat-time{
+  grid-column:1;
+  grid-row:1;
+}
+.dm-bubble-media{
+  display:block;
+  border:0;
+  padding:6px 0 0;
+  background:none;
+}
+.dm-bubble-media img{
+  max-width:min(56vw,360px);
+  max-height:320px;
+  border-radius:12px;
+  object-fit:contain;
+  display:block;
+}
+.android-dm-compose{
+  position:sticky;
+  bottom:0;
+  z-index:6;
+  background:var(--bg);
+}
+
+.pull-refresh-indicator{
+  position:absolute;
+  left:50%;
+  top:-36px;
+  z-index:15;
+  width:32px;
+  height:32px;
+  margin-left:-16px;
+  border-radius:50%;
+  display:grid;
+  place-items:center;
+  background:var(--bg);
+  border:1px solid var(--line);
+  color:var(--accent);
+  box-shadow:0 2px 8px rgba(0,0,0,.08);
+  pointer-events:none;
+}
+.pull-refresh-indicator.loading span{
+  animation:lenton-spin .75s linear infinite;
+}
+@keyframes lenton-spin{
+  to{transform:rotate(360deg)}
+}
+.app.lenton-view-home .main{
+  position:relative;
+  will-change:transform;
+}
