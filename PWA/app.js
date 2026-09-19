@@ -1599,60 +1599,31 @@ function previewForMainView(view){
 function attachInteractiveMainSwipe(bottom){
   if(!bottom||bottom.dataset.interactiveSwipe==="1")return;
   bottom.dataset.interactiveSwipe="1";
-  let start=null,active=false,target=null,preview=null,current=null,width=0,dir=0;
-  const cleanup=()=>{
-    if(current){current.style.transition="";current.style.transform="";current.style.width="";current.style.minWidth="";current.style.maxWidth="";current.classList.remove("swipe-moving")}
-    preview?.remove();preview=null;start=null;active=false;target=null;current=null;dir=0;
-  };
+  let start=null,tracking=false,consuming=false;
+  const reset=()=>{start=null;tracking=false;consuming=false};
   bottom.addEventListener("touchstart",e=>{
     if(e.touches?.length!==1)return;
-    start=gesturePoint(e);active=false;target=null;current=document.querySelector("#app>.app");width=window.innerWidth||document.documentElement.clientWidth;if(current){current.style.width=width+"px";current.style.minWidth=width+"px";current.style.maxWidth=width+"px"}
+    start=gesturePoint(e);tracking=true;consuming=false;
   },{passive:true});
   bottom.addEventListener("touchmove",e=>{
-    if(!start||e.touches?.length!==1||!current)return;
+    if(!tracking||!start||e.touches?.length!==1)return;
     const p=gesturePoint(e),dx=p.x-start.x,dy=p.y-start.y;
-    if(!active){
-      if(Math.abs(dy)>18&&Math.abs(dy)>=Math.abs(dx)){cleanup();return}
-      if(Math.abs(dx)<10||Math.abs(dx)<=Math.abs(dy)*1.25)return;
-      const order=visibleNavItems().map(x=>x.id),i=order.indexOf(state.view);
-      dir=dx<0?1:-1;target=order[i+dir]||null;active=true;
-      if(target){
-        preview=buildSwipePreview(previewForMainView(target),"main-swipe-preview");
-        preview.style.transform=`translate3d(${dir>0?width:-width}px,0,0)`;
-      }
-      current.classList.add("swipe-moving");current.style.transition="none";
+    if(!consuming&&Math.abs(dx)>40&&Math.abs(dx)>Math.abs(dy)*1.25){
+      consuming=true;
+      try{e.preventDefault()}catch{}
+      return;
     }
-    if(!active)return;
-    e.preventDefault();
-    const raw=dx,shown=target?raw:raw*.18;
-    current.style.transform=`translate3d(${shown}px,0,0)`;
-    if(preview)preview.style.transform=`translate3d(${shown+(dir>0?width:-width)}px,0,0)`;
+    if(!consuming&&Math.abs(dy)>40&&Math.abs(dy)>=Math.abs(dx))reset();
+    if(consuming){try{e.preventDefault()}catch{}}
   },{passive:false});
-  bottom.addEventListener("touchend",async e=>{
-    if(!start||!current){cleanup();return}
-    const p=gesturePoint(e),dx=p.x-start.x,dt=Math.max(1,p.time-start.time),vx=dx/dt;
-    if(!active){cleanup();return}
-    const commit=!!target&&(Math.abs(dx)>width*.22||Math.abs(vx)>.65);
-    if(commit){
-      current.style.transition="transform 180ms cubic-bezier(.2,.75,.25,1)";
-      if(preview)preview.style.transition=current.style.transition;
-      requestAnimationFrame(()=>{
-        current.style.transform=`translate3d(${dir>0?-width:width}px,0,0)`;
-        if(preview)preview.style.transform="translate3d(0,0,0)";
-      });
-      await new Promise(r=>setTimeout(r,195));
-      rememberScroll();const next=target;cleanup();state.view=next;state.listId=null;render();
-    }else{
-      current.style.transition="transform 160ms cubic-bezier(.2,.75,.25,1)";
-      if(preview)preview.style.transition=current.style.transition;
-      requestAnimationFrame(()=>{
-        current.style.transform="translate3d(0,0,0)";
-        if(preview)preview.style.transform=`translate3d(${dir>0?width:-width}px,0,0)`;
-      });
-      setTimeout(cleanup,180);
-    }
+  bottom.addEventListener("touchend",e=>{
+    if(!tracking||!start){reset();return}
+    const p=gesturePoint(e),dx=p.x-start.x;
+    const commit=consuming&&Math.abs(dx)>40;
+    reset();
+    if(commit)moveMainView(dx<0?1:-1);
   },{passive:true});
-  bottom.addEventListener("touchcancel",cleanup,{passive:true});
+  bottom.addEventListener("touchcancel",reset,{passive:true});
 }
 function attachInteractiveHomeSwipe(main){
   if(!main||main.dataset.homeSwipe==="1"||state.listId)return;
