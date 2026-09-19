@@ -65,11 +65,16 @@ jobs:
       - name: Decompile final Android APK
         run: |
           rm -rf /tmp/lenton-jadx
+          set +e
           jadx --no-res --show-bad-code \
             -d /tmp/lenton-jadx \
             /tmp/lenton.apk
+          JADX_EXIT=$?
+          set -e
           test -d /tmp/lenton-jadx/sources
-          find /tmp/lenton-jadx/sources -type f -name '*.java' | wc -l
+          COUNT="$(find /tmp/lenton-jadx/sources -type f -name '*.java' | wc -l | tr -d ' ')"
+          echo "Decompiled Java files: $COUNT (jadx exit=$JADX_EXIT)"
+          test "$COUNT" -gt 0
 
       - name: Generate PWA spec from final Android code
         run: |
