@@ -1691,7 +1691,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
   };
   const draw=(refocus=true)=>{
     let old=$(".modal");if(old)old.remove();
-    const m=document.createElement("div");m.className="modal compose-modal";
+    const m=document.createElement("div");m.className="modal compose-modal"+(reply?" reply-compose":"");
     const ct=ANDROID?.renderer?.compose||{};
     const visOptions=[["public","공개"],["unlisted","조용히 공개"],["private","팔로워만"],["direct","DM"]];
     m.innerHTML=`<div class="sheet compose-sheet">
