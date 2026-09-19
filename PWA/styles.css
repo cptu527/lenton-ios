@@ -628,7 +628,7 @@ img{display:block}
 .notification-mark{width:44px;flex-basis:44px;font-size:25px;line-height:46px}
 .profile-hero{height:226px}
 .profile-header{height:170px}
-.profile-avatar{left:18px;top:126px;width:92px;height:92px}
+.profile-avatar{left:var(--android-profile-avatar-left);top:var(--android-profile-avatar-top);width:var(--android-profile-avatar);height:var(--android-profile-avatar)}
 .profile-info{padding:0 18px 12px}
 .profile-name-row{min-height:60px}
 .profile-names h2{font-size:22px;line-height:32px}
@@ -898,21 +898,21 @@ img{display:block}
 
 .message-row{
   width:100%;display:grid;
-  grid-template-columns:74px minmax(0,1fr) auto;
-  gap:16px;align-items:center;
+  grid-template-columns:var(--android-message-avatar) minmax(0,1fr) auto;
+  gap:12px;align-items:start;
   padding:var(--android-message-padding);
   border:0;border-bottom:1px solid var(--line);
   background:var(--bg);color:var(--fg);text-align:left;
 }
 .message-avatar{width:var(--android-message-avatar);height:var(--android-message-avatar);border-radius:50%;object-fit:cover}
 .message-main{min-width:0}
-.message-name{font-size:18px;font-weight:700;line-height:1.3}
-.message-handle{margin-top:4px;color:var(--sub);font-size:15px}
+.message-name{font-size:16px;font-weight:700;line-height:1.3}
+.message-handle{margin-top:2px;color:var(--sub);font-size:14px}
 .message-preview{
-  margin-top:8px;color:var(--sub);font-size:16px;
+  margin-top:4px;color:var(--sub);font-size:15px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-.message-date{align-self:start;padding-top:4px;color:var(--sub);font-size:14px;white-space:nowrap}
+.message-date{align-self:start;padding-top:2px;color:var(--sub);font-size:13px;white-space:nowrap}
 .message-row.unread .message-name{color:var(--fg)}
 
 .lenton-drawer{
@@ -938,13 +938,13 @@ img{display:block}
 .lenton-drawer .drawer-divider{margin:0;border-top:1px solid var(--line)}
 .lenton-drawer .drawer-row{
   height:var(--android-drawer-row);
-  font-size:20px;
+  font-size:var(--android-drawer-text);
   font-weight:600;
   padding:0 8px;
 }
 .lenton-drawer .drawer-row .glyph{
-  width:56px;
-  font-size:30px;
+  width:52px;
+  font-size:var(--android-drawer-glyph);
   display:inline-grid;
   place-items:center;
 }
@@ -953,7 +953,7 @@ img{display:block}
 .drawer-list-row .glyph{width:56px!important}
 
 @media (min-width:900px){
-  .message-row{grid-template-columns:74px minmax(0,1fr) 90px}
+  .message-row{grid-template-columns:var(--android-message-avatar) minmax(0,1fr) 90px}
   .notify-status,.notify-simple{grid-template-columns:64px minmax(0,1fr)}
 }
 
