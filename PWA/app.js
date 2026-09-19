@@ -848,7 +848,8 @@ async function notificationsView(mentionsOnly=false){
       const a=n.account||{},st=n.status||null,type=n.type||"";
       const label=labels[type]||type||"새 알림",glyph=glyphs[type]||glyphs.default||"♢";
       const body=st?'<div class="notify-content">'+renderRichText(st.content||"")+'</div>':"";
-      return '<article class="android-notify-card '+(st?"has-status":"")+'" '+(st?'data-notify-status="'+esc(st.id||"")+'"':"")+'>'+
+      const tone=type==="mention"?"notify-mention":type==="status"?"notify-passive":"notify-neutral";
+      return '<article class="android-notify-card '+tone+' '+(st?"has-status":"")+'" '+(st?'data-notify-status="'+esc(st.id||"")+'"':"")+'>'+
         '<div class="android-notify-glyph '+(colors[type]||"default")+'">'+esc(glyph)+'</div>'+
         '<div class="android-notify-main">'+
           '<button class="android-notify-person" data-profile="'+esc(a.id||"")+'"><img src="'+esc(a.avatar_static||a.avatar||"")+'" alt=""><b>'+renderEmojiText(a.display_name||a.username||"알림",a.emojis||[])+' · '+esc(label)+'</b></button>'+
@@ -1157,7 +1158,10 @@ async function profileView(mode=state.profileMode||"posts"){
     if(!state.me)state.me=await api("/api/v1/accounts/verify_credentials");
     const a=state.me,modes=profileModes();
     const entries=await Promise.all(modes.map(async m=>[m,await api("/api/v1/accounts/"+a.id+"/statuses",{query:profileQuery(m)})]));
-    const data=Object.fromEntries(entries);state.profilePagerData=data;
+    const data=Object.fromEntries(entries.map(([m,items])=>[m,(items||[]).filter(raw=>{
+      const st=raw?.reblog||raw;
+      return st?.visibility!=="direct";
+    })]));state.profilePagerData=data;
     $("#app").innerHTML=shell("프로필",profileMarkup(a,{own:true,mode})+buildProfilePager(mode,data));bind();
     requestAnimationFrame(()=>syncProfilePagerUi(mode,false));
   }catch(e){$("#app").innerHTML=shell("프로필",'<div class="center">'+esc(e.message)+'</div>');bind()}
