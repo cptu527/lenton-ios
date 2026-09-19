@@ -89,7 +89,7 @@ img{display:block}
   z-index:40;
   height:calc(64px + env(safe-area-inset-bottom));
   display:grid;
-  grid-template-columns:repeat(5,1fr);
+  grid-template-columns:repeat(4,1fr);
   padding:0 0 env(safe-area-inset-bottom);
   background:color-mix(in srgb,var(--bg) 96%,transparent);
   backdrop-filter:blur(18px) saturate(150%);
@@ -109,6 +109,8 @@ img{display:block}
 }
 .bottom button:first-child{font-size:31px}
 .bottom button.active{color:var(--accent)}
+.nav-svg{width:27px;height:27px;display:block}
+.bottom button:first-child .nav-svg{width:31px;height:31px}
 .fab{
   position:fixed;
   right:18px;
