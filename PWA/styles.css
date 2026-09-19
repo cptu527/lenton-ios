@@ -1850,3 +1850,41 @@ img{display:block}
   width:36px;height:36px;border:0;border-radius:50%;
   background:var(--surface);color:var(--sub);font-size:22px;padding:0
 }
+
+
+/* True profile ViewPager: fixed header/tabs, content-only finger tracking */
+.profile-tabs-4{position:relative;overflow:hidden}
+.profile-tabs-4 .profile-tab-indicator{
+  position:absolute;
+  left:0;
+  bottom:0;
+  width:36px;
+  height:3px;
+  border-radius:2px;
+  background:var(--accent);
+  transform:translate3d(0,0,0);
+  will-change:transform;
+}
+.profile-tabs-4 button.active::after{display:none!important}
+.profile-pager{
+  position:relative;
+  width:100%;
+  overflow:hidden;
+  touch-action:pan-y;
+  transition:height 150ms ease;
+}
+.profile-pager-track{
+  display:flex;
+  width:100%;
+  align-items:flex-start;
+  will-change:transform;
+  backface-visibility:hidden;
+  -webkit-backface-visibility:hidden;
+}
+.profile-pager-page{
+  flex:0 0 100%;
+  width:100%;
+  min-width:100%;
+  max-width:100%;
+  box-sizing:border-box;
+}
