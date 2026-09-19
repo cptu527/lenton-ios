@@ -488,7 +488,8 @@ def main():
       "MainNavIconView","StatusActionIconView","DrawerIconView","ComposerToolView",
       "/api/v1/conversations","새 DM","DM 보내기","메시지 보내기","showConversation","loadMessages",
       "private void renderProfile","private void loadMessages","private void addConversation","private void showConversation",
-      "private void showOwnProfile","private void loadNotifications","private void openDrawer",
+      "private void showOwnProfile","private void loadNotifications","private void openDrawer","private void drawerRow",
+      "StatusAction","DrawerIcon","MainNavIcon","onDraw(Canvas","addAction(",
       "알림","프로필","답글","게시물"
     ]
     contexts={}
