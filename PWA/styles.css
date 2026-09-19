@@ -1664,3 +1664,63 @@ img{display:block}
   contain:paint;
 }
 .home-swipe-preview,.profile-swipe-preview{right:auto;max-width:none}
+
+
+/* APK runtime parity: notification cards and dynamic profile counts */
+.profile-count-grid{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}
+.android-notify-card{
+  display:grid;
+  grid-template-columns:44px minmax(0,1fr);
+  gap:0;
+  padding:12px 14px 10px 16px;
+  border-bottom:1px solid var(--line);
+  background:var(--bg);
+}
+.android-notify-glyph{
+  width:44px;
+  min-height:46px;
+  display:flex;
+  justify-content:center;
+  align-items:flex-start;
+  padding-top:1px;
+  font-size:var(--android-notification-glyph,25px);
+  line-height:1;
+  color:var(--accent);
+}
+.android-notify-glyph.fav{color:var(--pink)}
+.android-notify-glyph.boost{color:var(--green)}
+.android-notify-main{min-width:0}
+.android-notify-person{
+  width:100%;
+  min-height:40px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  border:0;
+  padding:0;
+  background:none;
+  color:var(--fg);
+  text-align:left;
+}
+.android-notify-person img{
+  width:36px;height:36px;border-radius:50%;object-fit:cover;flex:0 0 36px;
+}
+.android-notify-person b{
+  min-width:0;
+  font-size:15px;
+  line-height:1.35;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.android-notify-card .notify-content{
+  margin-top:3px;
+  color:var(--sub);
+  font-size:15px;
+  line-height:1.42;
+  display:-webkit-box;
+  -webkit-line-clamp:4;
+  -webkit-box-orient:vertical;
+  overflow:hidden;
+}
+.android-notify-card.has-status{cursor:pointer}
