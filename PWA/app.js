@@ -563,50 +563,29 @@ function renderLoadingShell(title){
   bind();
 }
 
-async function notificationsView(replyMentions=false){
+async function notificationsView(mentionsOnly=false){
   renderLoadingShell("알림");
   try{
-    const query={limit:"40"};
-    if(replyMentions) query["types[]"]="mention";
-    const n=await api("/api/v1/notifications",{query});
-    const tabs=`<div class="notify-tabs lenton-notify-tabs">
-      <button data-notify="all" class="${replyMentions?"":"active"}">전체</button>
-      <button data-notify="mention" class="${replyMentions?"active":""}">멘션</button>
-    </div><div class="notification-tools"><button data-action="clearNotifications">알림 지우기</button></div>`;
-    const seenAt=Number(store.get(scopedKey("notifications_seen_at"),0)||0);
-    const newest=n.reduce((m,x)=>Math.max(m,new Date(x.created_at||0).getTime()||0),seenAt);
-    const rows=n.length?n.map(x=>{
-      const a=x.account||{}, st=x.status||null;
-      if(st){
-        const replyTarget=state.me?.display_name||state.me?.username||"나"; const replyMeta=st.in_reply_to_id?`<div class="notify-reply-meta">${renderEmojiText(replyTarget,state.me?.emojis||[])}에게 보내는 답글</div>`:"";
-        const isNew=(new Date(x.created_at||0).getTime()||0)>seenAt; return `<article class="notify-status ${isNew?"notification-new":""}" data-notification-id="${esc(x.id||"")}">
-          <img class="notify-avatar" data-profile="${esc(a.id||"")}" src="${esc(a.avatar_static||a.avatar||"")}" alt="">
-          <div class="notify-body">
-            <div class="notify-head">
-              <div><b>${renderEmojiText(a.display_name||a.username||"알림",a.emojis||[])}</b> <span>@${esc(a.acct||"")} · ${fmtTime(x.created_at)}</span></div>
-              <button class="status-more" data-action="statusmenu" data-id="${esc(st.id||"")}">${lentonIcon("more")}</button>
-            </div>
-            ${replyMeta}
-            <div class="notify-content">${renderRichText(st.content||"")}</div>
-            <div class="actions lenton-actions notify-actions">
-              <button data-action="reply" data-id="${esc(st.id||"")}">${lentonIcon("reply")}</button>
-              <button class="boost ${st.reblogged?"on":""}" data-action="boost" data-id="${esc(st.id||"")}">${lentonIcon("boost")} <span class="count">${st.reblogs_count||""}</span></button>
-              <button class="fav ${st.favourited?"on":""}" data-action="fav" data-id="${esc(st.id||"")}">${lentonIcon(st.favourited?"heartFill":"heart")} <span class="count">${st.favourites_count||""}</span></button>
-              <button class="bookmark ${st.bookmarked?"on":""}" data-action="bookmark" data-id="${esc(st.id||"")}">${lentonIcon(st.bookmarked?"bookmarkFill":"bookmark")}</button>
-              <button data-action="share" data-id="${esc(st.id||"")}" data-url="${esc(st.url||"")}">${lentonIcon("share")}</button>
-            </div>
-          </div>
-        </article>`;
-      }
-      const simpleLabels={follow:"나를 팔로우했습니다",follow_request:"팔로우를 요청했습니다",favourite:"내 게시물을 좋아해요",reblog:"내 게시물을 부스트했어요",poll:"투표가 종료됐어요",status:"새 게시물을 올렸어요",update:"게시물을 수정했어요"}; const label=simpleLabels[x.type]||"새 알림";
-      const isNew=(new Date(x.created_at||0).getTime()||0)>seenAt; return `<article class="notify-simple ${isNew?"notification-new":""}">
-        <img class="notify-avatar" data-profile="${esc(a.id||"")}" src="${esc(a.avatar_static||a.avatar||"")}" alt="">
-        <div><b>${renderEmojiText(a.display_name||a.username||"알림",a.emojis||[])}님이 ${esc(label)}</b><div class="notify-date">${fmtTime(x.created_at)}</div></div>
-      </article>`;
+    const query={limit:"40"};if(mentionsOnly)query["types[]"]="mention";
+    const items=await api("/api/v1/notifications",{query});
+    const tabLabels=ANDROID?.renderer?.notificationTabs||["전체","멘션"];
+    const tabs='<div class="notify-tabs lenton-notify-tabs"><button data-notify="all" class="'+(mentionsOnly?"":"active")+'">'+esc(tabLabels[0]||"전체")+'</button><button data-notify="mention" class="'+(mentionsOnly?"active":"")+'">'+esc(tabLabels[1]||"멘션")+'</button></div>';
+    const labels=ANDROID?.renderer?.notificationLabels||{};
+    const glyphs=ANDROID?.renderer?.notificationGlyphs||{};
+    const colors={favourite:"fav",reblog:"boost",mention:"mention",follow:"follow",follow_request:"follow"};
+    const rows=items.length?items.map(n=>{
+      const a=n.account||{},st=n.status||null,type=n.type||"";
+      const label=labels[type]||type||"새 알림",glyph=glyphs[type]||glyphs.default||"♢";
+      const body=st?'<div class="notify-content">'+renderRichText(st.content||"")+'</div>':"";
+      return '<article class="android-notify-card '+(st?"has-status":"")+'" '+(st?'data-notify-status="'+esc(st.id||"")+'"':"")+'>'+
+        '<div class="android-notify-glyph '+(colors[type]||"default")+'">'+esc(glyph)+'</div>'+
+        '<div class="android-notify-main">'+
+          '<button class="android-notify-person" data-profile="'+esc(a.id||"")+'"><img src="'+esc(a.avatar_static||a.avatar||"")+'" alt=""><b>'+renderEmojiText(a.display_name||a.username||"알림",a.emojis||[])+' · '+esc(label)+'</b></button>'+
+          body+
+        '</div></article>';
     }).join(""):'<div class="center">새 알림이 없어요.</div>';
     renderMainStable("알림",tabs+rows,{view:"notifications",fab:true});
-    store.set(scopedKey("notifications_seen_at"),newest)
-  }catch(e){renderMainStable("알림",`<div class="center">${esc(e.message)}</div>`,{view:"notifications",fab:true})}
+  }catch(e){renderMainStable("알림",'<div class="center">'+esc(e.message)+'</div>',{view:"notifications",fab:true})}
 }
 function dmConversationKey(c){
   const ids=(c?.accounts||[]).map(a=>String(a.id||a.acct||"")).filter(Boolean).sort();
@@ -778,7 +757,7 @@ function profileMarkup(a,opts={}){
     (avatar?'<button class="profile-avatar-button" data-media-url="'+esc(avatar)+'" data-media-alt="프로필 사진"><img class="profile-avatar" src="'+esc(avatar)+'" alt=""></button>':"")+
     '</div><div class="profile-info"><div class="profile-name-row"><div class="profile-names"><h2>'+renderEmojiText(a.display_name||a.username,a.emojis||[])+'</h2><div class="profile-handle">@'+esc(a.acct)+'</div></div>'+controls+'</div>'+
     '<div class="profile-bio">'+renderRichText(a.note||"")+'</div>'+(fields?'<div class="profile-fields">'+fields+'</div>':"")+privateNote+
-    '<div class="profile-count-grid"><div><b>'+Number(a.statuses_count||0).toLocaleString()+'</b><span>게시물</span></div><div><b>'+Number(a.following_count||0).toLocaleString()+'</b><span>팔로잉</span></div><div><b>'+Number(a.followers_count||0).toLocaleString()+'</b><span>팔로워</span></div></div></div>'+
+    '<div class="profile-count-grid">'+((ANDROID?.renderer?.profileCounts||["following","followers"]).map(key=>key==="statuses"?'<div><b>'+Number(a.statuses_count||0).toLocaleString()+'</b><span>게시물</span></div>':key==="following"?'<div><b>'+Number(a.following_count||0).toLocaleString()+'</b><span>팔로잉</span></div>':'<div><b>'+Number(a.followers_count||0).toLocaleString()+'</b><span>팔로워</span></div>').join(""))+'</div></div>'+
     '<div class="profile-tabs-2">'+tabs.map(x=>'<button data-action="'+x[2]+'" class="'+(mode===x[0]?"active":"")+'">'+x[1]+'</button>').join("")+'</div>';
 }
 async function profileView(mode=state.profileMode||"posts"){
