@@ -281,7 +281,17 @@ async function enablePush(){
       "data[alerts][favourite]":"true","data[alerts][reblog]":"true","data[alerts][poll]":"true",
       "data[alerts][status]":"false","data[alerts][update]":"true","data[policy]":"all"
     };
-    await api("/api/v1/push/subscription",{method:"POST",form});
+    try {
+      await api("/api/v1/push/subscription",{method:"POST",form});
+    } catch (firstError) {
+      const legacy={...form};
+      delete legacy["subscription[standard]"];
+      try {
+        await api("/api/v1/push/subscription",{method:"POST",form:legacy});
+      } catch {
+        throw firstError;
+      }
+    }
     toast("빠른 알림을 켰어요.");settingsView();
   }catch(e){state.pushError=e.message;toast("알림 설정 실패");settingsView()}
 }
