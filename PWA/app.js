@@ -296,6 +296,38 @@ function shell(title,body,opts={}){
 function nav(v){return `<button data-view="${v}" class="${state.view===v?"active":""}" aria-label="${v}">${navIcon(v)}</button>`}
 function navBar(){return visibleNavItems().map(x=>nav(x.id)).join("")}
 
+function stableItemKey(el){
+  if(el?.dataset?.statusId)return "status:"+el.dataset.statusId;
+  if(el?.dataset?.conv)return "conv:"+el.dataset.conv;
+  if(el?.dataset?.notificationId)return "notification:"+el.dataset.notificationId;
+  return "";
+}
+function reconcileMain(main,html){
+  const holder=document.createElement("div");holder.innerHTML=html;
+  const old=new Map();
+  main.querySelectorAll("[data-status-id],[data-conv],[data-notification-id]").forEach(el=>{const k=stableItemKey(el);if(k&&!old.has(k))old.set(k,el)});
+  holder.querySelectorAll("[data-status-id],[data-conv],[data-notification-id]").forEach(el=>{const k=stableItemKey(el),keep=k?old.get(k):null;if(keep)el.replaceWith(keep)});
+  const frag=document.createDocumentFragment();while(holder.firstChild)frag.appendChild(holder.firstChild);
+  main.replaceChildren(frag);
+}
+function renderMainStable(title,body,opts={}){
+  const view=opts.view||state.view;
+  const current=document.querySelector("#app>.app");
+  if(current&&current.classList.contains("lenton-view-"+view)){
+    current.classList.remove("refreshing");
+    const h=current.querySelector(".topbar h1");if(h)h.textContent=title;
+    const main=current.querySelector(".main");if(main)reconcileMain(main,body);
+    const oldFab=current.querySelector(".fab");
+    if(opts.fab){
+      const action=opts.fabAction||"compose";
+      if(oldFab)oldFab.dataset.action=action;
+      else current.insertAdjacentHTML("beforeend",`<button class="fab lenton-fab" data-action="${esc(action)}">＋</button>`);
+    }else oldFab?.remove();
+    bind();return;
+  }
+  $("#app").innerHTML=shell(title,body,opts);bind();
+}
+
 function loginView(){
   const install=!standalone()?'<div class="install-card"><b>아이폰/아이패드 설치</b><p>Safari 공유 버튼 → <b>홈 화면에 추가</b> → <b>웹 앱으로 열기</b></p></div>':"";
   return `<div class="login">
@@ -452,8 +484,8 @@ async function homeView(){
     const chronologicalLabel=ANDROID?.homeTabs?.chronological||"시간순", publicLabel=ANDROID?.homeTabs?.public||"퍼블릭";
     const tabs=`<div class="home-tabs"><button data-home-mode="home" class="${state.homeMode==="home"&&!state.listId?"active":""}">${esc(chronologicalLabel)}</button><button data-home-mode="public" class="${state.homeMode==="public"&&!state.listId?"active":""}">${esc(publicLabel)}</button></div>`;
     const visibleLists=state.lists.filter(x=>!hiddenListIds().has(x.id)); const chips=(visibleLists.length||state.lists.length)?`<div class="chips">${visibleLists.map(x=>`<button class="chip ${state.listId===x.id?"active":""}" data-list="${x.id}">${esc(x.title)}</button>`).join("")}<button class="chip" data-action="newlist">＋ 리스트</button></div>`:"";
-    state.timelineItems=data; $("#app").innerHTML=shell(state.listId?(state.lists.find(x=>x.id===state.listId)?.title||"리스트"):"홈",tabs+chips+(data.length?data.map(statusCard).join(""):'<div class="center">표시할 게시물이 없어요.</div>')+'<button class="load-more" data-action="loadmorehome">더 불러오기</button>',{fab:true});
-  }catch(e){$("#app").innerHTML=shell("홈",`<div class="center">타임라인을 불러오지 못했어요.<br><br>${esc(e.message)}<br><br><button class="primary" data-action="reload">다시 시도</button></div>`,{fab:true})}
+    state.timelineItems=data; renderMainStable(state.listId?(state.lists.find(x=>x.id===state.listId)?.title||"리스트"):"홈",tabs+chips+(data.length?data.map(statusCard).join(""):'<div class="center">표시할 게시물이 없어요.</div>')+'<button class="load-more" data-action="loadmorehome">더 불러오기</button>',{view:"home",fab:true});
+  }catch(e){renderMainStable("홈",`<div class="center">타임라인을 불러오지 못했어요.<br><br>${esc(e.message)}<br><br><button class="primary" data-action="reload">다시 시도</button></div>`,{view:"home",fab:true})}
   state.busy=false; bind();
 }
 
@@ -562,9 +594,9 @@ async function notificationsView(replyMentions=false){
         <div><b>${renderEmojiText(a.display_name||a.username||"알림",a.emojis||[])}님이 ${esc(label)}</b><div class="notify-date">${fmtTime(x.created_at)}</div></div>
       </article>`;
     }).join(""):'<div class="center">새 알림이 없어요.</div>';
-    $("#app").innerHTML=shell("알림",tabs+rows,{view:"notifications",fab:true});bind();
+    renderMainStable("알림",tabs+rows,{view:"notifications",fab:true});
     store.set(scopedKey("notifications_seen_at"),newest)
-  }catch(e){$("#app").innerHTML=shell("알림",`<div class="center">${esc(e.message)}</div>`,{view:"notifications",fab:true});bind()}
+  }catch(e){renderMainStable("알림",`<div class="center">${esc(e.message)}</div>`,{view:"notifications",fab:true})}
 }
 async function dmView(){
   renderLoadingShell("메시지");
@@ -582,8 +614,8 @@ async function dmView(){
         <time class="message-date">${fmtDateOnly(c.last_status?.created_at)}</time>
       </button>`;
     }).join(""):'<div class="center">대화가 없어요.</div>';
-    $("#app").innerHTML=shell("메시지",body,{view:"dm",fab:true,fabAction:"newdm"});bind(); state._conversations=cs;
-  }catch(e){$("#app").innerHTML=shell("메시지",`<div class="center">${esc(e.message)}</div>`,{view:"dm",fab:true,fabAction:"newdm"});bind()}
+    renderMainStable("메시지",body,{view:"dm",fab:true,fabAction:"newdm"}); state._conversations=cs;
+  }catch(e){renderMainStable("메시지",`<div class="center">${esc(e.message)}</div>`,{view:"dm",fab:true,fabAction:"newdm"})}
 }
 
 async function searchDmAccounts(q){
