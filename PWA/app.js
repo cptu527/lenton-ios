@@ -1581,12 +1581,14 @@ function animateTransform(el,to,duration=180){
     setTimeout(resolve,duration+24);
   });
 }
-function buildSwipePreview(html,className){
+function buildSwipePreview(html,className,rect=null){
   const p=document.createElement("div");p.className=className;
-  p.style.width="100vw";p.style.minWidth="100vw";p.style.maxWidth="100vw";
+  const width=Math.max(1,Math.round(rect?.width||window.innerWidth||document.documentElement.clientWidth));
+  p.style.width=width+"px";p.style.minWidth=width+"px";p.style.maxWidth=width+"px";
+  if(rect){p.style.left=Math.round(rect.left)+"px";p.style.right="auto"}
   p.innerHTML=html||'<div class="swipe-empty"></div>';
   document.body.append(p);
-  const child=p.firstElementChild;if(child){child.style.width="100vw";child.style.minWidth="100vw";child.style.maxWidth="100vw"}
+  const child=p.firstElementChild;if(child){child.style.width=width+"px";child.style.minWidth=width+"px";child.style.maxWidth=width+"px"}
   return p;
 }
 function previewForMainView(view){
@@ -1631,7 +1633,7 @@ function attachInteractiveHomeSwipe(main){
   const cleanup=()=>{main.style.transition="";main.style.transform="";main.classList.remove("swipe-moving");preview?.remove();preview=null;start=null;active=false;target=null};
   main.addEventListener("touchstart",e=>{
     if(e.touches?.length!==1)return;const p=gesturePoint(e);if(p.x<=28)return;
-    start=p;width=window.innerWidth||document.documentElement.clientWidth;active=false;
+    start=p;width=Math.max(1,main.getBoundingClientRect().width);active=false;
   },{passive:true});
   main.addEventListener("touchmove",e=>{
     if(!start||e.touches?.length!==1)return;
@@ -1644,7 +1646,7 @@ function attachInteractiveHomeSwipe(main){
       active=true;main.classList.add("swipe-moving");main.style.transition="none";
       if(target){
         const html=state.homeCache[target]||'<div class="center">불러오는 중…</div>';
-        preview=buildSwipePreview(html,"home-swipe-preview");
+        preview=buildSwipePreview(html,"home-swipe-preview",main.getBoundingClientRect());
         preview.style.transform=`translate3d(${dir>0?width:-width}px,0,0)`;
       }
     }
@@ -1757,10 +1759,10 @@ function attachDrawerCloseSwipe(drawer){
 }
 function attachInteractiveProfileSwipe(host){
   if(!host||host.dataset.profileSwipe==="1")return;host.dataset.profileSwipe="1";
-  let start=null,active=false,targetMode=null,preview=null,width=0,dir=0;
+  let start=null,active=false,targetMode=null,preview=null,width=0,dir=0,hostRect=null;
   const modes=["posts","replies"],accountId=state.profileAccount?.id||state.me?.id||"me";
   const cleanup=()=>{host.style.transition="";host.style.transform="";host.classList.remove("swipe-moving");preview?.remove();preview=null;start=null;active=false;targetMode=null};
-  host.addEventListener("touchstart",e=>{if(e.touches?.length!==1)return;const p=gesturePoint(e);if(p.x<=28)return;start=p;width=window.innerWidth||document.documentElement.clientWidth},{passive:true});
+  host.addEventListener("touchstart",e=>{if(e.touches?.length!==1)return;const p=gesturePoint(e);if(p.x<=28)return;start=p;hostRect=host.getBoundingClientRect();width=Math.max(1,hostRect.width)},{passive:true});
   host.addEventListener("touchmove",e=>{
     if(!start||e.touches?.length!==1)return;const p=gesturePoint(e),dx=p.x-start.x,dy=p.y-start.y;
     if(!active){
@@ -1770,7 +1772,7 @@ function attachInteractiveProfileSwipe(host){
       host.classList.add("swipe-moving");host.style.transition="none";
       if(targetMode){
         const key=accountId+":"+targetMode,html=state.profileCache[key]||'<div class="center">불러오는 중…</div>';
-        preview=buildSwipePreview(html,"profile-swipe-preview");preview.style.transform="translate3d("+(dir>0?width:-width)+"px,0,0)";
+        preview=buildSwipePreview(html,"profile-swipe-preview",hostRect);preview.style.transform="translate3d("+(dir>0?width:-width)+"px,0,0)";
       }
     }
     if(!active)return;e.preventDefault();const shown=targetMode?dx:dx*.18;
