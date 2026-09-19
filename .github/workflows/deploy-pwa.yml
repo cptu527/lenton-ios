@@ -1,4 +1,4 @@
-name: Deploy Lenton PWA from Android source
+name: Deploy Lenton PWA from release APK
 
 on:
   push:
@@ -8,11 +8,8 @@ on:
       - 'tools/sync_android_to_pwa.py'
       - '.github/workflows/deploy-pwa.yml'
   workflow_dispatch:
-    inputs:
-      android_ref:
-        description: 'mastoflow-android branch/tag/SHA to mirror'
-        required: false
-        default: 'build/v02517-private-note-accent'
+  schedule:
+    - cron: '17,47 * * * *'
 
 permissions:
   contents: write
@@ -21,62 +18,106 @@ concurrency:
   group: lenton-pwa-deploy
   cancel-in-progress: true
 
-env:
-  ANDROID_REPO: cptu527/mastoflow-android
-  ANDROID_REF: ${{ inputs.android_ref || 'build/v02517-private-note-accent' }}
-
 jobs:
   deploy:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
-      - name: Checkout canonical Android Lenton
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ env.ANDROID_REPO }}
-          ref: ${{ env.ANDROID_REF }}
-          path: android-source
-
-      - name: Resolve Android version and source SHA
+      - name: Resolve latest published Android APK
         id: android
         run: |
-          echo "commit=$(git -C android-source rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          echo "main_sha=$(git -C android-source rev-parse HEAD:app/src/main/java/com/mastoflow/app/MainActivity.java)" >> "$GITHUB_OUTPUT"
-          VERSION_NAME="$(grep -RhoE 'versionName[ =]+"?[0-9]+\.[0-9]+\.[0-9]+' android-source/app android-source/*.gradle* 2>/dev/null | head -n1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)"
-          test -n "$VERSION_NAME"
-          echo "version=$VERSION_NAME" >> "$GITHUB_OUTPUT"
-          echo "Android version: $VERSION_NAME"
-          echo "Android commit: $(git -C android-source rev-parse HEAD)"
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, urllib.request
+          data=json.load(urllib.request.urlopen("https://raw.githubusercontent.com/cptu527/lenton-updates/main/latest.json"))
+          print("version="+str(data["versionName"]))
+          print("version_code="+str(data["versionCode"]))
+          print("apk_url="+str(data["apkUrl"]))
+          print("apk_sha256="+str(data["sha256"]).lower())
+          PY
 
-      - name: Generate PWA contract from Android source
+      - name: Skip scheduled rebuild when Android APK is unchanged
+        id: gate
         run: |
-          python3 tools/sync_android_to_pwa.py             android-source/app/src/main/java/com/mastoflow/app/MainActivity.java             "${{ steps.android.outputs.main_sha }}"             "${{ env.ANDROID_REF }}"
+          CHANGED=true
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            python3 - <<'PY' > /tmp/deployed_sha.txt || true
+          import json, urllib.request
+          try:
+              data=json.load(urllib.request.urlopen("https://raw.githubusercontent.com/cptu527/lenton-ios/gh-pages/generated/android-contract.json"))
+              print(data.get("android_apk_sha256",""))
+          except Exception:
+              print("")
+          PY
+            DEPLOYED_SHA="$(cat /tmp/deployed_sha.txt)"
+            if [ "$DEPLOYED_SHA" = "${{ steps.android.outputs.apk_sha256 }}" ]; then CHANGED=false; fi
+          fi
+          echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"
+          echo "Android changed: $CHANGED"
+
+      - name: Download and verify Android APK
+        if: steps.gate.outputs.changed == 'true'
+        run: |
+          curl -L --fail --retry 3 -o /tmp/lenton.apk "${{ steps.android.outputs.apk_url }}"
+          ACTUAL="$(shasum -a 256 /tmp/lenton.apk | awk '{print $1}')"
+          test "$ACTUAL" = "${{ steps.android.outputs.apk_sha256 }}"
+          echo "Verified Lenton v${{ steps.android.outputs.version }} APK"
+
+      - name: Install JADX
+        if: steps.gate.outputs.changed == 'true'
+        run: |
+          if ! command -v jadx >/dev/null 2>&1; then brew install jadx; fi
+          jadx --version
+
+      - name: Decompile shipped Android MainActivity
+        if: steps.gate.outputs.changed == 'true'
+        run: |
+          rm -rf /tmp/lenton-jadx
+          jadx --no-res -d /tmp/lenton-jadx /tmp/lenton.apk
+          MAIN="$(find /tmp/lenton-jadx/sources -path '*/com/mastoflow/app/MainActivity.java' -print -quit)"
+          test -n "$MAIN"
+          cp "$MAIN" /tmp/LentonMainActivity.java
+          wc -c /tmp/LentonMainActivity.java
+
+      - name: Generate web contract from shipped APK code
+        if: steps.gate.outputs.changed == 'true'
+        run: |
+          python3 tools/sync_android_to_pwa.py             /tmp/LentonMainActivity.java             "${{ steps.android.outputs.apk_sha256 }}"             "apk-v${{ steps.android.outputs.version }}"
+
+      - name: Stamp Android APK metadata into contract
+        if: steps.gate.outputs.changed == 'true'
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("PWA/generated/android-contract.json")
+          c=json.loads(p.read_text())
+          c["android_version_name"]="${{ steps.android.outputs.version }}"
+          c["android_version_code"]=int("${{ steps.android.outputs.version_code }}")
+          c["android_apk_sha256"]="${{ steps.android.outputs.apk_sha256 }}"
+          c["source_of_truth"]="Published Lenton Android APK"
+          p.write_text(json.dumps(c,ensure_ascii=False,indent=2)+"\n")
+          Path("PWA/generated/android-contract.js").write_text(
+              "window.LENTON_ANDROID_CONTRACT="+json.dumps(c,ensure_ascii=False,separators=(",",":"))+";\n"
+          )
+          PY
 
       - name: Validate web runtime
+        if: steps.gate.outputs.changed == 'true'
         run: |
           node --check PWA/app.js
           node --check PWA/sw.js
           node --check PWA/generated/android-contract.js
 
-      - name: Build PWA using exact Android release artwork
+      - name: Build PWA with exact APK launcher
+        if: steps.gate.outputs.changed == 'true'
         run: |
           rm -rf dist-pwa
           cp -R PWA dist-pwa
-          VERSION="${{ steps.android.outputs.version }}"
-          APK="/tmp/Lenton-v${VERSION}-test.apk"
-          URL="https://raw.githubusercontent.com/cptu527/lenton-updates/main/Lenton-v${VERSION}-test.apk"
-          python3 - "$URL" "$APK" <<'PY'
-          import sys
-          from urllib.request import urlretrieve
-          urlretrieve(sys.argv[1],sys.argv[2])
-          PY
-          test -s "$APK"
-          python3 - "$APK" <<'PY'
+          python3 - <<'PY'
           from pathlib import Path
-          import struct,sys,zipfile
-          apk=Path(sys.argv[1])
-          with zipfile.ZipFile(apk) as z:
+          import struct, zipfile
+          with zipfile.ZipFile("/tmp/lenton.apk") as z:
               pngs=[]
               for n in z.namelist():
                   if not n.lower().endswith(".png") or ".9.png" in n.lower(): continue
@@ -88,30 +129,32 @@ jobs:
               if not pngs: raise SystemExit("No Android launcher candidate")
               launcher=sorted(pngs,key=lambda x:(x[1]==192,x[2],x[1]))[-1]
               print("Android launcher:",launcher)
-              Path("/tmp/lenton-android-launcher.png").write_bytes(z.read(launcher[0]))
+              Path("/tmp/lenton-launcher.png").write_bytes(z.read(launcher[0]))
           PY
-          cp /tmp/lenton-android-launcher.png dist-pwa/icon-192.png
-          cp /tmp/lenton-android-launcher.png dist-pwa/icon-512.png
-          cp /tmp/lenton-android-launcher.png dist-pwa/icon-1024.png
+          cp /tmp/lenton-launcher.png dist-pwa/icon-192.png
+          cp /tmp/lenton-launcher.png dist-pwa/icon-512.png
+          cp /tmp/lenton-launcher.png dist-pwa/icon-1024.png
           sips -z 192 192 dist-pwa/icon-192.png >/dev/null
           sips -z 512 512 dist-pwa/icon-512.png >/dev/null
           sips -z 1024 1024 dist-pwa/icon-1024.png >/dev/null
           printf '%s\n' '' > dist-pwa/.nojekyll
 
       - name: Verify Android/PWA lockstep
+        if: steps.gate.outputs.changed == 'true'
         run: |
           python3 - <<'PY'
           import json
           from pathlib import Path
           c=json.loads(Path("dist-pwa/generated/android-contract.json").read_text())
+          assert c["android_version_name"]=="${{ steps.android.outputs.version }}"
+          assert c["android_apk_sha256"]=="${{ steps.android.outputs.apk_sha256 }}"
           assert c["navigation"]==["home","search","notifications","messages"]
           assert c["home_tabs"]==["chronological","public"]
-          assert c["android_mainactivity_sha"]=="${{ steps.android.outputs.main_sha }}"
-          print("PWA locked to Android MainActivity",c["android_mainactivity_sha"])
+          print("PWA locked to Lenton Android",c["android_version_name"],c["android_apk_sha256"])
           PY
 
       - name: Publish gh-pages branch
-        if: github.ref == 'refs/heads/main'
+        if: steps.gate.outputs.changed == 'true' && github.ref == 'refs/heads/main'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
