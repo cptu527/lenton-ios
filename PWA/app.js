@@ -224,29 +224,52 @@ async function profileEditScreen(){
   closeDrawer();
   try{
     if(!state.me)state.me=await api("/api/v1/accounts/verify_credentials");
-    const m=state.me;
-    const body=`<div class="profile-editor">
-      <label>표시 이름<input id="profileEditName" class="field" value="${esc(m.display_name||"")}"></label>
-      <label>소개<textarea id="profileEditNote" class="field">${esc(plain(m.note||""))}</textarea></label>
-      <label class="check-row"><input id="profileEditLocked" type="checkbox" ${m.locked?"checked":""}> 팔로우 요청 승인 필요</label>
-      <label>프로필 사진<input id="profileEditAvatar" type="file" accept="image/*"></label>
-      <label>헤더 이미지<input id="profileEditHeader" type="file" accept="image/*"></label>
-      <button class="primary profile-save" data-action="saveProfileEdit">저장</button>
-    </div>`;
+    const m=state.me,header=m.header_static||m.header||"",avatar=m.avatar_static||m.avatar||"";
+    const fields=[...(m.fields||[])];while(fields.length<4)fields.push({name:"",value:""});
+    const body='<div class="profile-editor android-profile-editor">'+
+      '<div class="profile-edit-hero">'+
+        '<img id="profileEditHeaderPreview" class="profile-edit-header-preview" src="'+esc(header)+'" alt="">'+
+        '<img id="profileEditAvatarPreview" class="profile-edit-avatar-preview" src="'+esc(avatar)+'" alt="">'+
+        '<button type="button" class="profile-edit-header-button" id="pickProfileHeader">헤더 변경</button>'+
+        '<button type="button" class="profile-edit-avatar-button" id="pickProfileAvatar">사진 변경</button>'+
+      '</div>'+
+      '<input id="profileEditAvatar" type="file" accept="image/*" hidden>'+
+      '<input id="profileEditHeader" type="file" accept="image/*" hidden>'+
+      '<div class="profile-edit-fields">'+
+        '<label><span>표시 이름</span><input id="profileEditName" class="field" value="'+esc(m.display_name||"")+'" maxlength="30"></label>'+
+        '<label><span>소개</span><textarea id="profileEditNote" class="field" rows="5">'+esc(plain(m.note||""))+'</textarea></label>'+
+        '<label class="check-row profile-edit-lock"><input id="profileEditLocked" type="checkbox" '+(m.locked?"checked":"")+'> <span>팔로우 요청 승인 필요</span></label>'+
+        '<div class="profile-edit-section-title">프로필 메타데이터</div>'+
+        fields.slice(0,4).map((x,i)=>'<div class="profile-edit-field-pair"><input class="field" data-profile-field-name="'+i+'" placeholder="라벨" value="'+esc(plain(x.name||""))+'"><input class="field" data-profile-field-value="'+i+'" placeholder="내용" value="'+esc(plain(x.value||""))+'"></div>').join("")+
+        '<button class="primary profile-save" data-action="saveProfileEdit">저장</button>'+
+      '</div></div>';
     $("#app").innerHTML=standaloneShell("프로필 편집",body);bind();
+    const avatarInput=$("#profileEditAvatar"),headerInput=$("#profileEditHeader");
+    $("#pickProfileAvatar")?.addEventListener("click",()=>avatarInput?.click());
+    $("#pickProfileHeader")?.addEventListener("click",()=>headerInput?.click());
+    avatarInput?.addEventListener("change",()=>{const file=avatarInput.files?.[0];if(file)$("#profileEditAvatarPreview").src=URL.createObjectURL(file)});
+    headerInput?.addEventListener("change",()=>{const file=headerInput.files?.[0];if(file)$("#profileEditHeaderPreview").src=URL.createObjectURL(file)});
   }catch(e){toast(e.message)}
 }
 async function saveProfileEdit(){
+  const btn=document.querySelector('[data-action="saveProfileEdit"]');if(btn){btn.disabled=true;btn.textContent="저장 중…"}
   const fd=new FormData();
   fd.append("display_name",$("#profileEditName")?.value||"");
   fd.append("note",$("#profileEditNote")?.value||"");
   fd.append("locked",$("#profileEditLocked")?.checked?"true":"false");
   const avatar=$("#profileEditAvatar")?.files?.[0],header=$("#profileEditHeader")?.files?.[0];
   if(avatar)fd.append("avatar",avatar);if(header)fd.append("header",header);
+  for(let i=0;i<4;i++){
+    const name=document.querySelector('[data-profile-field-name="'+i+'"]')?.value||"";
+    const value=document.querySelector('[data-profile-field-value="'+i+'"]')?.value||"";
+    fd.append("fields_attributes["+i+"][name]",name);
+    fd.append("fields_attributes["+i+"][value]",value);
+  }
   try{
     state.me=await apiMultipart("/api/v1/accounts/update_credentials",fd,{method:"PATCH"});
-    saveCurrentAccount();toast("프로필을 저장했어요.");state.view="profile";render();
-  }catch(e){toast(e.message)}
+    saveCurrentAccount();toast("프로필을 저장했어요.");
+    state.view="profile";state.profileMode="posts";render();
+  }catch(e){toast(e.message);if(btn){btn.disabled=false;btn.textContent="저장"}}
 }
 function realtimeSettingsScreen(){
   const on=store.get("lenton_realtime_indicator",true)!==false;
@@ -691,15 +714,13 @@ async function newDmScreen(){
   };
   drawSelected();
 }
-function dmBubble(st){
+function dmThreadRow(st){
   const own=String(st.account?.id||"")===String(state.me?.id||"");
-  const media=(st.media_attachments||[]).map(m=>'<button class="dm-bubble-media" data-media-url="'+esc(m.url||m.preview_url||"")+'" data-media-alt="'+esc(m.description||"DM 이미지")+'"><img src="'+esc(m.preview_url||m.url||"")+'" alt=""></button>').join("");
-  return '<div class="dm-bubble-row '+(own?"mine":"theirs")+'">'+
-    (own?"":'<img class="dm-bubble-avatar" src="'+esc(st.account?.avatar_static||st.account?.avatar||"")+'" alt="">')+
-    '<div class="dm-bubble-wrap">'+
-    (own?"":'<div class="dm-bubble-name">'+renderEmojiText(st.account?.display_name||st.account?.username||"",st.account?.emojis||[])+'</div>')+
-    '<div class="dm-bubble">'+renderRichText(st.content||"")+media+'</div>'+
-    '<div class="dm-bubble-time">'+fmtTime(st.created_at)+'</div></div></div>';
+  const media=(st.media_attachments||[]).map(m=>'<button class="dm-thread-media" data-media-url="'+esc(m.url||m.preview_url||"")+'" data-media-alt="'+esc(m.description||"DM 이미지")+'"><img src="'+esc(m.preview_url||m.url||"")+'" alt=""></button>').join("");
+  return '<article class="dm-thread-row '+(own?"mine":"theirs")+'">'+
+    '<img class="dm-thread-avatar" src="'+esc(st.account?.avatar_static||st.account?.avatar||"")+'" alt="">'+
+    '<div class="dm-thread-main"><div class="dm-thread-head"><b>'+renderEmojiText(st.account?.display_name||st.account?.username||"",st.account?.emojis||[])+'</b><span>@'+esc(st.account?.acct||"")+'</span><time>'+fmtTime(st.created_at)+'</time></div>'+
+    '<div class="dm-thread-content">'+renderRichText(st.content||"")+'</div>'+media+'</div></article>';
 }
 async function sendInlineDm(conversation){
   const input=$("#dmInlineInput"),send=$("#dmInlineSend"),file=$("#dmInlineFile");
@@ -722,7 +743,7 @@ async function sendInlineDm(conversation){
   }catch(e){toast(e.message);send.disabled=false;send.textContent="보내기"}
 }
 async function openConversation(id){
-  const c=state._conversations?.find(x=>String(x.id)===String(id)); if(!c?.last_status)return;
+  const c=state._conversations?.find(x=>String(x.id)===String(id));if(!c?.last_status)return;
   state.currentConversation=c;
   try{
     const ctx=await api("/api/v1/statuses/"+c.last_status.id+"/context");
@@ -730,16 +751,28 @@ async function openConversation(id){
     const uniq=new Map();for(const st of all)if(st?.id)uniq.set(String(st.id),st);
     const statuses=[...uniq.values()].sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")));
     const title=(c.accounts?.[0]?.display_name||"DM")+(c._threadLabel?" · "+c._threadLabel:"");
-    const previous=c._previousConversationId?'<button class="dm-previous-conversation" data-dm-previous="'+esc(c._previousConversationId)+'">이전 대화 보기  ›</button>':"";
-    const body=previous+'<div class="dm-thread-bubbles">'+statuses.map(dmBubble).join("")+'</div>'+
-      '<div class="dm-inline-compose"><button class="dm-attach-btn" id="dmInlineAttach" aria-label="이미지 첨부">▧</button>'+
-      '<input id="dmInlineFile" type="file" accept="image/*,video/*" multiple hidden>'+
-      '<textarea id="dmInlineInput" rows="1" placeholder="메시지 보내기"></textarea>'+
-      '<button class="primary" id="dmInlineSend">보내기</button></div>';
+    const previous=c._previousConversationId?'<button class="dm-previous-conversation" data-dm-previous="'+esc(c._previousConversationId)+'">이전 대화 보기 ›</button>':"";
+    const body=previous+'<div class="dm-thread-list">'+statuses.map(dmThreadRow).join("")+'</div>'+
+      '<div class="dm-inline-compose android-dm-compose">'+
+        '<button class="dm-tool-btn" id="dmInlineAttach" aria-label="사진 첨부">▧</button>'+
+        '<button class="dm-tool-btn" id="dmInlineCamera" aria-label="카메라">◉</button>'+
+        '<input id="dmInlineFile" type="file" accept="image/*,video/*" multiple hidden>'+
+        '<input id="dmInlineCameraFile" type="file" accept="image/*" capture="environment" hidden>'+
+        '<textarea id="dmInlineInput" rows="1" maxlength="'+Number(state.instance?.configuration?.statuses?.max_characters||500)+'" placeholder="메시지 보내기"></textarea>'+
+        '<span id="dmInlineCount" class="dm-inline-count">'+Number(state.instance?.configuration?.statuses?.max_characters||500)+'</span>'+
+        '<button class="dm-inline-send" id="dmInlineSend" aria-label="보내기">↗</button>'+
+      '</div><div id="dmMediaPreview" class="dm-media-preview"></div>';
     $("#app").innerHTML=standaloneShell(title,body);bind();
+    const input=$("#dmInlineInput"),max=Number(input?.maxLength||500),count=$("#dmInlineCount");
+    const updateCount=()=>{if(count)count.textContent=String(Math.max(0,max-(input?.value.length||0)))};
+    input?.addEventListener("input",updateCount);updateCount();
     $("#dmInlineAttach")?.addEventListener("click",()=>$("#dmInlineFile")?.click());
+    $("#dmInlineCamera")?.addEventListener("click",()=>$("#dmInlineCameraFile")?.click());
+    const previewFiles=files=>{const box=$("#dmMediaPreview");if(!box)return;box.innerHTML=[...files].slice(0,4).map(f=>'<div class="dm-media-chip">'+esc(f.name)+'</div>').join("")};
+    $("#dmInlineFile")?.addEventListener("change",e=>previewFiles(e.target.files));
+    $("#dmInlineCameraFile")?.addEventListener("change",e=>{if(e.target.files?.[0]){const dt=new DataTransfer();dt.items.add(e.target.files[0]);$("#dmInlineFile").files=dt.files;previewFiles(dt.files)}});
     $("#dmInlineSend")?.addEventListener("click",()=>sendInlineDm(c));
-    $("#dmInlineInput")?.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendInlineDm(c)}});
+    input?.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendInlineDm(c)}});
     api("/api/v1/conversations/"+id+"/read",{method:"POST",form:{}}).catch(()=>{});
     requestAnimationFrame(()=>{const main=document.querySelector(".standalone-page .main");if(main)main.scrollTop=main.scrollHeight});
   }catch(e){toast(e.message)}
