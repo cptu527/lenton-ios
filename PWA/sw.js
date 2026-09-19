@@ -1,5 +1,5 @@
 const CACHE="lenton-pwa-v4";
-const SHELL=["./","./index.html","./styles.css","./app.js","./manifest.webmanifest","./generated/android-spec.js","./icon-192.png","./icon-512.png","./icon-1024.png"];
+const SHELL=["./","./index.html","./styles.css","./app.js","./manifest.webmanifest","./generated/android-spec.js","./changelog.json","./icon-192.png","./icon-512.png","./icon-1024.png"];
 
 self.addEventListener("install",event=>{
   event.waitUntil(
@@ -37,7 +37,7 @@ self.addEventListener("fetch",event=>{
     return;
   }
   if(
-    /\/(?:app\.js|styles\.css|index\.html|manifest\.webmanifest|build\.json)$/.test(u.pathname) ||
+    /\/(?:app\.js|styles\.css|index\.html|manifest\.webmanifest|build\.json|changelog\.json)$/.test(u.pathname) ||
     u.pathname.includes("/generated/android-spec.js")
   ){
     event.respondWith(networkFirst(req));
