@@ -255,19 +255,32 @@ function androidNavItems(){
     {id:"home",glyph:"⌂"},{id:"search",glyph:"⌕"},{id:"notifications",glyph:"♢"},{id:"dm",glyph:"✉"}
   ];
 }
-function navIcon(v){
-  const item=androidNavItems().find(x=>x.id===v);
-  return `<span class="android-glyph" aria-hidden="true">${esc(item?.glyph||"○")}</span>`;
+function lentonIcon(name,cls=""){
+  const c='class="lenton-icon '+esc(cls)+'" viewBox="0 0 24 24" aria-hidden="true"';
+  if(name==="home")return `<svg ${c}><path d="M3.5 10.5 12 3.5l8.5 7V21h-5.7v-6.2H9.2V21H3.5Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>`;
+  if(name==="search")return `<svg ${c}><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="m15.5 15.5 5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+  if(name==="notifications")return `<svg ${c}><path d="M5 16h14c-1.5-1.7-2-3.5-2-7a5 5 0 0 0-10 0c0 3.5-.5 5.3-2 7Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9.5 19a2.8 2.8 0 0 0 5 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+  if(name==="dm")return `<svg ${c}><path d="M4 5h16v11H9l-5 4V5Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>`;
+  if(name==="reply")return `<svg ${c}><path d="M4 5h16v11H9l-5 4V5Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>`;
+  if(name==="boost")return `<svg ${c}><path d="M7 7h10l-2.5-2.5M17 17H7l2.5 2.5M17 7l-2.5 2.5M7 17l2.5-2.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  if(name==="heart")return `<svg ${c}><path d="M12 20.5S4 15.7 4 9.5A4.5 4.5 0 0 1 12 6a4.5 4.5 0 0 1 8 3.5c0 6.2-8 11-8 11Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>`;
+  if(name==="heartFill")return `<svg ${c}><path d="M12 20.5S4 15.7 4 9.5A4.5 4.5 0 0 1 12 6a4.5 4.5 0 0 1 8 3.5c0 6.2-8 11-8 11Z" fill="currentColor"/></svg>`;
+  if(name==="bookmark")return `<svg ${c}><path d="M6.5 3.5h11v17l-5.5-4-5.5 4v-17Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>`;
+  if(name==="bookmarkFill")return `<svg ${c}><path d="M6.5 3.5h11v17l-5.5-4-5.5 4v-17Z" fill="currentColor"/></svg>`;
+  if(name==="share")return `<svg ${c}><circle cx="6" cy="12" r="2.3" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="18" cy="6" r="2.3" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="18" cy="18" r="2.3" fill="none" stroke="currentColor" stroke-width="2"/><path d="m8 11 7.6-3.8M8 13l7.6 3.8" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
+  if(name==="more")return `<svg ${c}><circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/></svg>`;
+  return "";
 }
+function navIcon(v){return lentonIcon(v,"nav-icon")}
 function shell(title,body,opts={}){
   const av=state.me?.avatar_static||state.me?.avatar||"";
   const avatar=av? `<img src="${esc(av)}" alt="">` : '<span class="fallback">○</span>';
   const view=opts.view||state.view;
   let right="";
   if(view==="home"||view==="search"||view==="settings"){
-    right='<button class="top-icon search" data-view="search" aria-label="검색">⌕</button><button class="top-icon" data-action="topmenu" aria-label="더보기">⋮</button>';
+    right='<button class="top-icon search" data-view="search" aria-label="검색">${lentonIcon("search")}</button><button class="top-icon" data-action="topmenu" aria-label="더보기">${lentonIcon("more")}</button>';
   }else if(view==="notifications"){
-    right='<button class="top-icon" data-action="topmenu" aria-label="더보기">⋮</button>';
+    right='<button class="top-icon" data-action="topmenu" aria-label="더보기">${lentonIcon("more")}</button>';
   }
   return `<div class="app lenton-view-${esc(view)}">
     <header class="topbar lenton-topbar">
@@ -330,11 +343,11 @@ function statusCard(raw){
         ${cw}<div class="content"${hidden}>${renderRichText(st.content||"")}</div>
         ${mediaMarkup(st.media_attachments||[])}
         <div class="actions lenton-actions">
-          <button data-action="reply" data-id="${st.id}" aria-label="답글">▢ <span class="count">${st.replies_count||""}</span></button>
-          <button class="boost ${st.reblogged?"on":""}" data-action="boost" data-id="${st.id}" aria-label="부스트">↔ <span class="count">${st.reblogs_count||""}</span></button>
-          <button class="fav ${st.favourited?"on":""}" data-action="fav" data-id="${st.id}" aria-label="좋아요">${st.favourited?"♥":"♡"} <span class="count">${st.favourites_count||""}</span></button>
-          <button class="bookmark ${st.bookmarked?"on":""}" data-action="bookmark" data-id="${st.id}" aria-label="북마크">${st.bookmarked?"▮":"♧"}</button>
-          <button data-action="share" data-id="${st.id}" data-url="${esc(st.url||"")}" aria-label="공유">⌯</button>
+          <button data-action="reply" data-id="${st.id}" aria-label="답글">${lentonIcon("reply")} <span class="count">${st.replies_count||""}</span></button>
+          <button class="boost ${st.reblogged?"on":""}" data-action="boost" data-id="${st.id}" aria-label="부스트">${lentonIcon("boost")} <span class="count">${st.reblogs_count||""}</span></button>
+          <button class="fav ${st.favourited?"on":""}" data-action="fav" data-id="${st.id}" aria-label="좋아요">${lentonIcon(st.favourited?"heartFill":"heart")} <span class="count">${st.favourites_count||""}</span></button>
+          <button class="bookmark ${st.bookmarked?"on":""}" data-action="bookmark" data-id="${st.id}" aria-label="북마크">${lentonIcon(st.bookmarked?"bookmarkFill":"bookmark")}</button>
+          <button data-action="share" data-id="${st.id}" data-url="${esc(st.url||"")}" aria-label="공유">${lentonIcon("share")}</button>
         </div>
       </div>
     </div>
@@ -497,11 +510,11 @@ async function notificationsView(replyMentions=false){
             ${replyMeta}
             <div class="notify-content">${renderRichText(st.content||"")}</div>
             <div class="actions lenton-actions notify-actions">
-              <button data-action="reply" data-id="${esc(st.id||"")}">▢</button>
-              <button class="boost ${st.reblogged?"on":""}" data-action="boost" data-id="${esc(st.id||"")}">↔ <span class="count">${st.reblogs_count||""}</span></button>
-              <button class="fav ${st.favourited?"on":""}" data-action="fav" data-id="${esc(st.id||"")}">${st.favourited?"♥":"♡"} <span class="count">${st.favourites_count||""}</span></button>
-              <button class="bookmark ${st.bookmarked?"on":""}" data-action="bookmark" data-id="${esc(st.id||"")}">${st.bookmarked?"▮":"♧"}</button>
-              <button data-action="share" data-id="${esc(st.id||"")}" data-url="${esc(st.url||"")}">⌯</button>
+              <button data-action="reply" data-id="${esc(st.id||"")}">${lentonIcon("reply")}</button>
+              <button class="boost ${st.reblogged?"on":""}" data-action="boost" data-id="${esc(st.id||"")}">${lentonIcon("boost")} <span class="count">${st.reblogs_count||""}</span></button>
+              <button class="fav ${st.favourited?"on":""}" data-action="fav" data-id="${esc(st.id||"")}">${lentonIcon(st.favourited?"heartFill":"heart")} <span class="count">${st.favourites_count||""}</span></button>
+              <button class="bookmark ${st.bookmarked?"on":""}" data-action="bookmark" data-id="${esc(st.id||"")}">${lentonIcon(st.bookmarked?"bookmarkFill":"bookmark")}</button>
+              <button data-action="share" data-id="${esc(st.id||"")}" data-url="${esc(st.url||"")}">${lentonIcon("share")}</button>
             </div>
           </div>
         </article>`;
