@@ -15,7 +15,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: lenton-pwa-android-sync
+  group: lenton-pwa-android-sync-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
