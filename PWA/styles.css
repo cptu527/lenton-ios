@@ -1741,3 +1741,103 @@ img{display:block}
   text-align:left;
   font-size:15px;
 }
+
+
+/* User-reported parity fixes */
+.drawer-profile-avatar-button,
+.drawer-profile-summary{
+  border:0;
+  background:transparent;
+  color:inherit;
+  padding:0;
+  margin:0;
+  text-align:left;
+}
+.drawer-profile-avatar-button{display:block;border-radius:50%}
+.drawer-profile-summary{display:block;width:100%}
+.drawer-profile-summary .drawer-name,
+.drawer-profile-summary .drawer-handle,
+.drawer-profile-summary .drawer-counts{pointer-events:none}
+
+.profile-tabs-4{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  height:50px;
+  border-bottom:1px solid var(--line);
+  background:var(--bg);
+}
+.profile-tabs-4 button{
+  position:relative;
+  border:0;
+  background:none;
+  color:var(--sub);
+  font-size:14px;
+  padding:0 4px;
+}
+.profile-tabs-4 button.active{color:var(--fg);font-weight:700}
+.profile-tabs-4 button.active::after{
+  content:"";
+  position:absolute;
+  width:36px;
+  height:3px;
+  bottom:0;
+  left:50%;
+  transform:translateX(-50%);
+  border-radius:2px;
+  background:var(--accent);
+}
+
+.settings-link small{display:block;color:var(--sub);font-size:13px;font-weight:400;margin-top:3px}
+.current-release{padding:18px}
+
+
+/* Android profile editor */
+.android-profile-editor{padding:0 0 calc(24px + env(safe-area-inset-bottom))}
+.profile-edit-hero{position:relative;height:226px;background:var(--surface);overflow:visible;margin-bottom:18px}
+.profile-edit-header-preview{width:100%;height:140px;object-fit:cover;display:block;background:var(--surface)}
+.profile-edit-avatar-preview{position:absolute;left:18px;top:102px;width:92px;height:92px;border-radius:50%;object-fit:cover;border:4px solid var(--bg);background:var(--surface)}
+.profile-edit-header-button,.profile-edit-avatar-button{
+  position:absolute;border:0;border-radius:18px;background:rgba(0,0,0,.58);color:white;
+  min-height:34px;padding:0 12px;font-weight:700
+}
+.profile-edit-header-button{right:14px;top:94px}
+.profile-edit-avatar-button{left:118px;top:151px}
+.profile-edit-fields{padding:0 18px}
+.profile-edit-fields label{display:block;margin:14px 0}
+.profile-edit-fields label>span{display:block;margin-bottom:7px;font-size:14px;color:var(--sub)}
+.profile-edit-fields .profile-edit-lock{display:flex;align-items:center;gap:8px}
+.profile-edit-fields .profile-edit-lock span{margin:0;color:var(--fg)}
+.profile-edit-section-title{margin:22px 0 10px;font-size:15px;font-weight:700}
+.profile-edit-field-pair{display:grid;grid-template-columns:minmax(0,.36fr) minmax(0,.64fr);gap:8px;margin-bottom:8px}
+.profile-save{width:100%;margin-top:18px}
+
+/* Android-like direct-message thread */
+.dm-thread-list{padding:0 0 82px}
+.dm-thread-row{
+  display:grid;grid-template-columns:38px minmax(0,1fr);gap:10px;
+  padding:10px 14px;border-bottom:1px solid var(--line);background:var(--bg)
+}
+.dm-thread-avatar{width:38px;height:38px;border-radius:50%;object-fit:cover}
+.dm-thread-main{min-width:0}
+.dm-thread-head{display:flex;align-items:baseline;gap:6px;min-width:0;margin-bottom:4px}
+.dm-thread-head b{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dm-thread-head span,.dm-thread-head time{font-size:12px;color:var(--sub);white-space:nowrap}
+.dm-thread-head time{margin-left:auto}
+.dm-thread-content{font-size:15px;line-height:1.45;overflow-wrap:anywhere}
+.dm-thread-content p{margin:0}
+.dm-thread-media{border:0;background:none;padding:6px 0 0;display:block}
+.dm-thread-media img{max-width:280px;max-height:280px;border-radius:10px;object-fit:contain}
+.android-dm-compose{
+  grid-template-columns:38px 38px minmax(0,1fr) 42px 40px;
+  gap:0;padding:5px 7px calc(6px + env(safe-area-inset-bottom));
+}
+.dm-tool-btn{width:38px;height:40px;border:0;background:none;color:var(--accent);font-size:20px;padding:0}
+.android-dm-compose textarea{
+  min-height:40px;max-height:104px;border:0;border-radius:28px;padding:8px 13px;
+  background:var(--surface);color:var(--fg);font-size:15px;resize:none
+}
+.dm-inline-count{width:42px;height:40px;display:grid;place-items:center;color:var(--sub);font-size:11px}
+.dm-inline-send{width:40px;height:40px;border:0;background:none;color:var(--accent);font-size:22px}
+.dm-media-preview{position:sticky;bottom:calc(51px + env(safe-area-inset-bottom));display:flex;gap:6px;padding:0 7px;background:var(--bg)}
+.dm-media-chip{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-radius:12px;padding:5px 8px;background:var(--surface);font-size:12px;color:var(--sub)}
+.dm-thread-bubbles,.dm-bubble-row,.dm-bubble-wrap,.dm-bubble{all:unset}
