@@ -2,10 +2,10 @@ name: Deploy Lenton PWA
 
 on:
   push:
-    branches: [ main, pwa/android-ui-v02517 ]
+    branches: [ main, pwa/exact-android-v02517 ]
     paths:
       - 'PWA/**'
-      - 'LentonIOS/Resources/AppIconSource/**'
+      - 'PWA/lenton-official-icon.b64'
       - '.github/workflows/deploy-pwa.yml'
   workflow_dispatch:
 
@@ -31,32 +31,57 @@ jobs:
         run: |
           rm -rf dist-pwa
           cp -R PWA dist-pwa
+          python3 -m pip install --disable-pip-version-check --quiet pillow
           python3 - <<'PY'
           import base64
           from pathlib import Path
-          root = Path("LentonIOS/Resources/AppIconSource")
-          parts = [
-              "chunk00.txt","chunk01.txt","chunk02.txt","chunk03.txt",
-              "chunk04a.txt","chunk04b.txt","chunk04c.txt","chunk04d.txt","fixed04e.txt",
-              "chunk05a.txt","chunk05b.txt","chunk05c.txt","chunk05d.txt","chunk05e.txt",
-          ]
-          encoded = "".join((root / n).read_text().strip() for n in parts)
+          from PIL import Image
+
+          encoded = Path("PWA/lenton-official-icon.b64").read_text().strip()
           encoded += "=" * (-len(encoded) % 4)
-          data = base64.b64decode(encoded, validate=True)
-          out = Path("dist-pwa/icon-1024.png")
-          out.write_bytes(data)
-          print("Wrote original", out, len(data), "bytes")
+          source = Path("dist-pwa/lenton-official-source.jpg")
+          source.write_bytes(base64.b64decode(encoded, validate=True))
+
+          image = Image.open(source).convert("RGBA")
+          px = image.load()
+          for y in range(image.height):
+              for x in range(image.width):
+                  r,g,b,a = px[x,y]
+                  m = max(r,g,b)
+                  if m <= 8:
+                      alpha = 0
+                  elif m >= 28:
+                      alpha = 255
+                  else:
+                      alpha = (m - 8) * 255 // 20
+                  px[x,y] = (r,g,b,alpha)
+
+          alpha = image.getchannel("A")
+          bbox = alpha.point(lambda a: 255 if a >= 16 else 0).getbbox()
+          if bbox:
+              left,top,right,bottom = bbox
+              bw,bh = right-left,bottom-top
+              side = max(bw,bh)
+              cx,cy = (left+right)//2,(top+bottom)//2
+              left = max(0,min(image.width-side,cx-side//2))
+              top = max(0,min(image.height-side,cy-side//2))
+              image = image.crop((left,top,left+side,top+side))
+
+          for size in (1024,512,192):
+              canvas = Image.new("RGBA",(size,size),(0,0,0,0))
+              draw = max(1,round(size*0.96))
+              art = image.resize((draw,draw),Image.Resampling.BICUBIC)
+              pos = ((size-draw)//2,(size-draw)//2)
+              canvas.alpha_composite(art,pos)
+              target = Path(f"dist-pwa/icon-{size}.png")
+              canvas.save(target,"PNG")
+              check = Image.open(target)
+              if check.size != (size,size):
+                  raise SystemExit(f"bad icon size: {target} {check.size}")
+              print("Wrote",target,size,"x",size)
+
+          source.unlink(missing_ok=True)
           PY
-          test "$(sips -g pixelWidth dist-pwa/icon-1024.png | awk '/pixelWidth/{print $2}')" = "1024"
-          test "$(sips -g pixelHeight dist-pwa/icon-1024.png | awk '/pixelHeight/{print $2}')" = "1024"
-          cp dist-pwa/icon-1024.png dist-pwa/icon-512.png
-          cp dist-pwa/icon-1024.png dist-pwa/icon-192.png
-          sips -z 512 512 dist-pwa/icon-512.png >/dev/null
-          sips -z 192 192 dist-pwa/icon-192.png >/dev/null
-          test "$(sips -g pixelWidth dist-pwa/icon-512.png | awk '/pixelWidth/{print $2}')" = "512"
-          test "$(sips -g pixelHeight dist-pwa/icon-512.png | awk '/pixelHeight/{print $2}')" = "512"
-          test "$(sips -g pixelWidth dist-pwa/icon-192.png | awk '/pixelWidth/{print $2}')" = "192"
-          test "$(sips -g pixelHeight dist-pwa/icon-192.png | awk '/pixelHeight/{print $2}')" = "192"
           printf '%s\n' '' > dist-pwa/.nojekyll
           test -s dist-pwa/icon-192.png
           test -s dist-pwa/icon-512.png
