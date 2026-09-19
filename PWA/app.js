@@ -723,9 +723,9 @@ function dmThreadRow(st){
     '<div class="dm-thread-content">'+renderRichText(st.content||"")+'</div>'+media+'</div></article>';
 }
 async function sendInlineDm(conversation){
-  const input=$("#dmInlineInput"),send=$("#dmInlineSend"),file=$("#dmInlineFile");
+  const input=$("#dmInlineInput"),send=$("#dmInlineSend"),file=$("#dmInlineFile"),camera=$("#dmInlineCameraFile");
   if(!input||!send)return;
-  const text=input.value.trim(),files=[...(file?.files||[])].slice(0,4);
+  const text=input.value.trim(),files=[...(file?.files||[]),...(camera?.files||[])].slice(0,4);
   if(!text&&!files.length)return;
   send.disabled=true;send.textContent="전송 중…";
   try{
@@ -737,7 +737,7 @@ async function sendInlineDm(conversation){
     if(conversation.last_status?.id)form.append("in_reply_to_id",conversation.last_status.id);
     for(const m of media)if(m.id)form.append("media_ids[]",m.id);
     await api("/api/v1/statuses",{method:"POST",form});
-    input.value="";if(file)file.value="";
+    input.value="";if(file)file.value="";if(camera)camera.value="";
     await dmView();const refreshed=state._conversations?.find(x=>String(x.id)===String(conversation.id))||state._conversations?.find(x=>dmConversationKey(x)===dmConversationKey(conversation));
     if(refreshed)await openConversation(refreshed.id);
   }catch(e){toast(e.message);send.disabled=false;send.textContent="보내기"}
@@ -770,7 +770,7 @@ async function openConversation(id){
     $("#dmInlineCamera")?.addEventListener("click",()=>$("#dmInlineCameraFile")?.click());
     const previewFiles=files=>{const box=$("#dmMediaPreview");if(!box)return;box.innerHTML=[...files].slice(0,4).map(f=>'<div class="dm-media-chip">'+esc(f.name)+'</div>').join("")};
     $("#dmInlineFile")?.addEventListener("change",e=>previewFiles(e.target.files));
-    $("#dmInlineCameraFile")?.addEventListener("change",e=>{if(e.target.files?.[0]){const dt=new DataTransfer();dt.items.add(e.target.files[0]);$("#dmInlineFile").files=dt.files;previewFiles(dt.files)}});
+    $("#dmInlineCameraFile")?.addEventListener("change",e=>previewFiles(e.target.files));
     $("#dmInlineSend")?.addEventListener("click",()=>sendInlineDm(c));
     input?.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendInlineDm(c)}});
     api("/api/v1/conversations/"+id+"/read",{method:"POST",form:{}}).catch(()=>{});
