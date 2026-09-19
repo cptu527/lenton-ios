@@ -427,13 +427,15 @@ function mediaMarkup(attachments=[]){
   }).join("");
   return `<div class="media-grid media-count-${Math.min(attachments.length,4)}">${items}</div>`;
 }
-function statusCard(raw){
+function statusCard(raw,opts={}){
   const st=raw.reblog||raw, boosted=!!raw.reblog, a=st.account||{};
   const boostLine=boosted?`<div class="boosted">↻ ${renderEmojiText(raw.account?.display_name||raw.account?.username||"",raw.account?.emojis||[])}님이 부스트</div>`:"";
+  const pinnedLine=opts.pinned?'<div class="profile-pinned-label">📌 고정됨</div>':"";
+  const replyCount=opts.replyCountOverride===undefined||opts.replyCountOverride===null?Number(st.replies_count||0):Number(opts.replyCountOverride||0);
   const cw=st.spoiler_text? `<div class="cw"><span>CW · ${renderEmojiText(st.spoiler_text,st.emojis||[])}</span> <button class="pill" data-action="togglecw">보기</button></div>`:"";
   const hidden=st.spoiler_text?' style="display:none" data-cwbody':"";
   return `<article class="status lenton-status" data-status-id="${st.id}">
-    ${boostLine}
+    ${boostLine}${pinnedLine}
     <div class="status-head">
       <button class="avatar-button" data-profile="${esc(a.id||"")}"><img class="avatar" src="${esc(a.avatar_static||a.avatar||"")}" alt=""></button>
       <div class="status-main">
@@ -444,7 +446,7 @@ function statusCard(raw){
         ${cw}<div class="content"${hidden}>${renderRichText(st.content||"")}</div>
         ${mediaMarkup(st.media_attachments||[])}
         <div class="actions lenton-actions">
-          <button data-action="reply" data-id="${st.id}" aria-label="답글">${lentonIcon("reply")} <span class="count">${st.replies_count||""}</span></button>
+          <button data-action="reply" data-id="${st.id}" aria-label="답글">${lentonIcon("reply")} <span class="count">${replyCount>0?replyCount:""}</span></button>
           <button class="boost ${st.reblogged?"on":""}" data-action="boost" data-id="${st.id}" aria-label="부스트">${lentonIcon("boost")} <span class="count">${st.reblogs_count||""}</span></button>
           <button class="fav ${st.favourited?"on":""}" data-action="fav" data-id="${st.id}" aria-label="좋아요">${lentonIcon(st.favourited?"heartFill":"heart")} <span class="count">${st.favourites_count||""}</span></button>
           <button class="bookmark ${st.bookmarked?"on":""}" data-action="bookmark" data-id="${st.id}" aria-label="북마크">${lentonIcon(st.bookmarked?"bookmarkFill":"bookmark")}</button>
@@ -917,14 +919,24 @@ function profileMediaGrid(items){
   }
   return cells.length?'<div class="profile-media-gallery">'+cells.join("")+'</div>':'<div class="center">미디어가 없어요.</div>';
 }
-function profilePageHtml(items,mode="posts"){
+function profilePageHtml(items,mode="posts",pinnedItems=[]){
   if(mode==="media")return profileMediaGrid(items);
+  if(mode==="pinned"){
+    return items?.length?items.map(x=>statusCard(x,{pinned:true})).join(""):'<div class="center">고정된 게시물이 없어요.</div>';
+  }
+  if(mode==="posts"){
+    const pinnedIds=new Set((pinnedItems||[]).map(statusId).filter(Boolean).map(String)),seen=new Set(),merged=[];
+    for(const raw of [...(pinnedItems||[]),...(items||[])]){
+      const id=String(statusId(raw)||"");if(id&&seen.has(id))continue;if(id)seen.add(id);merged.push(raw);
+    }
+    return merged.length?merged.map(x=>statusCard(x,{pinned:pinnedIds.has(String(statusId(x)||""))})).join(""):'<div class="center">게시물이 없어요.</div>';
+  }
   return items?.length?items.map(statusCard).join(""):'<div class="center">게시물이 없어요.</div>';
 }
 function buildProfilePager(mode,data){
   const modes=profileModes(),index=Math.max(0,modes.indexOf(mode));
   return '<div class="profile-pager" data-profile-pager><div class="profile-pager-track" data-profile-track style="transform:translate3d(-'+(index*100)+'%,0,0)">'+
-    modes.map(m=>'<section class="profile-pager-page" data-profile-page="'+m+'">'+profilePageHtml(data[m]||[],m)+'</section>').join("")+
+    modes.map(m=>'<section class="profile-pager-page" data-profile-page="'+m+'">'+profilePageHtml(data[m]||[],m,data.pinned||[])+'</section>').join("")+
     '</div></div>';
 }
 function syncProfilePagerUi(mode,animate=true){
@@ -1612,6 +1624,10 @@ async function openProfileMediaDetail(statusId,index=0){
     $("#app").innerHTML='<div class="media-status-page">'+body+'</div>';bind();
   }catch(e){toast(e.message);goBackScreen()}
 }
+function threadStatusCard(raw,{connectTop=false,connectBottom=false,current=false,replyCountOverride=null}={}){
+  const cls=["thread-node",connectTop?"thread-connect-top":"",connectBottom?"thread-connect-bottom":"",current?"thread-current":""].filter(Boolean).join(" ");
+  return '<div class="'+cls+'">'+statusCard(raw,{replyCountOverride})+'</div>';
+}
 async function openThread(id,showAllAncestors=false){
   state.returnView=state.view;
   $("#app").innerHTML=standaloneShell("게시물",'<div class="center">불러오는 중…</div>');bind();
@@ -1623,7 +1639,16 @@ async function openThread(id,showAllAncestors=false){
     const ancestors=ctx.ancestors||[],desc=ctx.descendants||[];
     const visibleAnc=showAllAncestors?ancestors:ancestors.slice(-2);
     const older=ancestors.length>visibleAnc.length?`<button class="thread-older" data-thread-older="${esc(id)}">이전 대화 보기  ›</button>`:"";
-    const body=older+visibleAnc.map(statusCard).join("")+`<div class="thread-current">${statusCard(st)}</div>`+desc.map(statusCard).join("");
+    const nodes=[...visibleAnc,st,...desc],allNodes=[...ancestors,st,...desc];
+    const body=older+nodes.map((raw,i)=>{
+      const cur=raw.reblog||raw,idNow=String(cur.id||""),parentId=String(cur.in_reply_to_id||"");
+      const earlierIds=new Set(nodes.slice(0,i).map(statusId).filter(Boolean).map(String));
+      const connectTop=!!parentId&&earlierIds.has(parentId);
+      const connectBottom=nodes.slice(i+1).some(x=>String((x.reblog||x)?.in_reply_to_id||"")===idNow);
+      const derivedReplies=allNodes.filter(x=>String((x.reblog||x)?.in_reply_to_id||"")===idNow).length;
+      const replyCountOverride=Math.max(Number(cur.replies_count||0),derivedReplies);
+      return threadStatusCard(raw,{connectTop,connectBottom,current:idNow===String(st.id||""),replyCountOverride});
+    }).join("");
     $("#app").innerHTML=standaloneShell("게시물",body);bind();
   }catch(e){toast(e.message)}
 }
@@ -1696,7 +1721,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
     const visOptions=[["public","공개"],["unlisted","조용히 공개"],["private","팔로워만"],["direct","DM"]];
     m.innerHTML=`<div class="sheet compose-sheet">
       <div class="sheet-head"><button class="iconbtn" id="closeCompose">×</button><h2>${reply?(ct.replyTitle||"답글"):(visibility==="direct"?"새 DM":(ct.newTitle||"새 게시물"))}</h2><button class="primary" id="sendCompose">${reply?(ct.replyButton||"답글"):(visibility==="direct"?"보내기":(ct.postButton||"게시"))}</button></div>
-      <div class="compose-meta-row"><select id="composeVisibility" class="compose-visibility">${visOptions.map(x=>`<option value="${x[0]}" ${visibility===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select></div>
+      <div class="compose-meta-row${reply?" reply-visibility-row":""}"><select id="composeVisibility" class="compose-visibility" aria-label="공개 범위">${visOptions.map(x=>`<option value="${x[0]}" ${visibility===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select></div>
       ${reply?replyContextRows()+`<button type="button" class="compose-reply-summary" id="replyRecipientPicker">${esc(replySummaryText())}</button>`:""}
       ${!reply&&recips.length?`<div class="recips">${recips.map((r,i)=>`<button data-r="${i}" class="${r.on?"":"off"}">${r.avatar?`<img src="${esc(r.avatar)}" alt="">`:""}<span>@${esc(r.acct)}</span></button>`).join("")}</div>`:""}
       <div id="parts">${parts.map((p,i)=>`<div class="part ${i===activePart?"active":""}" data-p="${i}">
@@ -2301,6 +2326,13 @@ async function registerSW(){
   if("serviceWorker"in navigator){
     const reg=await navigator.serviceWorker.register("./sw.js",{scope:"./",updateViaCache:"none"});
     navigator.serviceWorker.addEventListener("message",e=>{if(e.data?.type==="push"){toast("새 알림이 도착했어요.");if(state.view==="notifications")notificationsView()}});
+    navigator.serviceWorker.addEventListener("controllerchange",()=>{
+      if(window.__lentonControllerReloading)return;
+      window.__lentonControllerReloading=true;
+      const u=new URL(location.href);
+      u.searchParams.set("__sw_refresh",Date.now().toString());
+      location.replace(u.toString());
+    });
     await reg.update().catch(()=>{});
   }
 }
