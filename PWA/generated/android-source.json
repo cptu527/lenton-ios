@@ -135,35 +135,39 @@
     "drawerRows": [
       {
         "id": "profile",
-        "label": "프로필",
-        "glyph": "♙"
+        "label": "프로필"
+      },
+      {
+        "id": "profileedit",
+        "label": "프로필 편집"
+      },
+      {
+        "id": "favourites",
+        "label": "좋아요"
       },
       {
         "id": "bookmarks",
-        "label": "북마크",
-        "glyph": "▢"
-      },
-      {
-        "id": "lists",
-        "label": "리스트",
-        "glyph": "☷"
+        "label": "북마크"
       },
       {
         "id": "followrequests",
-        "label": "팔로우 요청",
-        "glyph": "♧"
+        "label": "팔로우 요청"
+      },
+      {
+        "id": "layoutedit",
+        "label": "화면 구성 편집"
+      },
+      {
+        "id": "realtime",
+        "label": "실시간 연결 상태 표시 설정"
       },
       {
         "id": "settings",
-        "label": "설정",
-        "glyph": "⚙"
+        "label": "설정"
       },
       {
-        "id": "theme",
-        "labelLight": "다크 모드",
-        "labelDark": "라이트 모드",
-        "glyphLight": "◐",
-        "glyphDark": "☀"
+        "id": "update",
+        "label": "앱 업데이트"
       }
     ],
     "actions": {
@@ -174,7 +178,18 @@
       "bookmarkOff": "▢",
       "bookmarkOn": "▣"
     },
-    "profileTabs": [],
+    "profileTabs": [
+      "게시물"
+    ],
+    "profileCounts": [
+      "statuses",
+      "following",
+      "followers"
+    ],
+    "notificationTabs": [
+      "전체",
+      "멘션"
+    ],
     "notificationLabels": {
       "mention": "나를 멘션했어요",
       "favourite": "내 게시물을 좋아해요",
@@ -197,9 +212,20 @@
       "replyTitle": "답글",
       "postButton": "게시",
       "replyButton": "답글",
-      "cw": "",
-      "hasGif": false,
-      "hasThread": false
+      "cw": "CW",
+      "hasPhoto": true,
+      "hasCamera": true,
+      "hasGif": true,
+      "hasPoll": true,
+      "hasThread": true,
+      "toolOrder": [
+        "photo",
+        "camera",
+        "gif",
+        "poll",
+        "cw",
+        "plus"
+      ]
     }
   },
   "features": {
@@ -261,6 +287,29 @@
     "positionHomeIndicator": true,
     "renderProfile": true,
     "loadNotifications": true,
+    "MainNavIconView": false,
+    "StatusActionIconView": false,
+    "DrawerIconView": false,
+    "ComposerToolView": true,
+    "/api/v1/conversations": true,
+    "새 DM": false,
+    "DM 보내기": false,
+    "메시지 보내기": true,
+    "showConversation": false,
+    "loadMessages": true,
+    "private void renderProfile": true,
+    "private void loadMessages": true,
+    "private void addConversation": true,
+    "private void showConversation": false,
+    "private void showOwnProfile": true,
+    "private void loadNotifications": true,
+    "private void openDrawer": false,
+    "private void drawerRow": true,
+    "StatusAction": false,
+    "DrawerIcon": false,
+    "MainNavIcon": false,
+    "onDraw(Canvas": true,
+    "addAction(": true,
     "알림": true,
     "프로필": true
   }
