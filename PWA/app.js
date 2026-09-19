@@ -124,6 +124,10 @@ function applyAndroidSpecMetrics(){
   root.style.setProperty("--android-status-padding",sp.map(x=>String(x)+"px").join(" "));
   const dp=ui.drawerPadding||[24,24,24,20];
   root.style.setProperty("--android-drawer-padding",dp.map(x=>String(x)+"px").join(" "));
+  root.style.setProperty("--android-drawer-pad-top",String(dp[0])+"px");
+  root.style.setProperty("--android-drawer-pad-right",String(dp[1])+"px");
+  root.style.setProperty("--android-drawer-pad-bottom",String(dp[2])+"px");
+  root.style.setProperty("--android-drawer-pad-left",String(dp[3])+"px");
   const np=ui.notificationPadding||[16,12,14,10];
   root.style.setProperty("--android-notification-padding",np.map(x=>String(x)+"px").join(" "));
   const mp=ui.messagePadding||[16,12,14,12];
