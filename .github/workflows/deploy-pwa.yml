@@ -33,14 +33,101 @@ jobs:
 
           curl -L --fail --retry 3             -o /tmp/Lenton-v0.25.17-test.apk             https://raw.githubusercontent.com/cptu527/lenton-updates/main/Lenton-v0.25.17-test.apk
 
-          echo "Launcher entries in APK:"
-          unzip -l /tmp/Lenton-v0.25.17-test.apk | grep -E 'res/mipmap-[^ ]*/ic_launcher\.png$' || true
+          echo "Packaged image/resource candidates:"
+          unzip -Z1 /tmp/Lenton-v0.25.17-test.apk | grep -Ei 'launcher|mipmap|\.png$|\.webp
+          echo "Using Android launcher: $LAUNCHER_PATH"
 
-          LAUNCHER_PATH="$(unzip -Z1 /tmp/Lenton-v0.25.17-test.apk | grep -E '^res/mipmap-xxxhdpi[^/]*/ic_launcher\.png$' | head -n 1)"
+          unzip -p /tmp/Lenton-v0.25.17-test.apk "$LAUNCHER_PATH" > /tmp/lenton-android-launcher.png
+          test -s /tmp/lenton-android-launcher.png
+
+          cp /tmp/lenton-android-launcher.png dist-pwa/icon-192.png
+          cp /tmp/lenton-android-launcher.png dist-pwa/icon-512.png
+          cp /tmp/lenton-android-launcher.png dist-pwa/icon-1024.png
+          sips -z 192 192 dist-pwa/icon-192.png >/dev/null
+          sips -z 512 512 dist-pwa/icon-512.png >/dev/null
+          sips -z 1024 1024 dist-pwa/icon-1024.png >/dev/null
+
+          test "$(sips -g pixelWidth dist-pwa/icon-192.png | awk '/pixelWidth/{print $2}')" = "192"
+          test "$(sips -g pixelWidth dist-pwa/icon-512.png | awk '/pixelWidth/{print $2}')" = "512"
+          test "$(sips -g pixelWidth dist-pwa/icon-1024.png | awk '/pixelWidth/{print $2}')" = "1024"
+
+          rm -f dist-pwa/lenton-official-icon.b64
+          printf '%s\n' '' > dist-pwa/.nojekyll
+
+      - name: Publish gh-pages branch
+        if: github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist-pwa
+          publish_branch: gh-pages
+          force_orphan: true
+ | head -n 250 || true
+
+          LAUNCHER_PATH="$(unzip -Z1 /tmp/Lenton-v0.25.17-test.apk | grep -Ei '^res/.*/ic_launcher\.png
+          echo "Using Android launcher: $LAUNCHER_PATH"
+
+          unzip -p /tmp/Lenton-v0.25.17-test.apk "$LAUNCHER_PATH" > /tmp/lenton-android-launcher.png
+          test -s /tmp/lenton-android-launcher.png
+
+          cp /tmp/lenton-android-launcher.png dist-pwa/icon-192.png
+          cp /tmp/lenton-android-launcher.png dist-pwa/icon-512.png
+          cp /tmp/lenton-android-launcher.png dist-pwa/icon-1024.png
+          sips -z 192 192 dist-pwa/icon-192.png >/dev/null
+          sips -z 512 512 dist-pwa/icon-512.png >/dev/null
+          sips -z 1024 1024 dist-pwa/icon-1024.png >/dev/null
+
+          test "$(sips -g pixelWidth dist-pwa/icon-192.png | awk '/pixelWidth/{print $2}')" = "192"
+          test "$(sips -g pixelWidth dist-pwa/icon-512.png | awk '/pixelWidth/{print $2}')" = "512"
+          test "$(sips -g pixelWidth dist-pwa/icon-1024.png | awk '/pixelWidth/{print $2}')" = "1024"
+
+          rm -f dist-pwa/lenton-official-icon.b64
+          printf '%s\n' '' > dist-pwa/.nojekyll
+
+      - name: Publish gh-pages branch
+        if: github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist-pwa
+          publish_branch: gh-pages
+          force_orphan: true
+ | tail -n 1)"
           if [ -z "$LAUNCHER_PATH" ]; then
-            LAUNCHER_PATH="$(unzip -Z1 /tmp/Lenton-v0.25.17-test.apk | grep -E '^res/mipmap-[^/]*/ic_launcher\.png$' | tail -n 1)"
+            LAUNCHER_PATH="$(unzip -Z1 /tmp/Lenton-v0.25.17-test.apk | grep -Ei '^res/.*/ic_launcher_foreground\.png
+          echo "Using Android launcher: $LAUNCHER_PATH"
+
+          unzip -p /tmp/Lenton-v0.25.17-test.apk "$LAUNCHER_PATH" > /tmp/lenton-android-launcher.png
+          test -s /tmp/lenton-android-launcher.png
+
+          cp /tmp/lenton-android-launcher.png dist-pwa/icon-192.png
+          cp /tmp/lenton-android-launcher.png dist-pwa/icon-512.png
+          cp /tmp/lenton-android-launcher.png dist-pwa/icon-1024.png
+          sips -z 192 192 dist-pwa/icon-192.png >/dev/null
+          sips -z 512 512 dist-pwa/icon-512.png >/dev/null
+          sips -z 1024 1024 dist-pwa/icon-1024.png >/dev/null
+
+          test "$(sips -g pixelWidth dist-pwa/icon-192.png | awk '/pixelWidth/{print $2}')" = "192"
+          test "$(sips -g pixelWidth dist-pwa/icon-512.png | awk '/pixelWidth/{print $2}')" = "512"
+          test "$(sips -g pixelWidth dist-pwa/icon-1024.png | awk '/pixelWidth/{print $2}')" = "1024"
+
+          rm -f dist-pwa/lenton-official-icon.b64
+          printf '%s\n' '' > dist-pwa/.nojekyll
+
+      - name: Publish gh-pages branch
+        if: github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist-pwa
+          publish_branch: gh-pages
+          force_orphan: true
+ | tail -n 1)"
           fi
-          test -n "$LAUNCHER_PATH"
+          if [ -z "$LAUNCHER_PATH" ]; then
+            echo "No named launcher resource found in optimized APK."
+            exit 42
+          fi
           echo "Using Android launcher: $LAUNCHER_PATH"
 
           unzip -p /tmp/Lenton-v0.25.17-test.apk "$LAUNCHER_PATH" > /tmp/lenton-android-launcher.png
