@@ -14,7 +14,7 @@ const state = {
   session: store.get("lenton_session"),
   me:null, view:"home", homeMode:"home", listId:null, lists:[], busy:false,
   theme:store.get("lenton_theme","system"), accent:store.get("lenton_accent",ANDROID?.theme?.accent||"#1d9bf0"),
-  pushError:"", toast:"", currentConversation:null, profileReplies:false, profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, navStack:[], dmDraftRecipients:[], updateAvailable:null, buildInfo:null
+  pushError:"", toast:"", currentConversation:null, profileReplies:false, profileMode:"posts", profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, navStack:[], dmDraftRecipients:[], updateAvailable:null, buildInfo:null
 };
 
 function accountScope(){
@@ -199,7 +199,7 @@ function saveCurrentAccount(){
   store.set("lenton_accounts",list);
 }
 function resetAccountState(){
-  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];
+  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];
 }
 async function switchSavedAccount(index){
   const list=savedAccounts(),entry=list[index];if(!entry?.session)return;
@@ -532,7 +532,7 @@ function pushNavSnapshot(){
     html:app.innerHTML,view:state.view,homeMode:state.homeMode,listId:state.listId,
     scrollY:window.scrollY||document.documentElement.scrollTop||0,
     profileAccount:state.profileAccount,profileRelationship:state.profileRelationship,
-    profileReplies:state.profileReplies,currentConversation:state.currentConversation
+    profileReplies:state.profileReplies,profileMode:state.profileMode,currentConversation:state.currentConversation
   };
   const last=state.navStack[state.navStack.length-1];
   if(last&&last.html===snap.html&&last.scrollY===snap.scrollY)return;
@@ -543,7 +543,7 @@ function goBackScreen(){
   if(snap){
     state.view=snap.view;state.homeMode=snap.homeMode;state.listId=snap.listId;
     state.profileAccount=snap.profileAccount;state.profileRelationship=snap.profileRelationship;
-    state.profileReplies=snap.profileReplies;state.currentConversation=snap.currentConversation;
+    state.profileReplies=snap.profileReplies;state.profileMode=snap.profileMode||"posts";state.currentConversation=snap.currentConversation;
     $("#app").innerHTML=snap.html;bind();
     requestAnimationFrame(()=>window.scrollTo(0,snap.scrollY||0));
     return;
@@ -834,17 +834,17 @@ async function editPrivateNote(){
   const a=state.profileAccount,rel=state.profileRelationship;if(!a||!rel)return;
   const shade=dialogBox("비밀 메모","상대방에게는 보이지 않습니다. 비워서 저장하면 메모가 삭제됩니다.",`<textarea id="privateNoteInput" placeholder="나만 볼 수 있는 메모">${esc(rel.note||"")}</textarea><div class="android-dialog-actions"><button data-cancel>취소</button><button data-save>저장</button></div>`);
   shade.querySelector("[data-cancel]").onclick=()=>shade.remove();
-  shade.querySelector("[data-save]").onclick=async()=>{const btn=shade.querySelector("[data-save]"),value=$("#privateNoteInput",shade).value.trim();btn.disabled=true;try{const r=await api(`/api/v1/accounts/${a.id}/note`,{method:"POST",form:{comment:value}});state.profileRelationship={...rel,...r,note:r?.note??value};shade.remove();toast(value?"비밀 메모를 저장했어요.":"비밀 메모를 삭제했어요.");openProfile(a.id,state.profileReplies)}catch(e){btn.disabled=false;toast(e.message)}};
+  shade.querySelector("[data-save]").onclick=async()=>{const btn=shade.querySelector("[data-save]"),value=$("#privateNoteInput",shade).value.trim();btn.disabled=true;try{const r=await api(`/api/v1/accounts/${a.id}/note`,{method:"POST",form:{comment:value}});state.profileRelationship={...rel,...r,note:r?.note??value};shade.remove();toast(value?"비밀 메모를 저장했어요.":"비밀 메모를 삭제했어요.");openProfile(a.id,state.profileMode||"posts")}catch(e){btn.disabled=false;toast(e.message)}};
 }
 async function toggleProfileRelation(endpoint){
   const a=state.profileAccount;if(!a)return;
   const title=endpoint==="mute"?"뮤트":endpoint==="unmute"?"뮤트 해제":endpoint==="block"?"차단":"차단 해제";
   if(!confirm(endpoint==="block"?"이 계정을 차단할까요?\n\n차단하면 현재 팔로우 중인 상태가 해제될 수 있어요.":`이 계정을 ${title}할까요?`))return;
-  try{const r=await api(`/api/v1/accounts/${a.id}/${endpoint}`,{method:"POST",form:{}});state.profileRelationship={...(state.profileRelationship||{}),...r};toast(title+" 완료");openProfile(a.id,state.profileReplies)}catch(e){toast(e.message)}
+  try{const r=await api(`/api/v1/accounts/${a.id}/${endpoint}`,{method:"POST",form:{}});state.profileRelationship={...(state.profileRelationship||{}),...r};toast(title+" 완료");openProfile(a.id,state.profileMode||"posts")}catch(e){toast(e.message)}
 }
 async function toggleFollowProfile(){
   const a=state.profileAccount,rel=state.profileRelationship||{};if(!a)return;
-  try{const r=await api(`/api/v1/accounts/${a.id}/${rel.following?"unfollow":"follow"}`,{method:"POST",form:{}});state.profileRelationship={...rel,...r};openProfile(a.id,state.profileReplies)}catch(e){toast(e.message)}
+  try{const r=await api(`/api/v1/accounts/${a.id}/${rel.following?"unfollow":"follow"}`,{method:"POST",form:{}});state.profileRelationship={...rel,...r};openProfile(a.id,state.profileMode||"posts")}catch(e){toast(e.message)}
 }
 async function reportProfile(){
   const a=state.profileAccount;if(!a)return;
@@ -1415,7 +1415,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
     m.innerHTML=`<div class="sheet compose-sheet">
       <div class="sheet-head"><button class="iconbtn" id="closeCompose">×</button><h2>${reply?(ct.replyTitle||"답글"):(visibility==="direct"?"새 DM":(ct.newTitle||"새 게시물"))}</h2><button class="primary" id="sendCompose">${reply?(ct.replyButton||"답글"):(visibility==="direct"?"보내기":(ct.postButton||"게시"))}</button></div>
       <div class="compose-meta-row"><select id="composeVisibility" class="compose-visibility">${visOptions.map(x=>`<option value="${x[0]}" ${visibility===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select></div>
-      ${reply?`<div class="compose-reply-context"><img src="${esc(reply.account?.avatar_static||reply.account?.avatar||"")}" alt=""><div><b>${renderEmojiText(reply.account?.display_name||reply.account?.username||"",reply.account?.emojis||[])}</b><div>${renderRichText(reply.content||"")}</div></div></div>`:""}
+      ${reply?`<div class="compose-reply-summary">${recips.filter(x=>x.on).length?`${esc(recips.find(x=>x.on)?.display_name||recips.find(x=>x.on)?.acct||"상대")} ${recips.filter(x=>x.on).length>1?`외 ${recips.filter(x=>x.on).length-1}명에게 보내는 답글`:"에게 보내는 답글"}`:"답글"}</div><div class="compose-reply-context"><img src="${esc(reply.account?.avatar_static||reply.account?.avatar||"")}" alt=""><div><b>${renderEmojiText(reply.account?.display_name||reply.account?.username||"",reply.account?.emojis||[])}</b><div>${renderRichText(reply.content||"")}</div></div></div>`:""}
       ${recips.length?`<div class="recips">${recips.map((r,i)=>`<button data-r="${i}" class="${r.on?"":"off"}">${r.avatar?`<img src="${esc(r.avatar)}" alt="">`:""}<span>@${esc(r.acct)}</span></button>`).join("")}</div>`:""}
       <div id="parts">${parts.map((p,i)=>`<div class="part ${i===activePart?"active":""}" data-p="${i}">
         <div class="part-head"><b>게시물 ${i+1}</b><label><input type="checkbox" data-cw="${i}" ${p.cw?"checked":""}> CW</label></div>
