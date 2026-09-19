@@ -86,6 +86,16 @@ for key,var in metric_markers.items():
     if key in ui and var not in app and var not in css:
         fail.append(f"ui: {key} is extracted but {var} is not consumed")
 
+
+if ".profile-tabs-4{display:none!important}" in css.replace(" ",""):
+    fail.append("profile tabs are forcibly hidden by CSS")
+if "width:100vw!important" in css.replace(" ",""):
+    fail.append("swipe preview is forcibly locked to viewport width instead of content width")
+if "profileMetaFields" not in app or "addProfileMeta" not in app:
+    fail.append("profile metadata editor must support add/remove rows")
+if "업데이트 내용 확인" in app:
+    fail.append("update center must expose only 업데이트 확인")
+
 if fail:
     print("APK/PWA parity validation failed:")
     for x in fail: print(" -",x)

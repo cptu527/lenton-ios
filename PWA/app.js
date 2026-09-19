@@ -225,7 +225,7 @@ async function profileEditScreen(){
   try{
     if(!state.me)state.me=await api("/api/v1/accounts/verify_credentials");
     const m=state.me,header=m.header_static||m.header||"",avatar=m.avatar_static||m.avatar||"";
-    const fields=[...(m.fields||[])];while(fields.length<4)fields.push({name:"",value:""});
+    state.profileEditFields=(m.fields||[]).map(x=>({name:plain(x.name||""),value:plain(x.value||"")})).slice(0,4);
     const body='<div class="profile-editor android-profile-editor">'+
       '<div class="profile-edit-hero">'+
         '<img id="profileEditHeaderPreview" class="profile-edit-header-preview" src="'+esc(header)+'" alt="">'+
@@ -240,10 +240,25 @@ async function profileEditScreen(){
         '<label><span>소개</span><textarea id="profileEditNote" class="field" rows="5">'+esc(plain(m.note||""))+'</textarea></label>'+
         '<label class="check-row profile-edit-lock"><input id="profileEditLocked" type="checkbox" '+(m.locked?"checked":"")+'> <span>팔로우 요청 승인 필요</span></label>'+
         '<div class="profile-edit-section-title">프로필 메타데이터</div>'+
-        fields.slice(0,4).map((x,i)=>'<div class="profile-edit-field-pair"><input class="field" data-profile-field-name="'+i+'" placeholder="라벨" value="'+esc(plain(x.name||""))+'"><input class="field" data-profile-field-value="'+i+'" placeholder="내용" value="'+esc(plain(x.value||""))+'"></div>').join("")+
+        '<div id="profileMetaFields"></div>'+
+        '<button type="button" class="outline-btn profile-meta-add" id="addProfileMeta">＋ 메타데이터 추가</button>'+
         '<button class="primary profile-save" data-action="saveProfileEdit">저장</button>'+
       '</div></div>';
     $("#app").innerHTML=standaloneShell("프로필 편집",body);bind();
+    const renderMeta=()=>{
+      const box=$("#profileMetaFields");if(!box)return;
+      box.innerHTML=(state.profileEditFields||[]).map((x,i)=>'<div class="profile-edit-field-pair">'+
+        '<input class="field" data-profile-field-name="'+i+'" placeholder="라벨" value="'+esc(x.name||"")+'">'+
+        '<input class="field" data-profile-field-value="'+i+'" placeholder="내용" value="'+esc(x.value||"")+'">'+
+        '<button type="button" class="profile-meta-remove" data-meta-remove="'+i+'" aria-label="삭제">×</button></div>').join("");
+      box.querySelectorAll("[data-meta-remove]").forEach(b=>b.onclick=()=>{
+        const i=Number(b.dataset.metaRemove);
+        state.profileEditFields.splice(i,1);renderMeta();
+      });
+      $("#addProfileMeta").disabled=(state.profileEditFields||[]).length>=4;
+    };
+    renderMeta();
+    $("#addProfileMeta")?.addEventListener("click",()=>{if((state.profileEditFields||[]).length>=4)return;state.profileEditFields.push({name:"",value:""});renderMeta()});
     const avatarInput=$("#profileEditAvatar"),headerInput=$("#profileEditHeader");
     $("#pickProfileAvatar")?.addEventListener("click",()=>avatarInput?.click());
     $("#pickProfileHeader")?.addEventListener("click",()=>headerInput?.click());
@@ -259,11 +274,16 @@ async function saveProfileEdit(){
   fd.append("locked",$("#profileEditLocked")?.checked?"true":"false");
   const avatar=$("#profileEditAvatar")?.files?.[0],header=$("#profileEditHeader")?.files?.[0];
   if(avatar)fd.append("avatar",avatar);if(header)fd.append("header",header);
-  for(let i=0;i<4;i++){
-    const name=document.querySelector('[data-profile-field-name="'+i+'"]')?.value||"";
-    const value=document.querySelector('[data-profile-field-value="'+i+'"]')?.value||"";
+  const rows=[...document.querySelectorAll("#profileMetaFields .profile-edit-field-pair")].slice(0,4);
+  rows.forEach((row,i)=>{
+    const name=row.querySelector("[data-profile-field-name]")?.value||"";
+    const value=row.querySelector("[data-profile-field-value]")?.value||"";
     fd.append("fields_attributes["+i+"][name]",name);
     fd.append("fields_attributes["+i+"][value]",value);
+  });
+  for(let i=rows.length;i<4;i++){
+    fd.append("fields_attributes["+i+"][name]","");
+    fd.append("fields_attributes["+i+"][value]","");
   }
   try{
     state.me=await apiMultipart("/api/v1/accounts/update_credentials",fd,{method:"PATCH"});
@@ -1253,7 +1273,13 @@ async function checkPwaUpdate(){
       setTimeout(()=>activateLatestPwaNow(),250);
       return;
     }
-    toast("현재 최신 버전이에요.");
+    const notes=String(remote?.notes||"").trim();
+    const lines=notes?notes.split(/\r?\n/).map(x=>x.replace(/^\s*[•*-]\s*/,"").trim()).filter(Boolean):[];
+    const body='<div class="settings"><div class="section current-release">'+
+      '<div class="update-head"><b>v'+esc(remote?.versionName||ANDROID?.versionName||"?")+'</b><span>현재 최신 버전</span></div>'+
+      (lines.length?'<ul>'+lines.map(v=>'<li>'+esc(v)+'</li>').join("")+'</ul>':'<div class="notice">현재 버전의 업데이트 내용이 없어요.</div>')+
+      '</div></div>';
+    $("#app").innerHTML=standaloneShell("업데이트 확인",body);bind();
   }catch(e){toast(e.message||"업데이트 확인에 실패했어요.")}
 }
 async function updateHistoryScreen(){
@@ -1265,8 +1291,7 @@ async function updateHistoryScreen(){
     '<div class="kv"><span>업데이트 방식</span><b>자동 업데이트</b></div></div>';
   const body='<div class="settings">'+info+
     '<div class="section"><h3>업데이트</h3>'+
-      '<button class="settings-link" data-action="currentReleaseNotes"><span><b>업데이트 내용 확인</b><small>현재 버전의 변경사항 보기</small></span><span>›</span></button>'+
-      '<button class="settings-link" data-action="checkPwaUpdate"><span><b>업데이트 확인</b><small>새 버전이 있는지 확인</small></span><span>›</span></button>'+
+      '<button class="settings-link" data-action="checkPwaUpdate"><span><b>업데이트 확인</b><small>최신 버전과 변경사항을 확인합니다</small></span><span>›</span></button>'+
     '</div>'+
     '<div class="section"><h3>도움말</h3>'+
       '<button class="settings-link" data-action="inquiry" data-inquiry-type="오류 신고"><span><b>문제 신고하기</b><small>버그 · 오류 · 문의 내용을 이메일로 보내기</small></span><span>›</span></button>'+
