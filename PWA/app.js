@@ -572,7 +572,7 @@ async function notificationsView(replyMentions=false){
     const n=await api("/api/v1/notifications",{query});
     const tabs=`<div class="notify-tabs lenton-notify-tabs">
       <button data-notify="all" class="${replyMentions?"":"active"}">전체</button>
-      <button data-notify="mention" class="${replyMentions?"active":""}">멘션</button>
+      <button data-notify="mention" class="${replyMentions?"active":""}">답장할멘션</button>
     </div><div class="notification-tools"><button data-action="clearNotifications">알림 지우기</button></div>`;
     const seenAt=Number(store.get(scopedKey("notifications_seen_at"),0)||0);
     const newest=n.reduce((m,x)=>Math.max(m,new Date(x.created_at||0).getTime()||0),seenAt);
