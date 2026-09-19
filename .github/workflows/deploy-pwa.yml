@@ -45,9 +45,25 @@ jobs:
           data = base64.b64decode(encoded, validate=True)
           out = Path("dist-pwa/icon-1024.png")
           out.write_bytes(data)
-          print("Wrote", out, len(data), "bytes")
+          print("Wrote original", out, len(data), "bytes")
+          PY
+          python3 -m pip install --disable-pip-version-check --quiet pillow
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          source = Path("dist-pwa/icon-1024.png")
+          with Image.open(source) as image:
+              image.load()
+              if image.size != (1024, 1024):
+                  raise SystemExit(f"unexpected Lenton icon size: {image.size}")
+              for size in (512, 192):
+                  target = Path(f"dist-pwa/icon-{size}.png")
+                  image.resize((size, size), Image.Resampling.LANCZOS).save(target, "PNG")
+                  print("Wrote", target, size, "x", size)
           PY
           printf '%s\n' '' > dist-pwa/.nojekyll
+          test -s dist-pwa/icon-192.png
+          test -s dist-pwa/icon-512.png
           test -s dist-pwa/icon-1024.png
 
       - name: Publish gh-pages branch
