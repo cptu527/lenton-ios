@@ -85,6 +85,10 @@ jobs:
             --out-js PWA/generated/android-spec.js \
             --out-json PWA/generated/android-source.json
 
+      - name: Validate APK to PWA parity
+        run: |
+          python3 tools/verify_pwa_parity.py
+
       - name: Validate generated runtime
         run: |
           node --check PWA/generated/android-spec.js
