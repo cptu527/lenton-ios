@@ -1,4 +1,4 @@
-const CACHE="lenton-pwa-v2";
+const CACHE="lenton-pwa-v3";
 const SHELL=["./","./index.html","./styles.css","./app.js","./manifest.webmanifest","./icon-192.png","./icon-512.png","./icon-1024.png"];
 
 self.addEventListener("install",event=>{
