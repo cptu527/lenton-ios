@@ -1195,7 +1195,7 @@ async function updateHistoryScreen(){
     <div class="notice">새 버전은 백그라운드에서 준비되며 작성 중인 글이나 DM을 강제로 새로고침하지 않습니다. 앱을 다음에 열 때 최신 버전이 적용됩니다.</div>
   </div>`;
   const support=`<div class="section update-support"><h3>문의 / 기능 건의</h3><div class="notice">업데이트 후 문제가 생겼거나 원하는 기능이 있다면 여기서 바로 보낼 수 있어요.</div><div class="update-support-actions"><button class="outline-btn" data-action="inquiry" data-inquiry-type="오류 신고">오류 신고</button><button class="primary" data-action="inquiry" data-inquiry-type="기능 건의">기능 건의</button></div></div>`;
-  $("#app").innerHTML=standaloneShell("업데이트 내역",`<div class="settings">${info}<div class="section"><h3>변경사항</h3>${rows||'<div class="center">변경 내역을 불러오지 못했어요.</div>'}</div>${support}</div>`);bind();
+  $("#app").innerHTML=standaloneShell("앱 업데이트",`<div class="settings">${info}<div class="section"><h3>업데이트 내역</h3>${rows||'<div class="center">변경 내역을 불러오지 못했어요.</div>'}</div>${support}</div>`);bind();
 }
 async function settingsView(){
   const d=await pushDiagnostics();
