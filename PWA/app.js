@@ -886,7 +886,6 @@ function drawerMenuRows(){
   const mapped=rows.map(x=>{
     let label=x.label||x.id;
     if(x.id==="theme")label=(state.theme==="dark"?"라이트 모드":"다크 모드");
-    if(x.id==="update")label="업데이트 내역";
     return {id:x.id==="update"?"history":x.id,label,icon:iconMap[x.id]||"more"};
   });
   if(!mapped.some(x=>x.id==="history"))mapped.push({id:"history",label:"업데이트 내역",icon:"update"});
