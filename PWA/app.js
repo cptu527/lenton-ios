@@ -1815,7 +1815,7 @@ function attachLentonGestures(){
   if(state.view==="home")attachInteractiveHomeSwipe(document.querySelector(".main"));
 
   attachStandaloneBackSwipe(document.querySelector(".standalone-page"));
-  const profileTabs=document.querySelector(".profile-info + .home-tabs,.profile-hero ~ .home-tabs");
+  const profileTabs=document.querySelector(".profile-tabs-4,.profile-info + .home-tabs,.profile-hero ~ .home-tabs");
   if(profileTabs){
     const host=document.querySelector(".standalone-page .main")||document.querySelector(".app .main");
     attachInteractiveProfileSwipe(host);
