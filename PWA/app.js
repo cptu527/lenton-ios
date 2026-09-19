@@ -959,12 +959,22 @@ function render(){
 function updateActionButtons(id,kind,on,delta=0){
   document.querySelectorAll(`[data-action="${kind}"][data-id="${CSS.escape(String(id))}"]`).forEach(btn=>{
     btn.classList.toggle("on",on);
-    if(kind==="fav") btn.childNodes[0].nodeValue=(on?"♥":"♡")+" ";
-    if(kind==="bookmark") btn.childNodes[0].nodeValue=(on?"▮":"♧")+" ";
-    const c=btn.querySelector(".count");
-    if(c&&delta){
-      const n=parseInt(c.textContent||"0",10)||0;
-      c.textContent=String(Math.max(0,n+delta));
+    const countEl=btn.querySelector(".count");
+    if(countEl&&delta){
+      const n=parseInt(countEl.textContent||"0",10)||0;
+      countEl.textContent=String(Math.max(0,n+delta));
+    }
+    if(kind==="fav"){
+      const html=lentonIcon(on?"heartFill":"heart");
+      const icon=btn.querySelector(".lenton-icon");
+      if(icon){const wrap=document.createElement("span");wrap.innerHTML=html;icon.replaceWith(wrap.firstElementChild)}
+      else btn.insertAdjacentHTML("afterbegin",html);
+    }
+    if(kind==="bookmark"){
+      const html=lentonIcon(on?"bookmarkFill":"bookmark");
+      const icon=btn.querySelector(".lenton-icon");
+      if(icon){const wrap=document.createElement("span");wrap.innerHTML=html;icon.replaceWith(wrap.firstElementChild)}
+      else btn.innerHTML=html;
     }
   });
 }
