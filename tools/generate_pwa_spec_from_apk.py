@@ -141,16 +141,40 @@ def parse_drawer(method: str):
     return rows
 
 def parse_action_glyphs(method: str):
-    calls=re.findall(r'addAction\([^,]+,\s*(?:([^,]+)\?\s*"([^"]+)"\s*:\s*"([^"]+)"|"([^"]+)")',method or "")
-    # Current Lenton action order is stable; source hash below protects structural drift.
-    return {
-        "reply":"○",
-        "boost":"↻",
-        "favouriteOff":"♡",
-        "favouriteOn":"♥",
-        "bookmarkOff":"▢",
-        "bookmarkOn":"▣",
-    }
+    out={"reply":"○","boost":"↻","favouriteOff":"♡","favouriteOn":"♥","bookmarkOff":"▢","bookmarkOn":"▣"}
+    calls=re.findall(r'addAction\([^,]+,\s*("(?:[^"\\]|\\.)*"|[^,]+)',method or "")
+    literals=[]
+    for expr in calls:
+        literals += re.findall(r'"([^"]+)"',expr)
+    if len(literals)>=1: out["reply"]=literals[0]
+    if len(literals)>=2: out["boost"]=literals[1]
+    fav=re.search(r'liked\s*\?\s*"([^"]+)"\s*:\s*"([^"]+)"',method or "")
+    if fav: out["favouriteOn"],out["favouriteOff"]=fav.group(1),fav.group(2)
+    book=re.search(r'booked\s*\?\s*"([^"]+)"\s*:\s*"([^"]+)"',method or "")
+    if book: out["bookmarkOn"],out["bookmarkOff"]=book.group(1),book.group(2)
+    return out
+
+def parse_profile_tabs(method: str):
+    tabs=re.findall(r'\btab\("([^"]+)"\s*,',method or "")
+    return list(dict.fromkeys(tabs)) or ["게시물","답글"]
+
+def parse_compose(method: str):
+    values={"newTitle":"새 게시물","replyTitle":"답글","postButton":"게시","replyButton":"답글","cw":"CW"}
+    m=re.search(r'tv\(replyTo==null\?"([^"]+)"\s*:\s*"([^"]+)"',method or "")
+    if m: values["newTitle"],values["replyTitle"]=m.group(1),m.group(2)
+    m=re.search(r'chip\(replyTo==null\?"([^"]+)"\s*:\s*"([^"]+)"',method or "")
+    if m: values["postButton"],values["replyButton"]=m.group(1),m.group(2)
+    return values
+
+def parse_notification_glyphs(text: str):
+    out={"mention":"@","favourite":"♥","reblog":"↻","follow":"+","follow_request":"+","default":"♢"}
+    m=extract_any_method(text,"notificationGlyph")
+    for key in ["mention","favourite","reblog","follow","follow_request"]:
+        mm=re.search(r'"'+re.escape(key)+r'".*?return"([^"]+)"',m,re.S)
+        if mm: out[key]=mm.group(1)
+    returns=re.findall(r'return"([^"]+)"',m)
+    if returns: out["default"]=returns[-1]
+    return out
 
 def notification_labels(text: str):
     defaults={
@@ -246,10 +270,10 @@ def build_spec(main_text: str, latest: dict, apk_sha: str, source_path: str):
         "bottomNavItems":nav_items,
         "drawerRows":drawer_rows,
         "actions":parse_action_glyphs(action_method),
-        "profileTabs":["게시물","답글"],
+        "profileTabs":parse_profile_tabs(profile_method),
         "notificationLabels":notification_labels(main_text),
-        "notificationGlyphs":{"mention":"@","favourite":"♥","reblog":"↻","follow":"+","follow_request":"+","default":"♢"},
-        "compose":{"newTitle":"새 게시물","replyTitle":"답글","postButton":"게시","replyButton":"답글","cw":"CW"},
+        "notificationGlyphs":parse_notification_glyphs(main_text),
+        "compose":parse_compose(composer_method),
     }
 
     critical = {
