@@ -220,7 +220,10 @@ async function beginLoginForHost(rawHost){
     u.searchParams.set("response_type","code");u.searchParams.set("client_id",reg.client_id);u.searchParams.set("redirect_uri",REDIRECT_URI);u.searchParams.set("scope",scopes);u.searchParams.set("state",stateToken);
     if(verifier){u.searchParams.set("code_challenge",await sha256b64(verifier));u.searchParams.set("code_challenge_method","S256")}
     location.href=u.toString();
-  }catch(e){toast("로그인 준비 실패: "+e.message);state.busy=false;render()}
+  }catch(e){
+    toast("로그인 준비 실패: "+e.message);state.busy=false;
+    if(document.querySelector(".account-add-page"))accountAddScreen();else render();
+  }
 }
 async function finishOAuth(){
   const q=new URLSearchParams(location.search), code=q.get("code"); if(!code) return false;
@@ -273,11 +276,10 @@ function openAccountSwitcher(){
 }
 function accountAddScreen(){
   closeDrawer();closeAccountSwitcher();
-  const host=state.session?.host||"";
   $("#app").innerHTML='<div class="account-add-page">'+
     '<button type="button" class="account-add-cancel" id="cancelAccountAdd">취소</button>'+
     '<div class="account-add-body"><img class="account-add-logo" src="./icon-192.png" alt="렌톤"><h1>계정 추가</h1><p>추가할 Mastodon 서버를 입력하세요</p>'+
-    '<input id="accountAddServer" class="account-add-input" inputmode="url" autocapitalize="none" autocomplete="off" placeholder="mastodon.social" value="'+esc(host)+'">'+
+    '<input id="accountAddServer" class="account-add-input" inputmode="url" autocapitalize="none" autocomplete="off" placeholder="mastodon.social">'+
     '<button type="button" class="account-add-login" id="accountAddLogin">Mastodon으로 로그인</button></div></div>';
   bind();
   $("#cancelAccountAdd").onclick=()=>goBackScreen();
