@@ -1538,3 +1538,25 @@ img{display:block}
   white-space:nowrap;
   font-size:14px;
 }
+
+
+/* Parity pass 4: iOS swipe stability */
+.app,.main,.standalone-page{
+  backface-visibility:hidden;
+  -webkit-backface-visibility:hidden;
+}
+.bottom{touch-action:none}
+.home-tabs,.profile-tabs-4{touch-action:pan-y}
+.main-swipe-preview,.home-swipe-preview,.profile-swipe-preview,.swipe-moving{
+  transform:translate3d(0,0,0);
+  backface-visibility:hidden;
+  -webkit-backface-visibility:hidden;
+  contain:paint;
+}
+.home-swipe-preview,.profile-swipe-preview{
+  right:auto;
+  max-width:none;
+}
+@media (min-width:681px){
+  .home-swipe-preview,.profile-swipe-preview{margin:0}
+}
