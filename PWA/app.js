@@ -1230,10 +1230,14 @@ async function sendInquiry(){
   location.href="mailto:cptu527@gmail.com?subject="+encodeURIComponent("[Lenton] "+title)+"&body="+encodeURIComponent(info);
 }
 async function showCurrentReleaseNotes(){
-  let entries=[];
-  try{const r=await fetch("./changelog.json?ts="+Date.now(),{cache:"no-store"});if(r.ok)entries=await r.json()}catch{}
-  const x=Array.isArray(entries)&&entries.length?entries[0]:null;
-  const body=x?'<div class="settings"><div class="section update-entry current-release"><div class="update-head"><b>'+esc(x.title||x.version||"업데이트")+'</b><span>'+esc(x.date||"")+'</span></div><ul>'+((x.changes||[]).map(v=>'<li>'+esc(v)+'</li>').join(""))+'</ul></div></div>':'<div class="center">현재 버전의 업데이트 내용을 불러오지 못했어요.</div>';
+  let build=null;
+  try{const r=await fetch("./build.json?ts="+Date.now(),{cache:"no-store"});if(r.ok)build=await r.json()}catch{}
+  const notes=String(build?.notes||"").trim();
+  const lines=notes?notes.split(/\r?\n/).map(x=>x.replace(/^\s*[•*-]\s*/,"").trim()).filter(Boolean):[];
+  const body='<div class="settings"><div class="section current-release">'+
+    '<div class="update-head"><b>v'+esc(build?.versionName||ANDROID?.versionName||"?")+'</b><span>현재 버전</span></div>'+
+    (lines.length?'<ul>'+lines.map(v=>'<li>'+esc(v)+'</li>').join("")+'</ul>':'<div class="notice">현재 버전의 업데이트 내용이 없어요.</div>')+
+    '</div></div>';
   $("#app").innerHTML=standaloneShell("업데이트 내용",body);bind();
 }
 async function checkPwaUpdate(){
