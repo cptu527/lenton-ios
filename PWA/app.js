@@ -58,6 +58,39 @@ function renderEmojiText(text,emojis=[]){
   }
   return out;
 }
+function mentionAcctFromAnchor(node,href=""){
+  const raw=String(node?.textContent||"").trim();
+  const isMention=!!node?.classList?.contains("mention")||raw.startsWith("@");
+  if(!isMention)return "";
+  let acct=raw.replace(/^@+/,"").replace(/\s+/g,"");
+  if(acct.includes("@"))return acct;
+  try{
+    const u=new URL(href,location.href),m=u.pathname.match(/^\/@([^/]+)|^\/users\/([^/]+)/);
+    const user=m?.[1]||m?.[2]||acct;
+    if(user){
+      acct=user;
+      if(u.host&&u.host!==state.session?.host)acct=user+"@"+u.host;
+    }
+  }catch{}
+  return acct;
+}
+async function openMentionProfile(acct,href=""){
+  let key=String(acct||"").replace(/^@+/,"").trim();
+  if(!key&&href){
+    try{const u=new URL(href,location.href),m=u.pathname.match(/^\/@([^/]+)|^\/users\/([^/]+)/);if(m){key=m[1]||m[2]||"";if(key&&u.host&&u.host!==state.session?.host)key+="@"+u.host}}catch{}
+  }
+  if(!key)return;
+  try{
+    let a=null;
+    try{a=await api("/api/v1/accounts/lookup",{query:{acct:key}})}catch{}
+    if(!a?.id){
+      const r=await api("/api/v2/search",{query:{q:key,type:"accounts",resolve:"true",limit:"5"}});
+      a=(r?.accounts||[]).find(x=>String(x.acct||"").toLowerCase()===key.toLowerCase())||(r?.accounts||[])[0];
+    }
+    if(!a?.id)throw new Error("계정을 찾지 못했어요.");
+    pushNavSnapshot();await openProfile(a.id);
+  }catch(e){toast("프로필을 열지 못했어요: "+e.message)}
+}
 function renderRichText(html=""){
   const d=document.createElement("div");d.innerHTML=html;
   const walk=node=>{
@@ -72,7 +105,8 @@ function renderRichText(html=""){
     const inner=[...node.childNodes].map(walk).join("");
     if(tag==="p")return inner+"<br>";
     if(tag==="a"){
-      const href=node.getAttribute("href")||"";
+      const href=node.getAttribute("href")||"",mention=mentionAcctFromAnchor(node,href);
+      if(mention)return '<button type="button" class="inline-mention" data-mention-acct="'+esc(mention)+'" data-mention-href="'+esc(href)+'">'+inner+"</button>";
       return '<a href="'+esc(href)+'" target="_blank" rel="noopener noreferrer">'+inner+"</a>";
     }
     return inner;
@@ -169,7 +203,7 @@ async function beginLogin(){
 async function beginLoginForHost(rawHost){
   const host=normalizeHost(rawHost||"");
   if(!host||!host.includes(".")){toast("서버 주소를 확인해주세요.");return}
-  state.busy=true;if(!document.querySelector(".drawer-shade"))render();
+  state.busy=true;if(!document.querySelector(".drawer-shade")&&!document.querySelector(".account-add-page"))render();
   try{
     const scopes="read write push";
     const body=new URLSearchParams({client_name:"Lenton Web",redirect_uris:REDIRECT_URI,scopes,website:location.origin});
@@ -219,9 +253,41 @@ async function switchSavedAccount(index){
   try{state.me=await api("/api/v1/accounts/verify_credentials");state.customEmojis=null;await loadCustomEmojis();saveCurrentAccount();state.view="home";render();toast("계정을 전환했어요.")}
   catch(e){toast("계정 전환 실패: "+e.message)}
 }
+function savedAccountFullHandle(x){
+  const acct=String(x?.acct||"");
+  return "@"+acct+(acct.includes("@")?"":("@"+String(x?.host||"")));
+}
+function closeAccountSwitcher(){document.querySelector(".account-switcher-shade")?.remove()}
+function openAccountSwitcher(){
+  closeAccountSwitcher();
+  const list=savedAccounts(),current=state.session?.host+"|"+(state.me?.id||""),shade=document.createElement("div");
+  shade.className="account-switcher-shade";
+  shade.innerHTML='<section class="account-switcher-sheet"><header><h2>계정</h2><button type="button" data-account-sheet-close aria-label="닫기">×</button></header>'+
+    '<div class="account-switcher-list">'+list.map((x,i)=>'<button type="button" class="account-switcher-row" data-account-sheet-switch="'+i+'"><img src="'+esc(x.avatar||"")+'" alt=""><span><b>'+esc(x.display_name||x.acct||"계정")+'</b><small>'+esc(savedAccountFullHandle(x))+'</small></span><em>'+(x.key===current?"✓":"")+'</em></button>').join("")+'</div>'+
+    '<button type="button" class="account-existing-add" data-existing-account-add>기존 계정 추가</button></section>';
+  document.body.append(shade);
+  shade.onclick=e=>{if(e.target===shade)closeAccountSwitcher()};
+  shade.querySelector("[data-account-sheet-close]").onclick=closeAccountSwitcher;
+  shade.querySelectorAll("[data-account-sheet-switch]").forEach(b=>b.onclick=()=>{const i=Number(b.dataset.accountSheetSwitch);closeAccountSwitcher();switchSavedAccount(i)});
+  shade.querySelector("[data-existing-account-add]").onclick=()=>{closeAccountSwitcher();addAccountFlow()};
+}
+function accountAddScreen(){
+  closeDrawer();closeAccountSwitcher();
+  const host=state.session?.host||"";
+  $("#app").innerHTML='<div class="account-add-page">'+
+    '<button type="button" class="account-add-cancel" id="cancelAccountAdd">취소</button>'+
+    '<div class="account-add-body"><img class="account-add-logo" src="./icon-192.png" alt="렌톤"><h1>계정 추가</h1><p>추가할 Mastodon 서버를 입력하세요</p>'+
+    '<input id="accountAddServer" class="account-add-input" inputmode="url" autocapitalize="none" autocomplete="off" placeholder="mastodon.social" value="'+esc(host)+'">'+
+    '<button type="button" class="account-add-login" id="accountAddLogin">Mastodon으로 로그인</button></div></div>';
+  bind();
+  $("#cancelAccountAdd").onclick=()=>goBackScreen();
+  const run=()=>beginLoginForHost($("#accountAddServer")?.value||"");
+  $("#accountAddLogin").onclick=run;
+  $("#accountAddServer").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();run()}});
+}
 function addAccountFlow(){
-  const host=prompt("추가할 Mastodon 서버 주소",state.session?.host||"");if(!host)return;
-  beginLoginForHost(host);
+  pushNavSnapshot();
+  accountAddScreen();
 }
 async function profileEditScreen(){
   closeDrawer();
@@ -427,6 +493,16 @@ function mediaMarkup(attachments=[]){
   }).join("");
   return `<div class="media-grid media-count-${Math.min(attachments.length,4)}">${items}</div>`;
 }
+function visibleReplyCount(raw,items=[]){
+  const st=raw?.reblog||raw||{},id=String(st.id||"");
+  if(!id)return Number(st.replies_count||0);
+  const authors=new Set();
+  for(const item of items||[]){
+    const child=item?.reblog||item||{};
+    if(String(child.in_reply_to_id||"")===id)authors.add(String(child.account?.id||child.id||""));
+  }
+  return Math.max(Number(st.replies_count||0),authors.size);
+}
 function statusCard(raw,opts={}){
   const st=raw.reblog||raw, boosted=!!raw.reblog, a=st.account||{};
   const boostLine=boosted?`<div class="boosted">↻ ${renderEmojiText(raw.account?.display_name||raw.account?.username||"",raw.account?.emojis||[])}님이 부스트</div>`:"";
@@ -556,7 +632,7 @@ async function refreshHomeAfterPost(){
 }
 function homeModes(){return ["home","public"]}
 function homePageHtml(items,mode){
-  return (items?.length?items.map(statusCard).join(""):'<div class="center">표시할 게시물이 없어요.</div>')+
+  return (items?.length?items.map(x=>statusCard(x,{replyCountOverride:visibleReplyCount(x,items)})).join(""):'<div class="center">표시할 게시물이 없어요.</div>')+
     '<button class="load-more" data-action="loadmorehome" data-home-load-mode="'+mode+'">더 불러오기</button>';
 }
 function buildHomePager(mode,data){
@@ -625,7 +701,7 @@ async function loadMoreHome(){
     more=more.filter(x=>{const id=statusId(x);if(!id||seen.has(id))return false;seen.add(id);return true});
     if(!more.length){if(btn)btn.textContent="더 불러올 게시물이 없어요.";return}
     state.timelineItems.push(...more);
-    if(btn){btn.insertAdjacentHTML("beforebegin",more.map(statusCard).join(""));btn.disabled=false;btn.textContent="더 불러오기"}
+    if(btn){btn.insertAdjacentHTML("beforebegin",more.map(x=>statusCard(x,{replyCountOverride:visibleReplyCount(x,state.timelineItems)})).join(""));btn.disabled=false;btn.textContent="더 불러오기"}
     bind();
   }catch(e){toast(e.message);if(btn){btn.disabled=false;btn.textContent="다시 시도"}}
   finally{state.timelineLoadingMore=false}
@@ -922,16 +998,16 @@ function profileMediaGrid(items){
 function profilePageHtml(items,mode="posts",pinnedItems=[]){
   if(mode==="media")return profileMediaGrid(items);
   if(mode==="pinned"){
-    return items?.length?items.map(x=>statusCard(x,{pinned:true})).join(""):'<div class="center">고정된 게시물이 없어요.</div>';
+    return items?.length?items.map(x=>statusCard(x,{pinned:true,replyCountOverride:visibleReplyCount(x,items)})).join(""):'<div class="center">고정된 게시물이 없어요.</div>';
   }
   if(mode==="posts"){
     const pinnedIds=new Set((pinnedItems||[]).map(statusId).filter(Boolean).map(String)),seen=new Set(),merged=[];
     for(const raw of [...(pinnedItems||[]),...(items||[])]){
       const id=String(statusId(raw)||"");if(id&&seen.has(id))continue;if(id)seen.add(id);merged.push(raw);
     }
-    return merged.length?merged.map(x=>statusCard(x,{pinned:pinnedIds.has(String(statusId(x)||""))})).join(""):'<div class="center">게시물이 없어요.</div>';
+    return merged.length?merged.map(x=>statusCard(x,{pinned:pinnedIds.has(String(statusId(x)||"")),replyCountOverride:visibleReplyCount(x,merged)})).join(""):'<div class="center">게시물이 없어요.</div>';
   }
-  return items?.length?items.map(statusCard).join(""):'<div class="center">게시물이 없어요.</div>';
+  return items?.length?items.map(x=>statusCard(x,{replyCountOverride:visibleReplyCount(x,items)})).join(""):'<div class="center">게시물이 없어요.</div>';
 }
 function buildProfilePager(mode,data){
   const modes=profileModes(),index=Math.max(0,modes.indexOf(mode));
@@ -959,18 +1035,26 @@ function setProfilePagerMode(mode,animate=true){
 function profileMarkup(a,opts={}){
   const own=!!opts.own,mode=opts.mode||"posts",relationship=opts.relationship||null;
   const note=relationship?.note||"",noteColor=accentTextColor();
-  const controls=own?'<button class="outline-btn" data-action="profileEditOwn">프로필 편집</button>':'<button class="outline-btn" data-action="followProfile">'+(relationship?.following?"팔로잉":"팔로우")+'</button>';
+  const mutual=!own&&!!relationship?.followed_by;
+  const controls=own
+    ? '<button class="outline-btn profile-own-edit" data-action="profileEditOwn">프로필 편집</button>'
+    : '<div class="profile-actions">'+
+        '<button class="profile-message-btn" data-action="profileMessage">쪽지</button>'+
+        '<button class="profile-bell '+(relationship?.notifying?"on":"")+'" data-action="profileNotify" '+(!relationship?.following?"disabled":"")+' aria-label="게시물 알림">'+lentonIcon("notifications")+'</button>'+
+        '<button class="profile-follow-btn" data-action="followProfile">'+(relationship?.following?"팔로우 해제":"팔로우")+'</button>'+
+      '</div>';
   const privateNote=own?"":'<div class="private-note-card" data-action="editPrivateNote" style="color:'+noteColor+'"><div class="label">비밀 메모</div><div class="note">'+esc(note.trim()?note:"메모를 추가하려면 탭하세요.")+'</div></div>';
   const header=a.header_static||a.header||"",avatar=a.avatar_static||a.avatar||"";
   const fields=(a.fields||[]).map(f=>'<div class="profile-field"><span>'+renderRichText(f.name||"")+'</span><b>'+renderRichText(f.value||"")+'</b></div>').join("");
-  const profileLabels=ANDROID?.renderer?.profileTabs||["게시물","답글"];
-  const tabs=[["posts","게시물","profilePosts"],["replies","답글","profileReplies"],["pinned","고정","profilePinned"],["media","미디어","profileMedia"]];
+  const tabs=[["posts","게시물","profilePosts"],["replies","게시물과 답장","profileReplies"],["pinned","고정","profilePinned"],["media","미디어","profileMedia"]];
   return '<div class="profile-hero">'+
     (header?'<button class="profile-header-button" data-media-url="'+esc(header)+'" data-media-alt="프로필 헤더"><img class="profile-header" src="'+esc(header)+'" alt=""></button>':'<div class="profile-header"></div>')+
     (avatar?'<button class="profile-avatar-button" data-media-url="'+esc(avatar)+'" data-media-alt="프로필 사진"><img class="profile-avatar" src="'+esc(avatar)+'" alt=""></button>':"")+
-    '</div><div class="profile-info"><div class="profile-name-row"><div class="profile-names"><h2>'+renderEmojiText(a.display_name||a.username,a.emojis||[])+'</h2><div class="profile-handle">@'+esc(a.acct)+'</div></div>'+controls+'</div>'+
-    '<div class="profile-bio">'+renderRichText(a.note||"")+'</div>'+(fields?'<div class="profile-fields">'+fields+'</div>':"")+privateNote+
-    '<div class="profile-count-grid">'+((ANDROID?.renderer?.profileCounts||["following","followers"]).map(key=>key==="statuses"?'<div><b>'+Number(a.statuses_count||0).toLocaleString()+'</b><span>게시물</span></div>':key==="following"?'<div><b>'+Number(a.following_count||0).toLocaleString()+'</b><span>팔로잉</span></div>':'<div><b>'+Number(a.followers_count||0).toLocaleString()+'</b><span>팔로워</span></div>').join(""))+'</div></div>'+
+    '</div><div class="profile-info"><div class="profile-name-row"><div class="profile-names"><h2>'+renderEmojiText(a.display_name||a.username,a.emojis||[])+'</h2>'+
+      (mutual?'<div class="profile-mutual">나를 팔로우합니다</div>':"")+
+      '<div class="profile-handle">@'+esc(a.acct)+'</div></div>'+controls+'</div>'+
+    '<div class="profile-bio">'+renderRichText(a.note||"")+'</div>'+privateNote+(fields?'<div class="profile-fields">'+fields+'</div>':"")+
+    '<div class="profile-count-grid"><div><b>'+Number(a.statuses_count||0).toLocaleString()+'</b><span>게시물</span></div><div><b>'+Number(a.following_count||0).toLocaleString()+'</b><span>팔로잉</span></div><div><b>'+Number(a.followers_count||0).toLocaleString()+'</b><span>팔로워</span></div></div></div>'+
     '<div class="profile-tabs-4" data-profile-tabs>'+tabs.map((x,i)=>'<button data-profile-mode="'+x[0]+'" data-action="'+x[2]+'" class="'+(mode===x[0]?"active":"")+'">'+x[1]+'</button>').join("")+'<span class="profile-tab-indicator" aria-hidden="true"></span></div>';
 }
 async function profileView(mode=state.profileMode||"posts"){
@@ -1041,6 +1125,14 @@ async function toggleProfileRelation(endpoint){
 async function toggleFollowProfile(){
   const a=state.profileAccount,rel=state.profileRelationship||{};if(!a)return;
   try{const r=await api(`/api/v1/accounts/${a.id}/${rel.following?"unfollow":"follow"}`,{method:"POST",form:{}});state.profileRelationship={...rel,...r};openProfile(a.id,state.profileMode||"posts")}catch(e){toast(e.message)}
+}
+async function toggleProfileNotify(){
+  const a=state.profileAccount,rel=state.profileRelationship||{};if(!a)return;
+  if(!rel.following){toast("먼저 팔로우해 주세요.");return}
+  try{
+    const r=await api(`/api/v1/accounts/${a.id}/follow`,{method:"POST",form:{notify:rel.notifying?"false":"true"}});
+    state.profileRelationship={...rel,...r};openProfile(a.id,state.profileMode||"posts");
+  }catch(e){toast(e.message)}
 }
 async function reportProfile(){
   const a=state.profileAccount;if(!a)return;
@@ -1114,14 +1206,14 @@ function drawerMenuMarkup(){
 }
 function buildDrawerElement(){
   const m=state.me||{},shade=document.createElement("div");
-  const allAccounts=savedAccounts(),currentKey=state.session?.host+"|"+m.id;const otherAccounts=allAccounts.filter(x=>x&&x.avatar&&x.key!==currentKey).slice(0,3);
+  const allAccounts=savedAccounts(),currentKey=state.session?.host+"|"+m.id;const otherAccounts=allAccounts.filter(x=>x&&x.avatar&&x.key!==currentKey);
   shade.className="drawer-shade";
   shade.innerHTML=`<aside class="drawer lenton-drawer">
     <div class="drawer-account-strip">
       <button class="drawer-profile-avatar-button" data-drawer="profile" aria-label="프로필"><img class="drawer-avatar" src="${esc(m.avatar_static||m.avatar||"")}" alt=""></button>
       <div class="drawer-switchers">
         ${otherAccounts.map(x=>`<button class="drawer-account-btn" data-switch-account-key="${esc(x.key)}"><img class="drawer-switch-avatar" src="${esc(x.avatar)}" alt=""></button>`).join("")}
-        <button class="drawer-add-account" data-drawer="addaccount">＋</button>
+        <button class="drawer-add-account" data-drawer="accountswitcher" aria-label="계정">＋</button>
       </div>
     </div>
     <button class="drawer-profile-summary" data-drawer="profile"><div class="drawer-name">${renderEmojiText(m.display_name||m.username||"렌톤",m.emojis||[])}</div><div class="drawer-handle">@${esc(m.acct||"")}${m.acct?.includes("@")?"":"@"+esc(state.session?.host||"")}</div><div class="drawer-counts"><b>${m.following_count||0}</b> 팔로잉&nbsp;&nbsp;&nbsp;<b>${m.followers_count||0}</b> 팔로워</div></button>
@@ -1142,7 +1234,7 @@ function buildDrawerElement(){
     else if(v==="layoutedit"){pushNavSnapshot();closeDrawer();screenLayoutEditor()}
     else if(v==="history"){pushNavSnapshot();closeDrawer();updateHistoryScreen()}
     else if(v==="theme"){state.theme=state.theme==="dark"?"light":"dark";store.set("lenton_theme",state.theme);document.documentElement.dataset.theme=state.theme;closeDrawer();render()}
-    else if(v==="addaccount"){closeDrawer();addAccountFlow()}
+    else if(v==="accountswitcher"){closeDrawer();openAccountSwitcher()}
   });
   shade.querySelectorAll("[data-switch-account-key]").forEach(b=>b.onclick=()=>{
     const list=savedAccounts(),i=list.findIndex(x=>x.key===b.dataset.switchAccountKey);closeDrawer();if(i>=0)switchSavedAccount(i);
@@ -1667,7 +1759,8 @@ async function uploadComposerFile(file){
   catch{return await apiMultipart("/api/v1/media",fd)}
 }
 function composeToolMarkup(ct={},replyMode=false){
-  const order=replyMode?["photo","camera","cw","emoji","plus"]:(Array.isArray(ct.toolOrder)&&ct.toolOrder.length?ct.toolOrder:["photo","camera","gif","poll","cw","plus","emoji"]);
+  const sourceOrder=replyMode?["photo","camera","cw","emoji","plus"]:(Array.isArray(ct.toolOrder)&&ct.toolOrder.length?ct.toolOrder:["photo","camera","gif","poll","cw","emoji","plus"]);
+  const order=[...sourceOrder.filter(x=>x!=="plus"),"plus"];
   const enabled={
     photo:ct.hasPhoto!==false,camera:ct.hasCamera!==false,gif:ct.hasGif!==false,
     poll:ct.hasPoll!==false,cw:ct.cw!==""&&ct.cw!==false,plus:ct.hasThread!==false
@@ -1721,7 +1814,6 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
     const visOptions=[["public","공개"],["unlisted","조용히 공개"],["private","팔로워만"],["direct","DM"]];
     m.innerHTML=`<div class="sheet compose-sheet">
       <div class="sheet-head"><button class="iconbtn" id="closeCompose">×</button><h2>${reply?(ct.replyTitle||"답글"):(visibility==="direct"?"새 DM":(ct.newTitle||"새 게시물"))}</h2><button class="primary" id="sendCompose">${reply?(ct.replyButton||"답글"):(visibility==="direct"?"보내기":(ct.postButton||"게시"))}</button></div>
-      ${!reply?`<div class="compose-meta-row"><select id="composeVisibility" class="compose-visibility" aria-label="공개 범위">${visOptions.map(x=>`<option value="${x[0]}" ${visibility===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select></div>`:""}
       ${reply?replyContextRows()+`<button type="button" class="compose-reply-summary" id="replyRecipientPicker">${esc(replySummaryText())}</button>`:""}
       ${!reply&&recips.length?`<div class="recips">${recips.map((r,i)=>`<button data-r="${i}" class="${r.on?"":"off"}">${r.avatar?`<img src="${esc(r.avatar)}" alt="">`:""}<span>@${esc(r.acct)}</span></button>`).join("")}</div>`:""}
       <div id="parts">${parts.map((p,i)=>`<div class="part ${i===activePart?"active":""}" data-p="${i}">
@@ -1740,7 +1832,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
           ${p.media.length?`<div class="compose-media">${p.media.map((x,j)=>`<div class="compose-media-item"><img src="${esc(x.preview_url||x.url||"")}" alt=""><button data-remove-media="${i}:${j}">×</button></div>`).join("")}</div>`:""}
         </div></div>
       </div>`).join("")}</div>
-      ${reply?`<div class="compose-meta-row reply-visibility-row"><select id="composeVisibility" class="compose-visibility" aria-label="공개 범위">${visOptions.map(x=>`<option value="${x[0]}" ${visibility===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select></div>`:""}
+      <div class="compose-meta-row compose-visibility-row"><select id="composeVisibility" class="compose-visibility" aria-label="공개 범위">${visOptions.map(x=>`<option value="${x[0]}" ${visibility===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select></div>
       <div class="compose-tools android-compose-tools">
         ${composeToolMarkup(ct,!!reply)}
         <input id="composeFile" type="file" accept="image/*,video/*" multiple hidden>
@@ -2193,6 +2285,7 @@ function attachLentonGestures(){
 
 function bind(){
   document.querySelectorAll("[data-profile]").forEach(b=>b.onclick=e=>{e.stopPropagation();pushNavSnapshot();openProfile(b.dataset.profile)});
+  document.querySelectorAll("[data-mention-acct]").forEach(b=>b.onclick=e=>{e.preventDefault();e.stopPropagation();openMentionProfile(b.dataset.mentionAcct,b.dataset.mentionHref||"")});
   document.querySelectorAll("[data-open-list]").forEach(b=>b.onclick=()=>{state.view="home";state.listId=b.dataset.openList;render()});
   document.querySelectorAll("[data-list-manage]").forEach(b=>b.onclick=()=>{pushNavSnapshot();listManageScreen(b.dataset.listManage)});
   document.querySelectorAll("[data-list-visible]").forEach(b=>b.onclick=()=>{const id=b.dataset.listVisible;setListHidden(id,!hiddenListIds().has(id));listsScreen()});
@@ -2240,6 +2333,8 @@ function bind(){
     else if(a==="profileEditOwn"){pushNavSnapshot();profileEditScreen()}
     else if(a==="profileMenu")openProfilePopup()
     else if(a==="editPrivateNote")editPrivateNote()
+    else if(a==="profileMessage"){const p=state.profileAccount;if(p)compose(null,"direct",[p])}
+    else if(a==="profileNotify")toggleProfileNotify()
     else if(a==="followProfile")toggleFollowProfile()
   });
   document.querySelectorAll("[data-home-mode]").forEach(b=>b.onclick=()=>{if(document.querySelector("[data-home-pager]"))setHomePagerMode(b.dataset.homeMode,true);else{state.homeMode=b.dataset.homeMode;state.listId=null;render()}});
