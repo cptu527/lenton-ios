@@ -3405,3 +3405,30 @@ img{display:block}
   .account-setting-value{max-width:40%}
   .filter-contexts{grid-template-columns:1fr}
 }
+
+
+/* 2026-09-20 notification emphasis + hide direct self posts */
+.android-notify-card.notify-mention .android-notify-person b{
+  color:var(--fg);
+  font-weight:800;
+}
+.android-notify-card.notify-mention .notify-content{
+  color:var(--fg);
+  font-weight:500;
+  opacity:1;
+}
+.android-notify-card.notify-mention .android-notify-glyph{
+  opacity:1;
+}
+.android-notify-card.notify-passive .android-notify-person b{
+  color:color-mix(in srgb,var(--fg) 78%,var(--sub));
+  font-weight:650;
+}
+.android-notify-card.notify-passive .notify-content{
+  color:var(--sub);
+  font-weight:400;
+  opacity:.78;
+}
+.android-notify-card.notify-passive .android-notify-glyph{
+  opacity:.72;
+}
