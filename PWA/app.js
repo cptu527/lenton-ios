@@ -14,7 +14,7 @@ const state = {
   session: store.get("lenton_session"),
   me:null, view:"home", homeMode:"home", listId:null, lists:[], busy:false,
   theme:store.get("lenton_theme","system"), accent:store.get("lenton_accent",ANDROID?.theme?.accent||"#1d9bf0"),
-  pushError:"", toast:"", currentConversation:null, profileReplies:false, profileMode:"posts", profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, navStack:[], dmDraftRecipients:[], updateAvailable:null, buildInfo:null
+  pushError:"", toast:"", currentConversation:null, profileReplies:false, profileMode:"posts", profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, profilePagerData:{}, homePagerData:{}, navStack:[], dmDraftRecipients:[], updateAvailable:null, buildInfo:null
 };
 
 function accountScope(){
@@ -815,6 +815,33 @@ function profileQuery(mode){
   else if(mode==="media")q.only_media="true";
   return q;
 }
+function profileModes(){return ["posts","replies","pinned","media"]}
+function profilePageHtml(items){
+  return items?.length?items.map(statusCard).join(""):'<div class="center">게시물이 없어요.</div>';
+}
+function buildProfilePager(mode,data){
+  const modes=profileModes(),index=Math.max(0,modes.indexOf(mode));
+  return '<div class="profile-pager" data-profile-pager><div class="profile-pager-track" data-profile-track style="transform:translate3d(-'+(index*100)+'%,0,0)">'+
+    modes.map(m=>'<section class="profile-pager-page" data-profile-page="'+m+'">'+profilePageHtml(data[m]||[])+'</section>').join("")+
+    '</div></div>';
+}
+function syncProfilePagerUi(mode,animate=true){
+  const modes=profileModes(),index=Math.max(0,modes.indexOf(mode));
+  const pager=document.querySelector("[data-profile-pager]"),track=document.querySelector("[data-profile-track]"),tabs=document.querySelector("[data-profile-tabs]");
+  if(!pager||!track||!tabs)return;
+  const width=Math.max(1,pager.clientWidth);
+  track.style.transition=animate?"transform 190ms cubic-bezier(.2,.75,.25,1)":"none";
+  track.style.transform="translate3d("+(-index*width)+"px,0,0)";
+  tabs.querySelectorAll("[data-profile-mode]").forEach(b=>b.classList.toggle("active",b.dataset.profileMode===mode));
+  const indicator=tabs.querySelector(".profile-tab-indicator"),tabW=tabs.clientWidth/modes.length;
+  if(indicator){indicator.style.transition=animate?"transform 190ms cubic-bezier(.2,.75,.25,1)":"none";indicator.style.transform="translate3d("+(index*tabW+(tabW-36)/2)+"px,0,0)"}
+  const page=track.querySelector('[data-profile-page="'+mode+'"]');
+  if(page)requestAnimationFrame(()=>{pager.style.height=Math.max(1,page.scrollHeight)+"px"});
+}
+function setProfilePagerMode(mode,animate=true){
+  mode=normalizeProfileMode(mode);state.profileMode=mode;state.profileReplies=mode==="replies";
+  syncProfilePagerUi(mode,animate);
+}
 function profileMarkup(a,opts={}){
   const own=!!opts.own,mode=opts.mode||"posts",relationship=opts.relationship||null;
   const note=relationship?.note||"",noteColor=accentTextColor();
@@ -830,7 +857,7 @@ function profileMarkup(a,opts={}){
     '</div><div class="profile-info"><div class="profile-name-row"><div class="profile-names"><h2>'+renderEmojiText(a.display_name||a.username,a.emojis||[])+'</h2><div class="profile-handle">@'+esc(a.acct)+'</div></div>'+controls+'</div>'+
     '<div class="profile-bio">'+renderRichText(a.note||"")+'</div>'+(fields?'<div class="profile-fields">'+fields+'</div>':"")+privateNote+
     '<div class="profile-count-grid">'+((ANDROID?.renderer?.profileCounts||["following","followers"]).map(key=>key==="statuses"?'<div><b>'+Number(a.statuses_count||0).toLocaleString()+'</b><span>게시물</span></div>':key==="following"?'<div><b>'+Number(a.following_count||0).toLocaleString()+'</b><span>팔로잉</span></div>':'<div><b>'+Number(a.followers_count||0).toLocaleString()+'</b><span>팔로워</span></div>').join(""))+'</div></div>'+
-    '<div class="profile-tabs-4">'+tabs.map(x=>'<button data-action="'+x[2]+'" class="'+(mode===x[0]?"active":"")+'">'+x[1]+'</button>').join("")+'</div>';
+    '<div class="profile-tabs-4" data-profile-tabs>'+tabs.map((x,i)=>'<button data-profile-mode="'+x[0]+'" data-action="'+x[2]+'" class="'+(mode===x[0]?"active":"")+'">'+x[1]+'</button>').join("")+'<span class="profile-tab-indicator" aria-hidden="true"></span></div>';
 }
 async function profileView(mode=state.profileMode||"posts"){
   if(typeof mode==="boolean")mode=mode?"replies":"posts";
@@ -838,25 +865,31 @@ async function profileView(mode=state.profileMode||"posts"){
   renderLoadingShell("프로필");
   try{
     if(!state.me)state.me=await api("/api/v1/accounts/verify_credentials");
-    const a=state.me,statuses=await api("/api/v1/accounts/"+a.id+"/statuses",{query:profileQuery(mode)});
-    $("#app").innerHTML=shell("프로필",profileMarkup(a,{own:true,mode})+(statuses.length?statuses.map(statusCard).join(""):'<div class="center">게시물이 없어요.</div>'));bind();
+    const a=state.me,modes=profileModes();
+    const entries=await Promise.all(modes.map(async m=>[m,await api("/api/v1/accounts/"+a.id+"/statuses",{query:profileQuery(m)})]));
+    const data=Object.fromEntries(entries);state.profilePagerData=data;
+    $("#app").innerHTML=shell("프로필",profileMarkup(a,{own:true,mode})+buildProfilePager(mode,data));bind();
+    requestAnimationFrame(()=>syncProfilePagerUi(mode,false));
   }catch(e){$("#app").innerHTML=shell("프로필",'<div class="center">'+esc(e.message)+'</div>');bind()}
 }
 async function openProfile(id,mode=state.profileMode||"posts"){
-  if(!id)return;if(typeof mode==="boolean")mode=mode?"replies":"posts";
+  if(!id)return;if(typeof mode==="boolean")mode=mode?"replies":"posts";mode=normalizeProfileMode(mode);
   if(state.me?.id&&String(id)===String(state.me.id)){rememberScroll();state.view="profile";state.profileAccount=null;state.profileRelationship=null;state.profileMode=mode;return profileView(mode)}
-  rememberScroll();state.returnView=state.view;mode=normalizeProfileMode(mode);state.profileMode=mode;state.profileReplies=mode==="replies";
+  rememberScroll();state.returnView=state.view;state.profileMode=mode;state.profileReplies=mode==="replies";
   $("#app").innerHTML=standaloneShell("프로필",'<div class="center">불러오는 중…</div>');bind();
   try{
-    const [a,rels,statuses]=await Promise.all([
+    const modes=profileModes();
+    const [a,rels,...lists]=await Promise.all([
       api("/api/v1/accounts/"+id),
       api("/api/v1/accounts/relationships",{query:{"id[]":id}}),
-      api("/api/v1/accounts/"+id+"/statuses",{query:profileQuery(mode)})
+      ...modes.map(m=>api("/api/v1/accounts/"+id+"/statuses",{query:profileQuery(m)}))
     ]);
-    const relationship=Array.isArray(rels)?(rels[0]||{}):{};
+    const relationship=Array.isArray(rels)?(rels[0]||{}):{},data={};
+    modes.forEach((m,i)=>data[m]=lists[i]||[]);state.profilePagerData=data;
     state.profileAccount=a;state.profileRelationship=relationship;
     const more='<button class="profile-more" data-action="profileMenu" aria-label="프로필 관리">'+lentonIcon("more")+'</button>';
-    $("#app").innerHTML=standaloneShell("프로필",profileMarkup(a,{own:false,mode,relationship})+(statuses.length?statuses.map(statusCard).join(""):'<div class="center">게시물이 없어요.</div>'),more);bind();
+    $("#app").innerHTML=standaloneShell("프로필",profileMarkup(a,{own:false,mode,relationship})+buildProfilePager(mode,data),more);bind();
+    requestAnimationFrame(()=>syncProfilePagerUi(mode,false));
   }catch(e){$("#app").innerHTML=standaloneShell("프로필",'<div class="center">'+esc(e.message)+'</div>');bind()}
 }
 function closePopup(){document.querySelector(".android-popup-shade")?.remove()}
@@ -1905,42 +1938,43 @@ function attachDrawerCloseSwipe(drawer){
   },{passive:true});
   drawer.addEventListener("touchcancel",()=>{drawer.style.transform="translate3d(0,0,0)";shade.style.background="rgba(0,0,0,.45)";reset()},{passive:true});
 }
-function attachInteractiveProfileSwipe(host){
-  if(!host||host.dataset.profileSwipe==="1")return;host.dataset.profileSwipe="1";
-  let start=null,active=false,targetMode=null,preview=null,width=0,dir=0,hostRect=null;
-  const modes=["posts","replies","pinned","media"],accountId=state.profileAccount?.id||state.me?.id||"me";
-  const cleanup=()=>{host.style.transition="";host.style.transform="";host.classList.remove("swipe-moving");preview?.remove();preview=null;start=null;active=false;targetMode=null};
-  host.addEventListener("touchstart",e=>{if(e.touches?.length!==1)return;const p=gesturePoint(e);if(p.x<=28)return;start=p;hostRect=host.getBoundingClientRect();width=Math.max(1,hostRect.width)},{passive:true});
-  host.addEventListener("touchmove",e=>{
+function attachInteractiveProfileSwipe(pager){
+  if(!pager||pager.dataset.profileSwipe==="1")return;pager.dataset.profileSwipe="1";
+  const track=pager.querySelector("[data-profile-track]"),tabs=document.querySelector("[data-profile-tabs]");
+  if(!track||!tabs)return;
+  const modes=profileModes();let start=null,active=false,width=0,startIndex=0,lastDx=0;
+  const indicator=tabs.querySelector(".profile-tab-indicator");
+  const settle=(index,animate=true)=>{
+    const mode=modes[Math.max(0,Math.min(modes.length-1,index))];state.profileMode=mode;state.profileReplies=mode==="replies";
+    syncProfilePagerUi(mode,animate);
+  };
+  pager.addEventListener("touchstart",e=>{
+    if(e.touches?.length!==1)return;const p=gesturePoint(e);start=p;active=false;lastDx=0;width=Math.max(1,pager.clientWidth);startIndex=Math.max(0,modes.indexOf(state.profileMode||"posts"));
+    track.style.transition="none";if(indicator)indicator.style.transition="none";
+  },{passive:true});
+  pager.addEventListener("touchmove",e=>{
     if(!start||e.touches?.length!==1)return;const p=gesturePoint(e),dx=p.x-start.x,dy=p.y-start.y;
     if(!active){
-      if(Math.abs(dy)>18&&Math.abs(dy)>=Math.abs(dx)){cleanup();return}
-      if(Math.abs(dx)<10||Math.abs(dx)<=Math.abs(dy)*1.15)return;
-      const current=state.profileMode||"posts",i=modes.indexOf(current);dir=dx<0?1:-1;targetMode=modes[i+dir]||null;active=true;
-      host.classList.add("swipe-moving");host.style.transition="none";
-      if(targetMode){
-        const key=accountId+":"+targetMode,html=state.profileCache[key]||'<div class="center">불러오는 중…</div>';
-        preview=buildSwipePreview(html,"profile-swipe-preview",hostRect);preview.style.transform="translate3d("+(dir>0?width:-width)+"px,0,0)";
-      }
+      if(Math.abs(dy)>12&&Math.abs(dy)>=Math.abs(dx)){start=null;return}
+      if(Math.abs(dx)<6||Math.abs(dx)<=Math.abs(dy))return;
+      active=true;
     }
-    if(!active)return;e.preventDefault();const shown=targetMode?dx:dx*.18;
-    host.style.transform="translate3d("+shown+"px,0,0)";if(preview)preview.style.transform="translate3d("+(shown+(dir>0?width:-width))+"px,0,0)";
+    e.preventDefault();
+    let shown=dx;if((startIndex===0&&dx>0)||(startIndex===modes.length-1&&dx<0))shown=dx*.22;
+    lastDx=shown;
+    track.style.transform="translate3d("+(-startIndex*width+shown)+"px,0,0)";
+    const frac=Math.max(0,Math.min(modes.length-1,startIndex-shown/width)),tabW=tabs.clientWidth/modes.length;
+    if(indicator)indicator.style.transform="translate3d("+(frac*tabW+(tabW-36)/2)+"px,0,0)";
   },{passive:false});
-  host.addEventListener("touchend",async e=>{
-    if(!start){cleanup();return}const p=gesturePoint(e),dx=p.x-start.x,dt=Math.max(1,p.time-start.time),vx=dx/dt;
-    if(!active){cleanup();return}const commit=!!targetMode&&(Math.abs(dx)>width*.20||Math.abs(vx)>.65);
-    if(commit){
-      host.style.transition="transform 180ms cubic-bezier(.2,.75,.25,1)";if(preview)preview.style.transition=host.style.transition;
-      requestAnimationFrame(()=>{host.style.transform="translate3d("+(dir>0?-width:width)+"px,0,0)";if(preview)preview.style.transform="translate3d(0,0,0)"});
-      await new Promise(r=>setTimeout(r,195));const target=targetMode;cleanup();
-      if(state.profileAccount)openProfile(state.profileAccount.id,target);else profileView(target);
-    }else{
-      host.style.transition="transform 160ms cubic-bezier(.2,.75,.25,1)";if(preview)preview.style.transition=host.style.transition;
-      requestAnimationFrame(()=>{host.style.transform="translate3d(0,0,0)";if(preview)preview.style.transform="translate3d("+(dir>0?width:-width)+"px,0,0)"});
-      setTimeout(cleanup,180);
-    }
+  pager.addEventListener("touchend",e=>{
+    if(!start){return}const p=gesturePoint(e),rawDx=p.x-start.x,dt=Math.max(1,p.time-start.time),vx=rawDx/dt;
+    if(!active){start=null;return}
+    let target=startIndex;
+    if(rawDx<0&&startIndex<modes.length-1&&(Math.abs(rawDx)>width*.18||vx<-.45))target=startIndex+1;
+    else if(rawDx>0&&startIndex>0&&(Math.abs(rawDx)>width*.18||vx>.45))target=startIndex-1;
+    start=null;active=false;settle(target,true);
   },{passive:true});
-  host.addEventListener("touchcancel",cleanup,{passive:true});
+  pager.addEventListener("touchcancel",()=>{if(start){start=null;active=false;settle(startIndex,true)}},{passive:true});
 }
 function attachStandaloneBackSwipe(page){
   if(!page||page.dataset.backSwipe==="1")return;page.dataset.backSwipe="1";
@@ -1964,11 +1998,8 @@ function attachLentonGestures(){
   if(state.view==="home")attachInteractiveHomeSwipe(document.querySelector(".main"));
 
   attachStandaloneBackSwipe(document.querySelector(".standalone-page"));
-  const profileTabs=document.querySelector(".profile-tabs-4,.profile-tabs-2,.profile-info + .home-tabs,.profile-hero ~ .home-tabs");
-  if(profileTabs){
-    const host=document.querySelector(".standalone-page .main")||document.querySelector(".app .main");
-    attachInteractiveProfileSwipe(host);
-  }
+  const profilePager=document.querySelector("[data-profile-pager]");
+  if(profilePager)attachInteractiveProfileSwipe(profilePager);
 }
 
 function bind(){
@@ -2013,10 +2044,10 @@ function bind(){
     else if(a==="reply")replyById(b.dataset.id)
     else if(a==="fav"||a==="boost"||a==="bookmark")statusAction(b.dataset.id,a)
     else if(a==="replydm"){if(state.currentConversation?.last_status)compose(state.currentConversation.last_status,"direct")}
-    else if(a==="profileReplies"){if(state.profileAccount)openProfile(state.profileAccount.id,"replies");else profileView("replies")}
-    else if(a==="profilePosts"){if(state.profileAccount)openProfile(state.profileAccount.id,"posts");else profileView("posts")}
-    else if(a==="profilePinned"){if(state.profileAccount)openProfile(state.profileAccount.id,"pinned");else profileView("pinned")}
-    else if(a==="profileMedia"){if(state.profileAccount)openProfile(state.profileAccount.id,"media");else profileView("media")}
+    else if(a==="profileReplies")setProfilePagerMode("replies",true)
+    else if(a==="profilePosts")setProfilePagerMode("posts",true)
+    else if(a==="profilePinned")setProfilePagerMode("pinned",true)
+    else if(a==="profileMedia")setProfilePagerMode("media",true)
     else if(a==="profileEditOwn"){pushNavSnapshot();profileEditScreen()}
     else if(a==="profileMenu")openProfilePopup()
     else if(a==="editPrivateNote")editPrivateNote()
