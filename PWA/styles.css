@@ -1538,3 +1538,116 @@ img{display:block}
   white-space:nowrap;
   font-size:14px;
 }
+
+
+/* Authoritative v0.25.17 APK parity */
+.profile-tabs-4{display:none!important}
+.profile-tabs-2{
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  height:50px;
+  border-bottom:1px solid var(--line);
+  background:var(--bg);
+}
+.profile-tabs-2 button{
+  position:relative;
+  border:0;
+  background:none;
+  color:var(--sub);
+  font-size:15px;
+  padding:0;
+}
+.profile-tabs-2 button.active{color:var(--fg);font-weight:700}
+.profile-tabs-2 button.active::after{
+  content:"";
+  position:absolute;
+  width:36px;
+  height:3px;
+  border-radius:2px;
+  left:50%;
+  bottom:0;
+  transform:translateX(-50%);
+  background:var(--accent);
+}
+.android-compose-tools{
+  min-height:58px;
+  display:grid;
+  grid-template-columns:repeat(6,52px) minmax(0,1fr);
+  gap:0;
+  padding:0 12px 0 76px;
+  align-items:center;
+}
+.android-compose-tools>button{
+  width:52px;
+  min-width:52px;
+  height:54px;
+  margin:0;
+  padding:0;
+  border:0;
+  background:none;
+  color:var(--accent);
+  font-weight:700;
+  font-size:22px;
+}
+.android-compose-tools #composeGif{font-size:13px}
+.android-compose-tools #addPart{font-size:28px;margin:0}
+.android-compose-tools .compose-emoji-secondary{
+  justify-self:end;
+  width:44px;
+  min-width:44px;
+  font-size:20px;
+}
+.compose-poll{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  margin:10px 0 4px;
+  padding:10px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:var(--surface);
+}
+.compose-poll-option{display:flex;align-items:center;gap:6px}
+.compose-poll-option input{
+  flex:1;
+  min-width:0;
+  height:40px;
+  border:1px solid var(--line)!important;
+  border-radius:10px;
+  padding:0 10px;
+  margin:0!important;
+  background:var(--bg)!important;
+  color:var(--fg);
+}
+.compose-poll-option button{
+  width:34px;height:34px;border:0;border-radius:50%;
+  background:transparent;color:var(--sub);font-size:20px;
+}
+.compose-poll-settings{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+  color:var(--sub);
+  font-size:13px;
+}
+.compose-poll-settings button,
+.compose-poll-settings select{
+  min-height:34px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:var(--bg);
+  color:var(--fg);
+  padding:0 10px;
+}
+.main-swipe-preview,.home-swipe-preview,.profile-swipe-preview{
+  contain:layout paint size;
+  backface-visibility:hidden;
+  -webkit-backface-visibility:hidden;
+}
+.swipe-moving{
+  overflow:hidden!important;
+  touch-action:pan-y;
+  backface-visibility:hidden;
+  -webkit-backface-visibility:hidden;
+}
