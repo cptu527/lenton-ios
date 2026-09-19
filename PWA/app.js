@@ -1758,42 +1758,41 @@ function attachDrawerCloseSwipe(drawer){
 }
 function attachInteractiveProfileSwipe(host){
   if(!host||host.dataset.profileSwipe==="1")return;host.dataset.profileSwipe="1";
-  let start=null,active=false,targetReplies=null,preview=null,width=0,dir=0;
-  const accountId=state.profileAccount?.id||state.me?.id||"me";
-  const cleanup=()=>{host.style.transition="";host.style.transform="";host.classList.remove("swipe-moving");preview?.remove();preview=null;start=null;active=false;targetReplies=null};
+  let start=null,active=false,targetMode=null,preview=null,width=0,dir=0;
+  const modes=["posts","replies","pinned","media"],accountId=state.profileAccount?.id||state.me?.id||"me";
+  const cleanup=()=>{host.style.transition="";host.style.transform="";host.classList.remove("swipe-moving");preview?.remove();preview=null;start=null;active=false;targetMode=null};
   host.addEventListener("touchstart",e=>{if(e.touches?.length!==1)return;const p=gesturePoint(e);if(p.x<=28)return;start=p;width=window.innerWidth||document.documentElement.clientWidth},{passive:true});
   host.addEventListener("touchmove",e=>{
     if(!start||e.touches?.length!==1)return;const p=gesturePoint(e),dx=p.x-start.x,dy=p.y-start.y;
     if(!active){
       if(Math.abs(dy)>18&&Math.abs(dy)>=Math.abs(dx)){cleanup();return}
       if(Math.abs(dx)<10||Math.abs(dx)<=Math.abs(dy)*1.15)return;
-      dir=dx<0?1:-1;targetReplies=dir>0?(state.profileReplies?null:true):(state.profileReplies?false:null);active=true;
+      const current=state.profileMode||"posts",i=modes.indexOf(current);dir=dx<0?1:-1;targetMode=modes[i+dir]||null;active=true;
       host.classList.add("swipe-moving");host.style.transition="none";
-      if(targetReplies!==null){
-        const key=accountId+":"+(targetReplies?"replies":"posts"),html=state.profileCache[key]||'<div class="center">불러오는 중…</div>';
-        preview=buildSwipePreview(html,"profile-swipe-preview");preview.style.transform=`translate3d(${dir>0?width:-width}px,0,0)`;
+      if(targetMode){
+        const key=accountId+":"+targetMode,html=state.profileCache[key]||'<div class="center">불러오는 중…</div>';
+        preview=buildSwipePreview(html,"profile-swipe-preview");preview.style.transform="translate3d("+(dir>0?width:-width)+"px,0,0)";
       }
     }
-    if(!active)return;e.preventDefault();const shown=targetReplies!==null?dx:dx*.18;
-    host.style.transform=`translate3d(${shown}px,0,0)`;if(preview)preview.style.transform=`translate3d(${shown+(dir>0?width:-width)}px,0,0)`;
+    if(!active)return;e.preventDefault();const shown=targetMode?dx:dx*.18;
+    host.style.transform="translate3d("+shown+"px,0,0)";if(preview)preview.style.transform="translate3d("+(shown+(dir>0?width:-width))+"px,0,0)";
   },{passive:false});
   host.addEventListener("touchend",async e=>{
     if(!start){cleanup();return}const p=gesturePoint(e),dx=p.x-start.x,dt=Math.max(1,p.time-start.time),vx=dx/dt;
-    if(!active){cleanup();return}const commit=targetReplies!==null&&(Math.abs(dx)>width*.20||Math.abs(vx)>.65);
+    if(!active){cleanup();return}const commit=!!targetMode&&(Math.abs(dx)>width*.20||Math.abs(vx)>.65);
     if(commit){
       host.style.transition="transform 180ms cubic-bezier(.2,.75,.25,1)";if(preview)preview.style.transition=host.style.transition;
-      requestAnimationFrame(()=>{host.style.transform=`translate3d(${dir>0?-width:width}px,0,0)`;if(preview)preview.style.transform="translate3d(0,0,0)"});
-      await new Promise(r=>setTimeout(r,195));const target=targetReplies;cleanup();
+      requestAnimationFrame(()=>{host.style.transform="translate3d("+(dir>0?-width:width)+"px,0,0)";if(preview)preview.style.transform="translate3d(0,0,0)"});
+      await new Promise(r=>setTimeout(r,195));const target=targetMode;cleanup();
       if(state.profileAccount)openProfile(state.profileAccount.id,target);else profileView(target);
     }else{
       host.style.transition="transform 160ms cubic-bezier(.2,.75,.25,1)";if(preview)preview.style.transition=host.style.transition;
-      requestAnimationFrame(()=>{host.style.transform="translate3d(0,0,0)";if(preview)preview.style.transform=`translate3d(${dir>0?width:-width}px,0,0)`});
+      requestAnimationFrame(()=>{host.style.transform="translate3d(0,0,0)";if(preview)preview.style.transform="translate3d("+(dir>0?width:-width)+"px,0,0)"});
       setTimeout(cleanup,180);
     }
   },{passive:true});
   host.addEventListener("touchcancel",cleanup,{passive:true});
 }
-
 function attachStandaloneBackSwipe(page){
   if(!page||page.dataset.backSwipe==="1")return;page.dataset.backSwipe="1";
   let start=null,active=false,width=0;
@@ -1894,7 +1893,7 @@ function bind(){
   if(state.view==="home"&&document.querySelector(".main"))state.homeCache[state.homeMode]=document.querySelector(".main").innerHTML;
   if(document.querySelector(".profile-info")&&document.querySelector(".main")){
     const pid=state.profileAccount?.id||state.me?.id||"me";
-    state.profileCache[pid+":"+(state.profileReplies?"replies":"posts")]=document.querySelector(".main").innerHTML;
+    state.profileCache[pid+":"+(state.profileMode||"posts")]=document.querySelector(".main").innerHTML;
   }
   attachLentonGestures();
   restoreScroll();
