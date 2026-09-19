@@ -1504,9 +1504,10 @@ function buildSwipePreview(html,className){
   return p;
 }
 function previewForMainView(view){
-  if(state.pageCache[view])return state.pageCache[view];
+  const cached=state.pageCache[view]||"";
+  if(cached.includes(`lenton-view-${view}`))return cached;
   const title=view==="home"?"홈":view==="search"?"검색":view==="notifications"?"알림":"메시지";
-  return `<div class="app"><header class="topbar lenton-topbar"><h1>${title}</h1></header><main class="main"><div class="center">불러오는 중…</div></main></div>`;
+  return `<div class="app lenton-view-${view}"><header class="topbar lenton-topbar"><h1>${title}</h1></header><main class="main"><div class="center">불러오는 중…</div></main><nav class="bottom lenton-bottom">${navBar()}</nav></div>`;
 }
 function attachInteractiveMainSwipe(bottom){
   if(!bottom||bottom.dataset.interactiveSwipe==="1")return;
@@ -1825,7 +1826,10 @@ function bind(){
   $("#themeSel")?.addEventListener("change",e=>{state.theme=e.target.value;store.set("lenton_theme",state.theme);if(state.theme==="system")delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=state.theme});
   $("#accentSel")?.addEventListener("input",e=>{state.accent=e.target.value;store.set("lenton_accent",state.accent);document.documentElement.style.setProperty("--accent",state.accent)});
   const appRoot=document.querySelector("#app>.app");
-  if(appRoot){appRoot.classList.remove("refreshing");state.pageCache[state.view]=$("#app").innerHTML;}
+  if(appRoot){
+    appRoot.classList.remove("refreshing");
+    if(appRoot.classList.contains("lenton-view-"+state.view))state.pageCache[state.view]=$("#app").innerHTML;
+  }
   if(state.view==="home"&&document.querySelector(".main"))state.homeCache[state.homeMode]=document.querySelector(".main").innerHTML;
   if(document.querySelector(".profile-info")&&document.querySelector(".main")){
     const pid=state.profileAccount?.id||state.me?.id||"me";
