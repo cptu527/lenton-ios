@@ -874,6 +874,30 @@ async function bookmarksView(){
   }catch(e){toast(e.message)}
 }
 
+function drawerMenuRows(){
+  const iconMap={profile:"profile",profileedit:"edit",favourites:"heart",bookmarks:"bookmark",followrequests:"personAdd",layoutedit:"edit",lists:"list",settings:"settings",update:"update",history:"update",theme:"settings"};
+  const fallback=[
+    {id:"profile",label:"프로필"},{id:"profileedit",label:"프로필 편집"},{id:"favourites",label:"좋아요"},
+    {id:"bookmarks",label:"북마크"},{id:"followrequests",label:"팔로우 요청"},{id:"layoutedit",label:"화면 구성 편집"},
+    {id:"lists",label:"리스트"},{id:"settings",label:"설정"}
+  ];
+  let rows=Array.isArray(ANDROID?.renderer?.drawerRows)&&ANDROID.renderer.drawerRows.length?ANDROID.renderer.drawerRows:fallback;
+  rows=rows.filter(x=>x?.id&&x.id!=="realtime");
+  const mapped=rows.map(x=>{
+    let label=x.label||x.id;
+    if(x.id==="theme")label=(state.theme==="dark"?"라이트 모드":"다크 모드");
+    if(x.id==="update")label="업데이트 내역";
+    return {id:x.id==="update"?"history":x.id,label,icon:iconMap[x.id]||"more"};
+  });
+  if(!mapped.some(x=>x.id==="history"))mapped.push({id:"history",label:"업데이트 내역",icon:"update"});
+  return mapped;
+}
+function drawerMenuMarkup(){
+  return drawerMenuRows().map((x,i)=>{
+    const divider=(x.id==="lists"||x.id==="settings"||x.id==="history")?'<div class="drawer-divider"></div>':"";
+    return divider+'<button class="drawer-row '+(x.id==="lists"?"drawer-list-row":"")+'" data-drawer="'+esc(x.id)+'"><span class="glyph">'+lentonIcon(x.icon)+'</span>'+esc(x.label)+'</button>';
+  }).join("");
+}
 function buildDrawerElement(){
   const m=state.me||{},shade=document.createElement("div");
   const allAccounts=savedAccounts(),currentKey=state.session?.host+"|"+m.id;const otherAccounts=allAccounts.filter(x=>x&&x.avatar&&x.key!==currentKey).slice(0,3);
@@ -889,18 +913,8 @@ function buildDrawerElement(){
     <div class="drawer-name">${renderEmojiText(m.display_name||m.username||"렌톤",m.emojis||[])}</div>
     <div class="drawer-handle">@${esc(m.acct||"")}${m.acct?.includes("@")?"":"@"+esc(state.session?.host||"")}</div>
     <div class="drawer-counts"><b>${m.following_count||0}</b> 팔로잉&nbsp;&nbsp;&nbsp;<b>${m.followers_count||0}</b> 팔로워</div>
-    <div class="drawer-divider"></div>
-    <button class="drawer-row" data-drawer="profile"><span class="glyph">${lentonIcon("profile")}</span>프로필</button>
-    <button class="drawer-row" data-drawer="profileedit"><span class="glyph">${lentonIcon("edit")}</span>프로필 편집</button>
-    <button class="drawer-row" data-drawer="favourites"><span class="glyph">${lentonIcon("heart")}</span>좋아요</button>
-    <button class="drawer-row" data-drawer="bookmarks"><span class="glyph">${lentonIcon("bookmark")}</span>북마크</button>
-    <button class="drawer-row" data-drawer="followrequests"><span class="glyph">${lentonIcon("personAdd")}</span>팔로우 요청</button>
-    <button class="drawer-row" data-drawer="layoutedit"><span class="glyph">${lentonIcon("edit")}</span>화면 구성 편집</button>
-    <div class="drawer-spacer"></div>
-    <button class="drawer-row drawer-list-row" data-drawer="lists"><span class="glyph">${lentonIcon("list")}</span>리스트</button>
-    <div class="drawer-divider"></div>
-    <button class="drawer-row" data-drawer="settings"><span class="glyph">${lentonIcon("settings")}</span>설정</button>
-    <button class="drawer-row" data-drawer="history"><span class="glyph">${lentonIcon("update")}</span>업데이트 내역</button>
+    ${drawerMenuMarkup()}
+
   </aside>`;
   document.body.append(shade);
   shade.addEventListener("click",e=>{if(e.target===shade)closeDrawer()});
@@ -915,6 +929,7 @@ function buildDrawerElement(){
     else if(v==="profileedit"){pushNavSnapshot();closeDrawer();profileEditScreen()}
     else if(v==="layoutedit"){pushNavSnapshot();closeDrawer();screenLayoutEditor()}
     else if(v==="history"){pushNavSnapshot();closeDrawer();updateHistoryScreen()}
+    else if(v==="theme"){state.theme=state.theme==="dark"?"light":"dark";store.set("lenton_theme",state.theme);document.documentElement.dataset.theme=state.theme;closeDrawer();render()}
     else if(v==="addaccount"){closeDrawer();addAccountFlow()}
   });
   shade.querySelectorAll("[data-switch-account-key]").forEach(b=>b.onclick=()=>{
