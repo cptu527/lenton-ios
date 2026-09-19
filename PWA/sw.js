@@ -1,5 +1,5 @@
 const CACHE="lenton-pwa-v4";
-const SHELL=["./","./index.html","./styles.css","./app.js","./manifest.webmanifest","./generated/android-spec.js","./icon-192.png","./icon-512.png","./icon-1024.png"];
+const SHELL=["./","./index.html","./styles.css","./app.js","./manifest.webmanifest","./generated/android-spec.js","./changelog.json","./icon-192.png","./icon-512.png","./icon-1024.png"];
 
 self.addEventListener("install",event=>{
   event.waitUntil(
@@ -37,7 +37,7 @@ self.addEventListener("fetch",event=>{
     return;
   }
   if(
-    /\/(?:app\.js|styles\.css|index\.html|manifest\.webmanifest|build\.json)$/.test(u.pathname) ||
+    /\/(?:app\.js|styles\.css|index\.html|manifest\.webmanifest|build\.json|changelog\.json)$/.test(u.pathname) ||
     u.pathname.includes("/generated/android-spec.js")
   ){
     event.respondWith(networkFirst(req));
@@ -53,7 +53,7 @@ self.addEventListener("push",event=>{
   const title=data.title||n.title||"렌톤";
   const body=data.body||n.body||data.message||"새 알림이 도착했습니다.";
   const icon=data.icon||n.icon||"./icon-1024.png";
-  const target=n.navigate||data.url||"./?view=notifications";
+  const target=n.navigate||data.url||(data.notification_id?("./?notification_id="+encodeURIComponent(data.notification_id)):"./?view=notifications");
   const options={
     body,icon,badge:"./icon-1024.png",tag:data.notification_id||data.id||"lenton-notification",
     renotify:true,data:{url:target},silent:false
