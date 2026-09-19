@@ -828,7 +828,7 @@ async function deleteList(id){
 
 function tabLabel(id){return id==="home"?"홈":id==="search"?"검색":id==="notifications"?"알림":"DM"}
 function attachLayoutEditorDrag(){
-  const container=document.querySelector(".layout-tab-row")?.parentElement;if(!container||container.dataset.dragReady==="1")return;
+  const container=document.querySelector(".layout-tab-rows");if(!container||container.dataset.dragReady==="1")return;
   container.dataset.dragReady="1";
   let row=null,timer=null,dragging=false,startY=0;
   container.querySelectorAll(".layout-grip").forEach(grip=>{
@@ -868,7 +868,7 @@ function screenLayoutEditor(){
     <button class="layout-toggle ${cfg.hidden.has(id)?"off":""}" data-layout-toggle="${id}">${cfg.hidden.has(id)?"숨김":"표시"}</button>
   </div>`).join("");
   const body=`<div class="layout-guide">하단 탭의 순서와 표시 여부를 편집할 수 있습니다. 숨긴 탭은 화면과 데이터를 지우지 않고 하단 메뉴와 좌우 스와이프 대상에서만 제외됩니다.</div>
-    <div class="section-title">하단 탭</div>${rows}
+    <div class="section-title">하단 탭</div><div class="layout-tab-rows">${rows}</div>
     <div class="section-title">초기화</div><button class="row reset-layout" data-action="resetLayout">기본값으로 초기화</button>`;
   $("#app").innerHTML=standaloneShell("화면 구성 편집",body);bind();
 }
