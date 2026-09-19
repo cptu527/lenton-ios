@@ -335,6 +335,9 @@ function lentonIcon(name,cls=""){
   if(name==="personAdd")return `<svg ${c}><circle cx="9" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3.5 19c.6-3.4 2.5-5.2 5.5-5.2 1.4 0 2.5.4 3.4 1.1M17 10v8M13 14h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
   if(name==="settings")return `<svg ${c}><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2.8v2.1M12 19.1v2.1M2.8 12h2.1M19.1 12h2.1M5.5 5.5 7 7M17 17l1.5 1.5M18.5 5.5 17 7M7 17l-1.5 1.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="6.2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>`;
   if(name==="update")return `<svg ${c}><path d="M12 3v12m0 0-4-4m4 4 4-4M5 20h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  if(name==="photo")return `<svg ${c}><rect x="3.5" y="5" width="17" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="9" cy="10" r="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="m5.5 17 4.2-4 3.1 3 2.3-2.2 3.4 3.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  if(name==="camera")return `<svg ${c}><path d="M4 8h3l1.5-2.5h7L17 8h3v11H4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13.5" r="3.2" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
+  if(name==="smile")return `<svg ${c}><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="9" cy="10" r="1" fill="currentColor"/><circle cx="15" cy="10" r="1" fill="currentColor"/><path d="M8.5 14c1 1.5 2.1 2.2 3.5 2.2s2.5-.7 3.5-2.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
   return "";
 }
 function navIcon(v){return lentonIcon(v,"nav-icon")}
@@ -817,13 +820,13 @@ async function openConversation(id){
     const previous=c._previousConversationId?'<button class="dm-previous-conversation" data-dm-previous="'+esc(c._previousConversationId)+'">이전 대화 보기 ›</button>':"";
     const body=previous+'<div class="dm-thread-list">'+statuses.map(dmThreadRow).join("")+'</div>'+
       '<div class="dm-inline-compose android-dm-compose">'+
-        '<button class="dm-tool-btn" id="dmInlineAttach" aria-label="사진 첨부">▧</button>'+
-        '<button class="dm-tool-btn" id="dmInlineCamera" aria-label="카메라">◉</button>'+
+        '<button class="dm-tool-btn" id="dmInlineAttach" aria-label="사진 첨부">'+lentonIcon("photo")+'</button>'+
+        '<button class="dm-tool-btn" id="dmInlineCamera" aria-label="카메라">'+lentonIcon("camera")+'</button>'+
         '<input id="dmInlineFile" type="file" accept="image/*,video/*" multiple hidden>'+
         '<input id="dmInlineCameraFile" type="file" accept="image/*" capture="environment" hidden>'+
         '<textarea id="dmInlineInput" rows="1" maxlength="'+Number(state.instance?.configuration?.statuses?.max_characters||500)+'" placeholder="메시지 보내기"></textarea>'+
         '<span id="dmInlineCount" class="dm-inline-count">'+Number(state.instance?.configuration?.statuses?.max_characters||500)+'</span>'+
-        '<button class="dm-inline-send" id="dmInlineSend" aria-label="보내기">↗</button>'+
+        '<button class="dm-inline-send" id="dmInlineSend" aria-label="보내기">보내기</button>'+
       '</div><div id="dmMediaPreview" class="dm-media-preview"></div>';
     $("#app").innerHTML=standaloneShell(title,body);bind();
     const input=$("#dmInlineInput"),max=Number(input?.maxLength||500),count=$("#dmInlineCount");
@@ -1602,17 +1605,17 @@ function composeToolMarkup(ct={}){
     poll:ct.hasPoll!==false,cw:ct.cw!==""&&ct.cw!==false,plus:ct.hasThread!==false
   };
   const html={
-    photo:'<button type="button" id="composeAttach" aria-label="사진">▧</button>',
-    camera:'<button type="button" id="composeCamera" aria-label="카메라">◉</button>',
+    photo:'<button type="button" id="composeAttach" aria-label="사진">'+lentonIcon("photo")+'</button>',
+    camera:'<button type="button" id="composeCamera" aria-label="카메라">'+lentonIcon("camera")+'</button>',
     gif:'<button type="button" id="composeGif" aria-label="GIF">GIF</button>',
     poll:'<button type="button" id="composePoll" aria-label="투표">☷</button>',
     cw:'<button type="button" class="compose-cw-toggle" id="composeCW" aria-label="CW">CW</button>',
     plus:'<button type="button" class="part-add" id="addPart" aria-label="타래 추가">＋</button>'
   };
   return order.filter(x=>enabled[x]&&html[x]).map(x=>html[x]).join("")+
-    '<button type="button" id="composeEmoji" class="compose-emoji-secondary" aria-label="서버 이모지">☺</button>';
+    '<button type="button" id="composeEmoji" class="compose-emoji-secondary" aria-label="서버 이모지">'+lentonIcon("smile")+'</button>';
 }
-function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
+function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyContext=[]){
   let historyPushed=false;
   let parts=[{text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[],poll:null}];
   let visibility=forcedVisibility||reply?.visibility||"public",activePart=0,uploading=false;
@@ -1621,8 +1624,19 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
   for(const a of initialRecipients||[])addRecipient(a);
   if(reply){
     addRecipient(reply.account);(reply.mentions||[]).forEach(addRecipient);
+    for(const st of replyContext||[]){addRecipient(st.account);(st.mentions||[]).forEach(addRecipient)}
   }
   const dirty=()=>parts.some(p=>p.text.trim()||p.spoiler.trim()||p.media.length||p.poll?.options?.some(x=>x.trim()));
+  const replyContextRows=()=>{
+    if(!reply)return "";
+    const uniq=new Map();for(const st of [...(replyContext||[]),reply])if(st?.id)uniq.set(String(st.id),st);
+    return '<div class="compose-thread-context">'+[...uniq.values()].slice(-5).map(st=>{const a=st.account||{};return '<div class="compose-thread-row"><img src="'+esc(a.avatar_static||a.avatar||"")+'" alt=""><div><div class="compose-thread-author"><b>'+renderEmojiText(a.display_name||a.username||"",a.emojis||[])+'</b><span>@'+esc(a.acct||"")+' · '+fmtTime(st.created_at)+'</span></div><div class="compose-thread-text">'+renderRichText(st.content||"")+'</div></div></div>';}).join("")+'</div>';
+  };
+  const replySummaryText=()=>{
+    const selected=recips.filter(x=>x.on);if(!selected.length)return "답글 받을 계정 선택";
+    const first=selected[0],name=first.display_name||first.username||first.acct||"상대";
+    return selected.length>1?name+" 외 "+(selected.length-1)+"명에게 보내는 답글":name+"에게 보내는 답글";
+  };
   const confirmClose=()=>!dirty()||confirm("작성 중인 내용을 버릴까요?");
   const hydrateRecipients=async()=>{
     for(let i=0;i<recips.length;i++){
@@ -1639,8 +1653,8 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
     m.innerHTML=`<div class="sheet compose-sheet">
       <div class="sheet-head"><button class="iconbtn" id="closeCompose">×</button><h2>${reply?(ct.replyTitle||"답글"):(visibility==="direct"?"새 DM":(ct.newTitle||"새 게시물"))}</h2><button class="primary" id="sendCompose">${reply?(ct.replyButton||"답글"):(visibility==="direct"?"보내기":(ct.postButton||"게시"))}</button></div>
       <div class="compose-meta-row"><select id="composeVisibility" class="compose-visibility">${visOptions.map(x=>`<option value="${x[0]}" ${visibility===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select></div>
-      ${reply?`<div class="compose-reply-summary">${recips.filter(x=>x.on).length?`${esc(recips.find(x=>x.on)?.display_name||recips.find(x=>x.on)?.acct||"상대")} ${recips.filter(x=>x.on).length>1?`외 ${recips.filter(x=>x.on).length-1}명에게 보내는 답글`:"에게 보내는 답글"}`:"답글"}</div><div class="compose-reply-context"><img src="${esc(reply.account?.avatar_static||reply.account?.avatar||"")}" alt=""><div><b>${renderEmojiText(reply.account?.display_name||reply.account?.username||"",reply.account?.emojis||[])}</b><div>${renderRichText(reply.content||"")}</div></div></div>`:""}
-      ${recips.length?`<div class="recips">${recips.map((r,i)=>`<button data-r="${i}" class="${r.on?"":"off"}">${r.avatar?`<img src="${esc(r.avatar)}" alt="">`:""}<span>@${esc(r.acct)}</span></button>`).join("")}</div>`:""}
+      ${reply?replyContextRows()+`<button type="button" class="compose-reply-summary" id="replyRecipientPicker">${esc(replySummaryText())}</button>`:""}
+      ${!reply&&recips.length?`<div class="recips">${recips.map((r,i)=>`<button data-r="${i}" class="${r.on?"":"off"}">${r.avatar?`<img src="${esc(r.avatar)}" alt="">`:""}<span>@${esc(r.acct)}</span></button>`).join("")}</div>`:""}
       <div id="parts">${parts.map((p,i)=>`<div class="part ${i===activePart?"active":""}" data-p="${i}">
         <div class="part-head"><b>게시물 ${i+1}</b><label><input type="checkbox" data-cw="${i}" ${p.cw?"checked":""}> CW</label></div>
         <div class="part-body"><img class="avatar" src="${esc(state.me?.avatar_static||state.me?.avatar||"")}" alt=""><div class="part-fields">
@@ -1678,6 +1692,13 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
     m.querySelectorAll("[data-sp]").forEach(x=>x.addEventListener("input",e=>parts[+e.target.dataset.sp].spoiler=e.target.value));
     m.querySelectorAll("[data-cw]").forEach(x=>x.addEventListener("change",e=>{parts[+e.target.dataset.cw].cw=e.target.checked;draw(false)}));
     m.querySelectorAll("[data-r]").forEach(x=>x.addEventListener("click",e=>{recips[+e.currentTarget.dataset.r].on=!recips[+e.currentTarget.dataset.r].on;draw(false)}));
+    $("#replyRecipientPicker",m)?.addEventListener("click",()=>{
+      const shade=document.createElement("div");shade.className="reply-recipient-shade";
+      shade.innerHTML='<div class="reply-recipient-dialog"><h3>답글 받을 계정 선택</h3><div class="reply-recipient-list">'+recips.map((r,i)=>'<label><span class="reply-recipient-person">'+(r.avatar?'<img src="'+esc(r.avatar)+'" alt="">':"")+'<span><b>'+renderEmojiText(r.display_name||r.username||r.acct||"",r.emojis||[])+'</b><small>@'+esc(r.acct||"")+'</small></span></span><input type="checkbox" data-reply-recipient="'+i+'" '+(r.on?"checked":"")+'></label>').join("")+'</div><div class="reply-recipient-actions"><button type="button" data-reply-cancel>취소</button><button type="button" data-reply-done>완료</button></div></div>';
+      document.body.append(shade);
+      shade.querySelector("[data-reply-cancel]").onclick=()=>shade.remove();
+      shade.querySelector("[data-reply-done]").onclick=()=>{shade.querySelectorAll("[data-reply-recipient]").forEach(x=>recips[Number(x.dataset.replyRecipient)].on=x.checked);if(!recips.some(x=>x.on)&&recips.length)recips[0].on=true;shade.remove();draw(false)};
+    });
     m.querySelectorAll("[data-remove-media]").forEach(x=>x.onclick=e=>{const [pi,mi]=e.currentTarget.dataset.removeMedia.split(":").map(Number);parts[pi].media.splice(mi,1);activePart=pi;draw(false)});
     m.querySelectorAll("[data-poll-option]").forEach(x=>x.oninput=e=>{const [pi,oi]=e.currentTarget.dataset.pollOption.split(":").map(Number);if(parts[pi].poll)parts[pi].poll.options[oi]=e.currentTarget.value});
     m.querySelectorAll("[data-poll-add]").forEach(x=>x.onclick=e=>{const pi=+e.currentTarget.dataset.pollAdd;if(parts[pi].poll&&parts[pi].poll.options.length<4)parts[pi].poll.options.push("");activePart=pi;draw(false)});
@@ -1749,7 +1770,12 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
   draw();
   if(recips.some(x=>!x.avatar))hydrateRecipients();
 }
-async function replyById(id,forced=null){try{const s=await api(`/api/v1/statuses/${id}`);compose(s,forced)}catch(e){toast(e.message)}}
+async function replyById(id,forced=null){
+  try{
+    const [st,ctx]=await Promise.all([api(`/api/v1/statuses/${id}`),api(`/api/v1/statuses/${id}/context`).catch(()=>({ancestors:[]}))]);
+    compose(st,forced,[],ctx.ancestors||[]);
+  }catch(e){toast(e.message)}
+}
 
 async function enablePush(){
   state.pushError="";
@@ -2027,12 +2053,13 @@ function attachInteractiveProfileSwipe(pager){
     if(indicator)indicator.style.transform="translate3d("+(frac*tabW+(tabW-36)/2)+"px,0,0)";
   },{passive:false});
   pager.addEventListener("touchend",e=>{
-    if(!start){return}const p=gesturePoint(e),rawDx=p.x-start.x,dt=Math.max(1,p.time-start.time),vx=rawDx/dt;
+    if(!start){return}const p=gesturePoint(e),endDx=p.x-start.x;
+    const rawDx=Math.abs(lastDx)>Math.abs(endDx)?lastDx:endDx,dt=Math.max(1,p.time-start.time),vx=rawDx/dt;
     if(!active){start=null;return}
     let target=startIndex;
-    if(rawDx<0&&startIndex<modes.length-1&&(Math.abs(rawDx)>width*.18||vx<-.45))target=startIndex+1;
-    else if(rawDx>0&&startIndex>0&&(Math.abs(rawDx)>width*.18||vx>.45))target=startIndex-1;
-    start=null;active=false;settle(target,true);
+    if(rawDx<0&&startIndex<modes.length-1&&(Math.abs(rawDx)>width*.12||vx<-.28))target=startIndex+1;
+    else if(rawDx>0&&startIndex>0&&(Math.abs(rawDx)>width*.12||vx>.28))target=startIndex-1;
+    start=null;active=false;lastDx=0;settle(target,true);
   },{passive:true});
   pager.addEventListener("touchcancel",()=>{if(start){start=null;active=false;settle(startIndex,true)}},{passive:true});
 }
