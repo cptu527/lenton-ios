@@ -607,8 +607,7 @@ async function bookmarksView(){
   }catch(e){toast(e.message)}
 }
 
-function openDrawer(){
-  closeDrawer();
+function buildDrawerElement(){
   const m=state.me||{},shade=document.createElement("div");
   const otherAccounts=(store.get("lenton_accounts")||[]).filter(x=>x&&x.avatar&&x.acct!==m.acct).slice(0,3);
   shade.className="drawer-shade";
@@ -616,11 +615,11 @@ function openDrawer(){
     <div class="drawer-account-strip">
       <img class="drawer-avatar" src="${esc(m.avatar_static||m.avatar||"")}" alt="">
       <div class="drawer-switchers">
-        ${otherAccounts.map(x=>`<img class="drawer-switch-avatar" src="${esc(x.avatar)}" alt="">`).join("")}
+        ${otherAccounts.map((x,i)=>`<button class="drawer-account-btn" data-switch-account="${i}"><img class="drawer-switch-avatar" src="${esc(x.avatar)}" alt=""></button>`).join("")}
         <button class="drawer-add-account" data-drawer="addaccount">＋</button>
       </div>
     </div>
-    <div class="drawer-name">${esc(m.display_name||m.username||"렌톤")}</div>
+    <div class="drawer-name">${renderEmojiText(m.display_name||m.username||"렌톤",m.emojis||[])}</div>
     <div class="drawer-handle">@${esc(m.acct||"")}${m.acct?.includes("@")?"":"@"+esc(state.session?.host||"")}</div>
     <div class="drawer-counts"><b>${m.following_count||0}</b> 팔로잉&nbsp;&nbsp;&nbsp;<b>${m.followers_count||0}</b> 팔로워</div>
     <div class="drawer-divider"></div>
@@ -638,7 +637,6 @@ function openDrawer(){
     <button class="drawer-row" data-drawer="update"><span class="glyph">⇩</span>앱 업데이트</button>
   </aside>`;
   document.body.append(shade);
-  requestAnimationFrame(()=>attachLentonGestures());
   shade.addEventListener("click",e=>{if(e.target===shade)closeDrawer()});
   shade.querySelectorAll("[data-drawer]").forEach(b=>b.onclick=async()=>{
     const v=b.dataset.drawer;
@@ -648,13 +646,42 @@ function openDrawer(){
     else if(v==="followrequests"){closeDrawer();followRequestsScreen()}
     else if(v==="lists"){closeDrawer();listsScreen()}
     else if(v==="settings"){closeDrawer();state.view="settings";render()}
-    else if(v==="profileedit"){closeDrawer();toast("프로필 편집을 준비 중이에요.")}
+    else if(v==="profileedit"){closeDrawer();profileEditScreen()}
     else if(v==="layoutedit"){closeDrawer();screenLayoutEditor()}
-    else if(v==="realtime"){closeDrawer();toast("실시간 연결 상태 표시 설정을 준비 중이에요.")}
+    else if(v==="realtime"){closeDrawer();realtimeSettingsScreen()}
     else if(v==="update"){closeDrawer();applyAutomaticUpdate();toast("최신 버전을 확인했어요.")}
-    else if(v==="addaccount"){closeDrawer();toast("계정 추가를 준비 중이에요.")}
+    else if(v==="addaccount"){closeDrawer();addAccountFlow()}
   });
+  return shade;
 }
+function openDrawer(opts={}){
+  if(document.querySelector(".drawer-shade"))return document.querySelector(".drawer-shade");
+  const shade=buildDrawerElement(),drawer=shade.querySelector(".drawer");
+  if(opts.interactive){
+    shade.classList.add("drawer-interactive");
+    drawer.style.transition="none";shade.style.transition="none";
+    drawer.style.transform="translate3d(-100%,0,0)";shade.style.background="rgba(0,0,0,0)";
+  }else{
+    drawer.style.transform="translate3d(-100%,0,0)";shade.style.background="rgba(0,0,0,0)";
+    requestAnimationFrame(()=>{
+      drawer.style.transition="transform 180ms cubic-bezier(.2,.75,.25,1)";
+      shade.style.transition="background 180ms ease";
+      drawer.style.transform="translate3d(0,0,0)";shade.style.background="rgba(0,0,0,.45)";
+    });
+  }
+  requestAnimationFrame(()=>attachLentonGestures());
+  return shade;
+}
+function closeDrawer(animated=true){
+  const shade=document.querySelector(".drawer-shade");if(!shade)return;
+  const drawer=shade.querySelector(".drawer");
+  if(!animated){shade.remove();return}
+  drawer.style.transition="transform 170ms cubic-bezier(.2,.75,.25,1)";
+  shade.style.transition="background 170ms ease";
+  drawer.style.transform="translate3d(-100%,0,0)";shade.style.background="rgba(0,0,0,0)";
+  setTimeout(()=>shade.remove(),185);
+}
+
 async function favouritesView(){
   closeDrawer();$("#app").innerHTML=standaloneShell("좋아요",'<div class="center">불러오는 중…</div>');bind();
   try{const a=await api("/api/v1/favourites",{query:{limit:"40"}});$("#app").innerHTML=standaloneShell("좋아요",a.length?a.map(statusCard).join(""):'<div class="center">좋아요한 게시물이 없어요.</div>');bind()}catch(e){toast(e.message)}
@@ -756,7 +783,6 @@ async function followRequestsScreen(){
   try{const a=await api("/api/v1/follow_requests",{query:{limit:"40"}});const rows=a.length?a.map(x=>`<div class="row"><img class="avatar" data-profile="${esc(x.id||"")}" style="width:48px;height:48px" src="${esc(x.avatar_static||x.avatar||"")}" alt=""><div class="grow"><b>${esc(x.display_name||x.username)}</b><div class="muted">@${esc(x.acct)}</div></div></div>`).join(""):'<div class="center">팔로우 요청이 없어요.</div>';$("#app").innerHTML=standaloneShell("팔로우 요청",rows);bind()}catch(e){toast(e.message)}
 }
 
-function closeDrawer(){document.querySelector(".drawer-shade")?.remove()}
 
 async function pushDiagnostics(){
   const supported="serviceWorker"in navigator&&"PushManager"in window&&"Notification"in window;
@@ -1222,15 +1248,68 @@ function moveMainView(dir){
   const i=order.indexOf(state.view);if(i<0)return;const n=i+dir;if(n<0||n>=order.length)return;
   state.view=order[n];state.listId=null;render();
 }
+function attachEdgeDrawerSwipe(app){
+  if(!app||app.dataset.edgeDrawerSwipe==="1")return;app.dataset.edgeDrawerSwipe="1";
+  let start=null,active=false,shade=null,drawer=null,width=0;
+  const reset=()=>{start=null;active=false;shade=null;drawer=null;width=0};
+  app.addEventListener("touchstart",e=>{if(e.touches?.length!==1)return;const p=gesturePoint(e);if(p.x>28)return;start=p},{passive:true});
+  app.addEventListener("touchmove",e=>{
+    if(!start||e.touches?.length!==1)return;const p=gesturePoint(e),dx=p.x-start.x,dy=p.y-start.y;
+    if(!active){
+      if(dx<0||Math.abs(dy)>18&&Math.abs(dy)>=Math.abs(dx)){reset();return}
+      if(dx<8||dx<=Math.abs(dy)*1.15)return;
+      active=true;shade=openDrawer({interactive:true});drawer=shade.querySelector(".drawer");width=drawer.getBoundingClientRect().width||window.innerWidth*.82;
+    }
+    e.preventDefault();
+    const progress=Math.max(0,Math.min(1,dx/width));
+    drawer.style.transform=`translate3d(${-width+progress*width}px,0,0)`;
+    shade.style.background=`rgba(0,0,0,${.45*progress})`;
+  },{passive:false});
+  app.addEventListener("touchend",async e=>{
+    if(!active||!start||!drawer){reset();return}
+    const p=gesturePoint(e),dx=p.x-start.x,dt=Math.max(1,p.time-start.time),vx=dx/dt;
+    const commit=dx>width*.25||vx>.65;
+    drawer.style.transition="transform 170ms cubic-bezier(.2,.75,.25,1)";shade.style.transition="background 170ms ease";
+    if(commit){drawer.style.transform="translate3d(0,0,0)";shade.style.background="rgba(0,0,0,.45)"}
+    else{drawer.style.transform=`translate3d(-${width}px,0,0)`;shade.style.background="rgba(0,0,0,0)";setTimeout(()=>shade.remove(),185)}
+    reset();
+  },{passive:true});
+  app.addEventListener("touchcancel",()=>{if(shade)closeDrawer();reset()},{passive:true});
+}
+function attachDrawerCloseSwipe(drawer){
+  if(!drawer||drawer.dataset.closeSwipe==="1")return;drawer.dataset.closeSwipe="1";
+  let start=null,active=false,width=0,shade=drawer.closest(".drawer-shade");
+  const reset=()=>{start=null;active=false;width=0};
+  drawer.addEventListener("touchstart",e=>{if(e.touches?.length!==1)return;start=gesturePoint(e);width=drawer.getBoundingClientRect().width},{passive:true});
+  drawer.addEventListener("touchmove",e=>{
+    if(!start||e.touches?.length!==1)return;const p=gesturePoint(e),dx=p.x-start.x,dy=p.y-start.y;
+    if(!active){
+      if(dx>0||Math.abs(dy)>18&&Math.abs(dy)>=Math.abs(dx)){reset();return}
+      if(Math.abs(dx)<8||Math.abs(dx)<=Math.abs(dy)*1.15)return;
+      active=true;drawer.style.transition="none";shade.style.transition="none";
+    }
+    e.preventDefault();const shown=Math.max(-width,Math.min(0,dx)),progress=1-Math.abs(shown)/width;
+    drawer.style.transform=`translate3d(${shown}px,0,0)`;shade.style.background=`rgba(0,0,0,${.45*progress})`;
+  },{passive:false});
+  drawer.addEventListener("touchend",e=>{
+    if(!active||!start){reset();return}const p=gesturePoint(e),dx=p.x-start.x,dt=Math.max(1,p.time-start.time),vx=dx/dt;
+    const commit=Math.abs(dx)>width*.25||vx<-.65;
+    drawer.style.transition="transform 170ms cubic-bezier(.2,.75,.25,1)";shade.style.transition="background 170ms ease";
+    if(commit){drawer.style.transform=`translate3d(-${width}px,0,0)`;shade.style.background="rgba(0,0,0,0)";setTimeout(()=>shade.remove(),185)}
+    else{drawer.style.transform="translate3d(0,0,0)";shade.style.background="rgba(0,0,0,.45)"}
+    reset();
+  },{passive:true});
+  drawer.addEventListener("touchcancel",()=>{drawer.style.transform="translate3d(0,0,0)";shade.style.background="rgba(0,0,0,.45)";reset()},{passive:true});
+}
 function attachLentonGestures(){
   const bottom=document.querySelector(".bottom");
   attachInteractiveMainSwipe(bottom);
 
   const app=document.querySelector(".app");
-  attachSwipe(app,{edgeOnly:true,startMaxX:28,threshold:46,ratio:1.15,onRight:()=>{if(!document.querySelector(".drawer-shade"))openDrawer()}});
+  attachEdgeDrawerSwipe(app);
 
   const drawer=document.querySelector(".drawer");
-  attachSwipe(drawer,{onLeft:()=>closeDrawer(),threshold:46,ratio:1.15});
+  attachDrawerCloseSwipe(drawer);
 
   if(state.view==="home")attachInteractiveHomeSwipe(document.querySelector(".main"));
 
