@@ -390,7 +390,6 @@ function statusCard(raw){
           <button class="boost ${st.reblogged?"on":""}" data-action="boost" data-id="${st.id}" aria-label="부스트">${lentonIcon("boost")} <span class="count">${st.reblogs_count||""}</span></button>
           <button class="fav ${st.favourited?"on":""}" data-action="fav" data-id="${st.id}" aria-label="좋아요">${lentonIcon(st.favourited?"heartFill":"heart")} <span class="count">${st.favourites_count||""}</span></button>
           <button class="bookmark ${st.bookmarked?"on":""}" data-action="bookmark" data-id="${st.id}" aria-label="북마크">${lentonIcon(st.bookmarked?"bookmarkFill":"bookmark")}</button>
-          <button data-action="share" data-id="${st.id}" data-url="${esc(st.url||"")}" aria-label="공유">${lentonIcon("share")}</button>
         </div>
       </div>
     </div>
