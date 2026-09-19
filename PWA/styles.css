@@ -609,29 +609,29 @@ img{display:block}
   font-weight:700;
   background:var(--surface);
 }
-.status{padding:10px 14px 8px 16px}
+.status{padding:var(--android-status-padding)}
 .boosted{min-height:26px;padding:0 0 6px 56px;font-size:12px}
 .status-head{gap:12px}
-.avatar{width:46px;height:46px}
-.author-line{height:28px}
+.avatar{width:var(--android-avatar);height:var(--android-avatar)}
+.author-line{height:var(--android-author-line)}
 .name,.acctline{font-size:15px}
 .name{font-weight:700}
-.content{padding:2px 0 6px;font-size:16px;line-height:1.5}
+.content{padding:2px 0 6px;font-size:var(--android-body);line-height:1.5}
 .media{height:260px;max-height:260px;border-radius:18px;margin:8px 0 6px}
-.actions{height:48px}
-.actions button{height:46px;font-size:22px;gap:0}
+.actions{height:var(--android-action-row)}
+.actions button{height:var(--android-action-item);font-size:var(--android-action-glyph);gap:0}
 .actions .count{font-size:12px;margin-left:2px}
 .search-box{padding:10px 14px 8px}
 .search-box .field{height:48px;padding:0 12px 0 18px;border-radius:24px;background:var(--surface)}
 .search-box .primary{width:72px;height:44px}
 .row{gap:12px;padding:12px 14px 12px 16px}
 .notification-mark{width:44px;flex-basis:44px;font-size:25px;line-height:46px}
-.profile-hero{height:226px}
-.profile-header{height:170px}
+.profile-hero{height:var(--android-profile-hero)}
+.profile-header{height:var(--android-profile-header)}
 .profile-avatar{left:var(--android-profile-avatar-left);top:var(--android-profile-avatar-top);width:var(--android-profile-avatar);height:var(--android-profile-avatar)}
 .profile-info{padding:0 18px 12px}
 .profile-name-row{min-height:60px}
-.profile-names h2{font-size:22px;line-height:32px}
+.profile-names h2{font-size:var(--android-profile-name);line-height:32px}
 .profile-handle{font-size:15px;line-height:26px}
 .profile-bio{padding:8px 0 10px;font-size:15px;line-height:1.5}
 .profile-counts{padding:5px 0 12px;font-size:14px}
@@ -918,7 +918,7 @@ img{display:block}
 .lenton-drawer{
   width:min(var(--android-drawer-width),620px);
   max-width:none;
-  padding:calc(env(safe-area-inset-top) + 22px) 18px calc(env(safe-area-inset-bottom) + 12px);
+  padding:calc(env(safe-area-inset-top) + var(--android-drawer-pad-top)) var(--android-drawer-pad-right) calc(env(safe-area-inset-bottom) + var(--android-drawer-pad-bottom)) var(--android-drawer-pad-left);
   overflow:auto;
 }
 .drawer-account-strip{display:flex;align-items:center;gap:22px}
