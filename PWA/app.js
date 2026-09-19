@@ -609,7 +609,13 @@ function groupDmConversations(cs){
   }
   for(const group of groups.values()){
     group.sort((a,b)=>String(b.last_status?.created_at||"").localeCompare(String(a.last_status?.created_at||"")));
-    if(group.length>1)group.forEach((c,i)=>c._threadLabel="타래 "+(i+1)+"/"+group.length);
+    const ids=group.map(c=>String(c.id));
+    group.forEach((c,i)=>{
+      c._threadIndex=i;
+      c._threadSiblingIds=ids;
+      c._threadLabel=group.length>1?"타래 "+(i+1)+"/"+group.length:"";
+      c._previousConversationId=group[i+1]?.id||"";
+    });
   }
   return [...(cs||[])].sort((a,b)=>String(b.last_status?.created_at||"").localeCompare(String(a.last_status?.created_at||"")));
 }
@@ -724,7 +730,8 @@ async function openConversation(id){
     const uniq=new Map();for(const st of all)if(st?.id)uniq.set(String(st.id),st);
     const statuses=[...uniq.values()].sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||"")));
     const title=(c.accounts?.[0]?.display_name||"DM")+(c._threadLabel?" · "+c._threadLabel:"");
-    const body='<div class="dm-thread-bubbles">'+statuses.map(dmBubble).join("")+'</div>'+
+    const previous=c._previousConversationId?'<button class="dm-previous-conversation" data-dm-previous="'+esc(c._previousConversationId)+'">이전 대화 보기  ›</button>':"";
+    const body=previous+'<div class="dm-thread-bubbles">'+statuses.map(dmBubble).join("")+'</div>'+
       '<div class="dm-inline-compose"><button class="dm-attach-btn" id="dmInlineAttach" aria-label="이미지 첨부">▧</button>'+
       '<input id="dmInlineFile" type="file" accept="image/*,video/*" multiple hidden>'+
       '<textarea id="dmInlineInput" rows="1" placeholder="메시지 보내기"></textarea>'+
@@ -1893,6 +1900,7 @@ function bind(){
   document.querySelectorAll("[data-home-mode]").forEach(b=>b.onclick=()=>{state.homeMode=b.dataset.homeMode;state.listId=null;render()});
   document.querySelectorAll("[data-list]").forEach(b=>b.onclick=()=>{state.listId=state.listId===b.dataset.list?null:b.dataset.list;render()});
   document.querySelectorAll("[data-conv]").forEach(b=>b.onclick=()=>{pushNavSnapshot();openConversation(b.dataset.conv)});
+  document.querySelectorAll("[data-dm-previous]").forEach(b=>b.onclick=()=>{pushNavSnapshot();openConversation(b.dataset.dmPrevious)});
   document.querySelectorAll("[data-media-url]").forEach(b=>b.onclick=e=>{e.stopPropagation();openMediaViewer(b.dataset.mediaUrl,b.dataset.mediaAlt||"")});
   document.querySelectorAll(".status[data-status-id]").forEach(card=>card.onclick=e=>{if(e.target.closest("button,a,video,audio"))return;pushNavSnapshot();openThread(card.dataset.statusId)});
   document.querySelectorAll("[data-thread-older]").forEach(b=>b.onclick=()=>openThread(b.dataset.threadOlder,true));
