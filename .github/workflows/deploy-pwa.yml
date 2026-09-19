@@ -59,7 +59,7 @@ jobs:
                   if not n.lower().endswith(".png") or ".9.png" in n.lower():
                       continue
                   data = z.read(n)
-                  if data[:8] != b"\\x89PNG\\r\\n\\x1a\\n" or len(data) < 24:
+                  if not data.startswith(bytes([137,80,78,71,13,10,26,10])) or len(data) < 24:
                       continue
                   width, height = struct.unpack(">II", data[16:24])
                   pngs.append((n, width, height, len(data)))
