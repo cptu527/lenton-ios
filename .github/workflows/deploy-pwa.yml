@@ -5,7 +5,6 @@ on:
     branches: [ main, pwa/exact-android-v02517 ]
     paths:
       - 'PWA/**'
-      - 'PWA/lenton-official-icon.b64'
       - '.github/workflows/deploy-pwa.yml'
   workflow_dispatch:
 
@@ -27,67 +26,39 @@ jobs:
           node --check PWA/app.js
           node --check PWA/sw.js
 
-      - name: Build static PWA
+      - name: Build static PWA from published Android APK
         run: |
           rm -rf dist-pwa
           cp -R PWA dist-pwa
-          python3 -m venv .pwa-icon-venv
-          source .pwa-icon-venv/bin/activate
-          python -m pip install --disable-pip-version-check --quiet pillow
-          python - <<'PY'
-          import base64
-          from pathlib import Path
-          from PIL import Image
 
-          encoded = "".join(Path("PWA/lenton-official-icon.b64").read_text().split())
-          encoded += "=" * (-len(encoded) % 4)
-          source = Path("dist-pwa/lenton-official-source.jpg")
-          source.write_bytes(base64.b64decode(encoded, validate=True))
+          curl -L --fail --retry 3             -o /tmp/Lenton-v0.25.17-test.apk             https://raw.githubusercontent.com/cptu527/lenton-updates/main/Lenton-v0.25.17-test.apk
 
-          image = Image.open(source).convert("RGBA")
-          px = image.load()
-          for y in range(image.height):
-              for x in range(image.width):
-                  r,g,b,a = px[x,y]
-                  m = max(r,g,b)
-                  if m <= 8:
-                      alpha = 0
-                  elif m >= 28:
-                      alpha = 255
-                  else:
-                      alpha = (m - 8) * 255 // 20
-                  px[x,y] = (r,g,b,alpha)
+          echo "Launcher entries in APK:"
+          unzip -l /tmp/Lenton-v0.25.17-test.apk | grep -E 'res/mipmap-[^ ]*/ic_launcher\.png$' || true
 
-          alpha = image.getchannel("A")
-          bbox = alpha.point(lambda a: 255 if a >= 16 else 0).getbbox()
-          if bbox:
-              left,top,right,bottom = bbox
-              bw,bh = right-left,bottom-top
-              side = max(bw,bh)
-              cx,cy = (left+right)//2,(top+bottom)//2
-              left = max(0,min(image.width-side,cx-side//2))
-              top = max(0,min(image.height-side,cy-side//2))
-              image = image.crop((left,top,left+side,top+side))
+          LAUNCHER_PATH="$(unzip -Z1 /tmp/Lenton-v0.25.17-test.apk | grep -E '^res/mipmap-xxxhdpi[^/]*/ic_launcher\.png$' | head -n 1)"
+          if [ -z "$LAUNCHER_PATH" ]; then
+            LAUNCHER_PATH="$(unzip -Z1 /tmp/Lenton-v0.25.17-test.apk | grep -E '^res/mipmap-[^/]*/ic_launcher\.png$' | tail -n 1)"
+          fi
+          test -n "$LAUNCHER_PATH"
+          echo "Using Android launcher: $LAUNCHER_PATH"
 
-          for size in (1024,512,192):
-              canvas = Image.new("RGBA",(size,size),(0,0,0,0))
-              draw = max(1,round(size*0.96))
-              art = image.resize((draw,draw),Image.Resampling.BICUBIC)
-              pos = ((size-draw)//2,(size-draw)//2)
-              canvas.alpha_composite(art,pos)
-              target = Path(f"dist-pwa/icon-{size}.png")
-              canvas.save(target,"PNG")
-              check = Image.open(target)
-              if check.size != (size,size):
-                  raise SystemExit(f"bad icon size: {target} {check.size}")
-              print("Wrote",target,size,"x",size)
+          unzip -p /tmp/Lenton-v0.25.17-test.apk "$LAUNCHER_PATH" > /tmp/lenton-android-launcher.png
+          test -s /tmp/lenton-android-launcher.png
 
-          source.unlink(missing_ok=True)
-          PY
+          cp /tmp/lenton-android-launcher.png dist-pwa/icon-192.png
+          cp /tmp/lenton-android-launcher.png dist-pwa/icon-512.png
+          cp /tmp/lenton-android-launcher.png dist-pwa/icon-1024.png
+          sips -z 192 192 dist-pwa/icon-192.png >/dev/null
+          sips -z 512 512 dist-pwa/icon-512.png >/dev/null
+          sips -z 1024 1024 dist-pwa/icon-1024.png >/dev/null
+
+          test "$(sips -g pixelWidth dist-pwa/icon-192.png | awk '/pixelWidth/{print $2}')" = "192"
+          test "$(sips -g pixelWidth dist-pwa/icon-512.png | awk '/pixelWidth/{print $2}')" = "512"
+          test "$(sips -g pixelWidth dist-pwa/icon-1024.png | awk '/pixelWidth/{print $2}')" = "1024"
+
+          rm -f dist-pwa/lenton-official-icon.b64
           printf '%s\n' '' > dist-pwa/.nojekyll
-          test -s dist-pwa/icon-192.png
-          test -s dist-pwa/icon-512.png
-          test -s dist-pwa/icon-1024.png
 
       - name: Publish gh-pages branch
         if: github.ref == 'refs/heads/main'
