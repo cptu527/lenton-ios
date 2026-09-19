@@ -1,3 +1,4 @@
+const ANDROID = window.LENTON_ANDROID_SPEC || {};
 const $ = (s, r=document) => r.querySelector(s);
 const esc = (s="") => String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
 const plain = (html="") => { const d=document.createElement("div"); d.innerHTML=html; return d.textContent||""; };
@@ -10,7 +11,7 @@ const store = {
 const state = {
   session: store.get("lenton_session"),
   me:null, view:"home", homeMode:"home", listId:null, lists:[], busy:false,
-  theme:store.get("lenton_theme","system"), accent:store.get("lenton_accent","#1d9bf0"),
+  theme:store.get("lenton_theme","system"), accent:store.get("lenton_accent",ANDROID?.theme?.accent||"#1d9bf0"),
   pushError:"", toast:"", currentConversation:null, profileReplies:false, profileAccount:null, profileRelationship:null, returnView:"home"
 };
 const REDIRECT_URI = location.origin + location.pathname;
@@ -103,12 +104,13 @@ function shell(title,body,opts={}){
     </header>
     <main class="main">${body}</main>
     <nav class="bottom">
-      ${nav("home")}${nav("search")}${nav("notifications")}${nav("dm")}
+      ${navBar()}
     </nav>
     ${opts.fab?'<button class="fab" data-action="compose">✎</button>':""}
   </div>`;
 }
 function nav(v){return `<button data-view="${v}" class="${state.view===v?"active":""}" aria-label="${v}">${navIcon(v)}</button>`}
+function navBar(){const order=ANDROID?.bottomNav?.order||["home","search","notifications","dm"];return order.map(nav).join("")}
 
 function loginView(){
   const install=!standalone()?'<div class="install-card"><b>아이폰/아이패드 설치</b><p>Safari 공유 버튼 → <b>홈 화면에 추가</b> → <b>웹 앱으로 열기</b></p></div>':"";
@@ -171,11 +173,13 @@ function statusId(raw){return raw?.id||raw?.reblog?.id||""}
 function nonDirect(raw){return raw&&raw.visibility!=="direct"}
 function lentonPublicStatus(raw){
   if(!raw||!raw.account)return false;
+  const cfg=ANDROID?.timeline?.public||{};
   const author=raw.account.id||"",me=state.me?.id||"";
-  if(!author||author===me)return false;
-  if(raw.visibility==="direct")return false;
-  if(raw.reblog)return false;
-  if(raw.in_reply_to_id!==null&&raw.in_reply_to_id!==undefined&&String(raw.in_reply_to_id)!=="")return false;
+  if(!author)return false;
+  if(cfg.excludeOwnPosts!==false&&author===me)return false;
+  if(cfg.excludeDirect!==false&&raw.visibility==="direct")return false;
+  if(cfg.excludeBoosts!==false&&raw.reblog)return false;
+  if(cfg.excludeReplies!==false&&raw.in_reply_to_id!==null&&raw.in_reply_to_id!==undefined&&String(raw.in_reply_to_id)!=="")return false;
   return true;
 }
 function mergeChronological(home,pub,allowed){
@@ -207,17 +211,18 @@ async function loadLentonHome(chronological){
     for(const raw of home){
       if(!lentonPublicStatus(raw))continue;
       const id=statusId(raw);if(id&&seen.has(id))continue;if(id)seen.add(id);
-      collected.push(raw);if(collected.length>=30)return;
+      collected.push(raw);if(collected.length>=(ANDROID?.timeline?.public?.targetInitialItems||30))return;
     }
     for(const raw of pub){
       if(!lentonPublicStatus(raw))continue;
       const author=raw?.account?.id||"";if(!allowed.has(author))continue;
       const id=statusId(raw);if(id&&seen.has(id))continue;if(id)seen.add(id);
-      collected.push(raw);if(collected.length>=30)return;
+      collected.push(raw);if(collected.length>=(ANDROID?.timeline?.public?.targetInitialItems||30))return;
     }
   };
 
-  for(let scan=0;scan<6&&collected.length<30;scan++){
+  const target=ANDROID?.timeline?.public?.targetInitialItems||30,maxScans=ANDROID?.timeline?.public?.maxHomeScans||6;
+  for(let scan=0;scan<maxScans&&collected.length<target;scan++){
     if(scan>0){
       if(homeDone)break;
       const query={limit:"40"};if(homeCursor)query.max_id=homeCursor;
@@ -238,7 +243,8 @@ async function homeView(){
     if(!state.lists.length) await loadLists();
     if(state.listId) data=await api(`/api/v1/timelines/list/${state.listId}`,{query:{limit:"30"}});
     else data=await loadLentonHome(state.homeMode!=="public");
-    const tabs=`<div class="home-tabs"><button data-home-mode="home" class="${state.homeMode==="home"&&!state.listId?"active":""}">시간순</button><button data-home-mode="public" class="${state.homeMode==="public"&&!state.listId?"active":""}">퍼블릭</button></div>`;
+    const chronologicalLabel=ANDROID?.homeTabs?.chronological||"시간순", publicLabel=ANDROID?.homeTabs?.public||"퍼블릭";
+    const tabs=`<div class="home-tabs"><button data-home-mode="home" class="${state.homeMode==="home"&&!state.listId?"active":""}">${esc(chronologicalLabel)}</button><button data-home-mode="public" class="${state.homeMode==="public"&&!state.listId?"active":""}">${esc(publicLabel)}</button></div>`;
     const chips=state.lists.length?`<div class="chips">${state.lists.map(x=>`<button class="chip ${state.listId===x.id?"active":""}" data-list="${x.id}">${esc(x.title)}</button>`).join("")}<button class="chip" data-action="newlist">＋ 리스트</button></div>`:"";
     $("#app").innerHTML=shell(state.listId?(state.lists.find(x=>x.id===state.listId)?.title||"리스트"):"홈",tabs+chips+(data.length?data.map(statusCard).join(""):'<div class="center">표시할 게시물이 없어요.</div>'),{fab:true});
   }catch(e){$("#app").innerHTML=shell("홈",`<div class="center">타임라인을 불러오지 못했어요.<br><br>${esc(e.message)}<br><br><button class="primary" data-action="reload">다시 시도</button></div>`,{fab:true})}
