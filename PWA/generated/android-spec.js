@@ -174,10 +174,7 @@ window.LENTON_ANDROID_SPEC = {
       "bookmarkOff": "▢",
       "bookmarkOn": "▣"
     },
-    "profileTabs": [
-      "게시물",
-      "답글"
-    ],
+    "profileTabs": [],
     "notificationLabels": {
       "mention": "나를 멘션했어요",
       "favourite": "내 게시물을 좋아해요",
@@ -200,8 +197,26 @@ window.LENTON_ANDROID_SPEC = {
       "replyTitle": "답글",
       "postButton": "게시",
       "replyButton": "답글",
-      "cw": "CW"
+      "cw": "",
+      "hasGif": false,
+      "hasThread": false
     }
+  },
+  "features": {
+    "lists": true,
+    "profileOverflow": true,
+    "privateProfileNote": true,
+    "screenLayoutEditor": true,
+    "replyCwInheritance": true,
+    "bottomNavSwipe": true,
+    "homeSwipe": true,
+    "dmPreviousConversation": true,
+    "dmThreadSeparation": true,
+    "problemReport": true,
+    "customEmoji": true,
+    "multiAccount": true,
+    "updater": true,
+    "draftGuard": true
   },
   "criticalSourceHashes": {
     "activity": "067a6c6f438cd0f6769c87c6647100d4f2205b9b4ec51fb0d7dec92284e8af4d",
@@ -215,5 +230,38 @@ window.LENTON_ANDROID_SPEC = {
     "profile": "19a6b295bc00ccaf6395337b5d82c19bf6dde6f13eb6d81319e4a948207e9c4d",
     "notification": null,
     "conversation": "c745b4e6790293a55fe3f4c154af6d732c5b8552420c2adc09d9462088d9f8dd"
+  },
+  "apkMarkerPresence": {
+    "시간순": true,
+    "퍼블릭": true,
+    "화면 구성 편집": true,
+    "프로필 편집": true,
+    "비밀 메모": true,
+    "답장할멘션": false,
+    "게시물": true,
+    "답글": true,
+    "전체": true,
+    "멘션": true,
+    "알림 지우기": false,
+    "팔로잉": true,
+    "팔로워": true,
+    "게시물과 답글": false,
+    "고정": true,
+    "미디어": true,
+    "GIF": true,
+    "CW": true,
+    "타래": true,
+    "이전 대화 보기": true,
+    "문의 유형": true,
+    "이메일로 보내기": true,
+    "계정 추가": true,
+    "앱 업데이트": true,
+    "업데이트 내역": false,
+    "HomeSwipeRecyclerView": true,
+    "positionHomeIndicator": true,
+    "renderProfile": true,
+    "loadNotifications": true,
+    "알림": true,
+    "프로필": true
   }
 };
