@@ -16,6 +16,73 @@ const state = {
   theme:store.get("lenton_theme","system"), accent:store.get("lenton_accent",ANDROID?.theme?.accent||"#1d9bf0"),
   pushError:"", toast:"", currentConversation:null, profileReplies:false, profileAccount:null, profileRelationship:null, returnView:"home"
 };
+
+function accountScope(){
+  const host=state.session?.host||"";
+  const id=state.me?.id||"anon";
+  return host+"|"+id;
+}
+function scopedKey(name){return "lenton_"+name+"_"+accountScope()}
+const DEFAULT_MAIN_TABS=["home","search","notifications","dm"];
+function mainTabLayout(){
+  const saved=store.get("lenton_main_tab_layout",{order:DEFAULT_MAIN_TABS,hidden:[]})||{};
+  const order=[];
+  for(const x of Array.isArray(saved.order)?saved.order:DEFAULT_MAIN_TABS) if(DEFAULT_MAIN_TABS.includes(x)&&!order.includes(x))order.push(x);
+  for(const x of DEFAULT_MAIN_TABS) if(!order.includes(x))order.push(x);
+  let hidden=new Set(Array.isArray(saved.hidden)?saved.hidden.filter(x=>DEFAULT_MAIN_TABS.includes(x)):[]);
+  if(hidden.size>=order.length)hidden.delete(order[0]);
+  return {order,hidden};
+}
+function saveMainTabLayout(order,hidden){
+  const clean=order.filter((x,i)=>DEFAULT_MAIN_TABS.includes(x)&&order.indexOf(x)===i);
+  for(const x of DEFAULT_MAIN_TABS)if(!clean.includes(x))clean.push(x);
+  const h=[...hidden].filter(x=>DEFAULT_MAIN_TABS.includes(x));
+  if(h.length>=clean.length)h.pop();
+  store.set("lenton_main_tab_layout",{order:clean,hidden:h});
+}
+function visibleNavItems(){
+  const cfg=mainTabLayout(),src=androidNavItems();
+  const by=new Map(src.map(x=>[x.id,x]));
+  return cfg.order.filter(x=>!cfg.hidden.has(x)).map(x=>by.get(x)||{id:x,glyph:x==="home"?"⌂":x==="search"?"⌕":x==="notifications"?"♢":"✉"});
+}
+function renderEmojiText(text,emojis=[]){
+  let out=esc(text||"");
+  for(const e of emojis||[]){
+    const code=e?.shortcode;if(!code)continue;
+    const src=e.static_url||e.url;if(!src)continue;
+    const needle=":"+code+":";
+    out=out.split(esc(needle)).join('<img class="custom-emoji" src="'+esc(src)+'" alt="'+esc(needle)+'">');
+  }
+  return out;
+}
+function renderRichText(html=""){
+  const d=document.createElement("div");d.innerHTML=html;
+  const walk=node=>{
+    if(node.nodeType===Node.TEXT_NODE)return esc(node.nodeValue||"");
+    if(node.nodeType!==Node.ELEMENT_NODE)return "";
+    const tag=node.tagName.toLowerCase();
+    if(tag==="br")return "<br>";
+    if(tag==="img"&&(node.classList.contains("emoji")||node.classList.contains("emojione"))){
+      const src=node.getAttribute("src")||"",alt=node.getAttribute("alt")||"";
+      return '<img class="custom-emoji" src="'+esc(src)+'" alt="'+esc(alt)+'">';
+    }
+    const inner=[...node.childNodes].map(walk).join("");
+    if(tag==="p")return inner+"<br>";
+    if(tag==="a"){
+      const href=node.getAttribute("href")||"";
+      return '<a href="'+esc(href)+'" target="_blank" rel="noopener noreferrer">'+inner+"</a>";
+    }
+    return inner;
+  };
+  return [...d.childNodes].map(walk).join("").replace(/(?:<br>){3,}/g,"<br><br>").replace(/<br>$/,"");
+}
+async function apiMultipart(path,formData,{method="POST"}={}){
+  if(!state.session)throw new Error("로그인이 필요합니다.");
+  const res=await fetch("https://"+state.session.host+path,{method,headers:{Accept:"application/json",Authorization:"Bearer "+state.session.token},body:formData});
+  const txt=await res.text();let data=null;try{data=txt?JSON.parse(txt):null}catch{data=txt}
+  if(!res.ok)throw new Error((data&&data.error)||"HTTP "+res.status);
+  return data;
+}
 const REDIRECT_URI = location.origin + location.pathname;
 document.documentElement.style.setProperty("--accent",state.accent);
 if(state.theme!=="system") document.documentElement.dataset.theme=state.theme;
@@ -156,7 +223,7 @@ function shell(title,body,opts={}){
   </div>`;
 }
 function nav(v){return `<button data-view="${v}" class="${state.view===v?"active":""}" aria-label="${v}">${navIcon(v)}</button>`}
-function navBar(){return androidNavItems().map(x=>nav(x.id)).join("")}
+function navBar(){return visibleNavItems().map(x=>nav(x.id)).join("")}
 
 function loginView(){
   const install=!standalone()?'<div class="install-card"><b>아이폰/아이패드 설치</b><p>Safari 공유 버튼 → <b>홈 화면에 추가</b> → <b>웹 앱으로 열기</b></p></div>':"";
@@ -725,7 +792,7 @@ function attachSwipe(el,{onLeft,onRight,edgeOnly=false,threshold=40,ratio=1.25,s
   el.addEventListener("touchcancel",()=>{start=null;tracking=false},{passive:true});
 }
 function moveMainView(dir){
-  const order=androidNavItems().map(x=>x.id);
+  const order=visibleNavItems().map(x=>x.id);
   const i=order.indexOf(state.view);
   if(i<0)return;
   const n=i+dir;
