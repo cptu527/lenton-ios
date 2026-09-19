@@ -1727,3 +1727,17 @@ img{display:block}
   overflow:hidden;
 }
 .android-notify-card.has-status{cursor:pointer}
+
+
+/* APK DM previous-thread control */
+.dm-previous-conversation{
+  width:100%;
+  height:48px;
+  border:0;
+  border-bottom:1px solid var(--line);
+  background:var(--bg);
+  color:var(--accent);
+  padding:0 18px;
+  text-align:left;
+  font-size:15px;
+}
