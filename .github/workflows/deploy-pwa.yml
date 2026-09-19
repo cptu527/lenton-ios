@@ -31,8 +31,10 @@ jobs:
         run: |
           rm -rf dist-pwa
           cp -R PWA dist-pwa
-          python3 -m pip install --disable-pip-version-check --quiet pillow
-          python3 - <<'PY'
+          python3 -m venv .pwa-icon-venv
+          source .pwa-icon-venv/bin/activate
+          python -m pip install --disable-pip-version-check --quiet pillow
+          python - <<'PY'
           import base64
           from pathlib import Path
           from PIL import Image
