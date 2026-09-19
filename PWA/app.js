@@ -14,7 +14,7 @@ const state = {
   session: store.get("lenton_session"),
   me:null, view:"home", homeMode:"home", listId:null, lists:[], busy:false,
   theme:store.get("lenton_theme","system"), accent:store.get("lenton_accent",ANDROID?.theme?.accent||"#1d9bf0"),
-  pushError:"", toast:"", currentConversation:null, profileReplies:false, profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}
+  pushError:"", toast:"", currentConversation:null, profileReplies:false, profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}
 };
 
 function accountScope(){
@@ -1031,6 +1031,7 @@ async function uploadComposerFile(file){
   catch{return await apiMultipart("/api/v1/media",fd)}
 }
 function compose(reply=null,forcedVisibility=null){
+  let historyPushed=false;
   let parts=[{text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[]}];
   let visibility=forcedVisibility||reply?.visibility||"public",activePart=0,uploading=false;
   const recips=[];
@@ -1074,6 +1075,9 @@ function compose(reply=null,forcedVisibility=null){
       <div id="emojiPicker" class="emoji-picker" hidden></div>
     </div>`;
     document.body.append(m);
+    if(!historyPushed){history.pushState({...history.state,lentonCompose:true},"",location.href);historyPushed=true}
+    window.__lentonComposeGuard=confirmClose;
+    window.__lentonComposeClose=()=>{document.querySelector(".compose-modal")?.remove();historyPushed=false;window.__lentonComposeGuard=null;window.__lentonComposeClose=null};
     const ta=m.querySelector(`[data-t="${activePart}"]`);
     if(refocus)requestAnimationFrame(()=>ta?.focus());
     m.querySelectorAll("[data-t]").forEach(x=>{
@@ -1087,7 +1091,7 @@ function compose(reply=null,forcedVisibility=null){
     $("#composeVisibility",m).onchange=e=>visibility=e.target.value;
     $("#addPart",m).onclick=()=>{parts.push({text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[]});activePart=parts.length-1;draw()};
     $("#composeCW",m).onclick=()=>{parts[activePart].cw=!parts[activePart].cw;if(parts[activePart].cw&&!parts[activePart].spoiler&&reply?.spoiler_text)parts[activePart].spoiler=reply.spoiler_text;draw()};
-    $("#closeCompose",m).onclick=()=>{if(confirmClose())m.remove()};
+    $("#closeCompose",m).onclick=()=>{if(!confirmClose())return;if(historyPushed){window.__lentonComposeBypass=true;history.back()}else window.__lentonComposeClose?.()};
     $("#composeAttach",m).onclick=()=>$("#composeFile",m).click();
     $("#composeFile",m).onchange=async e=>{
       const files=[...e.target.files].slice(0,Math.max(0,4-parts[activePart].media.length));
@@ -1125,7 +1129,7 @@ function compose(reply=null,forcedVisibility=null){
           for(const media of p.media)if(media.id)form.append("media_ids[]",media.id);
           const posted=await api("/api/v1/statuses",{method:"POST",form});replyId=posted.id;
         }
-        m.remove();toast("게시했어요.");if(state.view==="home")render()
+        window.__lentonComposeClose?.();if(historyPushed){window.__lentonComposeBypass=true;history.back()}toast("게시했어요.");if(state.view==="home")render()
       }catch(e){toast(e.message);btn.disabled=false;btn.textContent=reply?"답글":"게시"}
     };
   };
@@ -1383,6 +1387,43 @@ function attachDrawerCloseSwipe(drawer){
   },{passive:true});
   drawer.addEventListener("touchcancel",()=>{drawer.style.transform="translate3d(0,0,0)";shade.style.background="rgba(0,0,0,.45)";reset()},{passive:true});
 }
+function attachInteractiveProfileSwipe(host){
+  if(!host||host.dataset.profileSwipe==="1")return;host.dataset.profileSwipe="1";
+  let start=null,active=false,targetReplies=null,preview=null,width=0,dir=0;
+  const accountId=state.profileAccount?.id||state.me?.id||"me";
+  const cleanup=()=>{host.style.transition="";host.style.transform="";host.classList.remove("swipe-moving");preview?.remove();preview=null;start=null;active=false;targetReplies=null};
+  host.addEventListener("touchstart",e=>{if(e.touches?.length!==1)return;const p=gesturePoint(e);if(p.x<=28)return;start=p;width=window.innerWidth||document.documentElement.clientWidth},{passive:true});
+  host.addEventListener("touchmove",e=>{
+    if(!start||e.touches?.length!==1)return;const p=gesturePoint(e),dx=p.x-start.x,dy=p.y-start.y;
+    if(!active){
+      if(Math.abs(dy)>18&&Math.abs(dy)>=Math.abs(dx)){cleanup();return}
+      if(Math.abs(dx)<10||Math.abs(dx)<=Math.abs(dy)*1.15)return;
+      dir=dx<0?1:-1;targetReplies=dir>0?(state.profileReplies?null:true):(state.profileReplies?false:null);active=true;
+      host.classList.add("swipe-moving");host.style.transition="none";
+      if(targetReplies!==null){
+        const key=accountId+":"+(targetReplies?"replies":"posts"),html=state.profileCache[key]||'<div class="center">불러오는 중…</div>';
+        preview=buildSwipePreview(html,"profile-swipe-preview");preview.style.transform=`translate3d(${dir>0?width:-width}px,0,0)`;
+      }
+    }
+    if(!active)return;e.preventDefault();const shown=targetReplies!==null?dx:dx*.18;
+    host.style.transform=`translate3d(${shown}px,0,0)`;if(preview)preview.style.transform=`translate3d(${shown+(dir>0?width:-width)}px,0,0)`;
+  },{passive:false});
+  host.addEventListener("touchend",async e=>{
+    if(!start){cleanup();return}const p=gesturePoint(e),dx=p.x-start.x,dt=Math.max(1,p.time-start.time),vx=dx/dt;
+    if(!active){cleanup();return}const commit=targetReplies!==null&&(Math.abs(dx)>width*.20||Math.abs(vx)>.65);
+    if(commit){
+      host.style.transition="transform 180ms cubic-bezier(.2,.75,.25,1)";if(preview)preview.style.transition=host.style.transition;
+      requestAnimationFrame(()=>{host.style.transform=`translate3d(${dir>0?-width:width}px,0,0)`;if(preview)preview.style.transform="translate3d(0,0,0)"});
+      await new Promise(r=>setTimeout(r,195));const target=targetReplies;cleanup();
+      if(state.profileAccount)openProfile(state.profileAccount.id,target);else profileView(target);
+    }else{
+      host.style.transition="transform 160ms cubic-bezier(.2,.75,.25,1)";if(preview)preview.style.transition=host.style.transition;
+      requestAnimationFrame(()=>{host.style.transform="translate3d(0,0,0)";if(preview)preview.style.transform=`translate3d(${dir>0?width:-width}px,0,0)`});
+      setTimeout(cleanup,180);
+    }
+  },{passive:true});
+  host.addEventListener("touchcancel",cleanup,{passive:true});
+}
 function attachLentonGestures(){
   const bottom=document.querySelector(".bottom");
   attachInteractiveMainSwipe(bottom);
@@ -1397,8 +1438,8 @@ function attachLentonGestures(){
 
   const profileTabs=document.querySelector(".profile-info + .home-tabs,.profile-hero ~ .home-tabs");
   if(profileTabs){
-    const host=profileTabs.parentElement||document.querySelector(".main");
-    attachSwipe(host,{threshold:42,ratio:1.15,onLeft:()=>{if(state.profileAccount)openProfile(state.profileAccount.id,true);else profileView(true)},onRight:()=>{if(state.profileAccount)openProfile(state.profileAccount.id,false);else profileView(false)}});
+    const host=document.querySelector(".standalone-page .main")||document.querySelector(".app .main");
+    attachInteractiveProfileSwipe(host);
   }
 }
 
@@ -1454,6 +1495,10 @@ function bind(){
   const appRoot=document.querySelector("#app>.app");
   if(appRoot)state.pageCache[state.view]=$("#app").innerHTML;
   if(state.view==="home"&&document.querySelector(".main"))state.homeCache[state.homeMode]=document.querySelector(".main").innerHTML;
+  if(document.querySelector(".profile-info")&&document.querySelector(".main")){
+    const pid=state.profileAccount?.id||state.me?.id||"me";
+    state.profileCache[pid+":"+(state.profileReplies?"replies":"posts")]=document.querySelector(".main").innerHTML;
+  }
   attachLentonGestures();
   restoreScroll();
 }
@@ -1488,7 +1533,19 @@ document.addEventListener("visibilitychange",()=>{if(document.visibilityState===
 window.addEventListener("focus",applyAutomaticUpdate);
 setInterval(()=>{if(document.visibilityState==="visible")applyAutomaticUpdate()},60000);
 window.addEventListener("beforeinstallprompt",e=>e.preventDefault());
-window.addEventListener("popstate",()=>{});
+window.addEventListener("popstate",()=>{
+  const modal=document.querySelector(".compose-modal");
+  if(!modal)return;
+  if(window.__lentonComposeBypass){window.__lentonComposeBypass=false;window.__lentonComposeClose?.();return}
+  const ok=window.__lentonComposeGuard?window.__lentonComposeGuard():true;
+  if(ok)window.__lentonComposeClose?.();
+  else history.pushState({...history.state,lentonCompose:true},"",location.href);
+});
+window.addEventListener("beforeunload",e=>{
+  if(document.querySelector(".compose-modal")&&window.__lentonComposeGuard){
+    e.preventDefault();e.returnValue="";
+  }
+});
 (async()=>{
   try{await registerSW();await finishOAuth()}catch(e){toast(e.message)}
   if(state.session){try{state.me=await api("/api/v1/accounts/verify_credentials");saveCurrentAccount()}catch{store.del("lenton_session");state.session=null}}
