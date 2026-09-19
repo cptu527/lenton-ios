@@ -46,8 +46,8 @@ require_marker("미디어","profileMedia","q.only_media")
 require_marker("앱 업데이트","currentReleaseNotes","showCurrentReleaseNotes","checkPwaUpdate")
 if features.get("bottomNavSwipe") and "main-swipe-preview" not in app:
     fail.append("bottomNavSwipe: main view does not use finger-following preview")
-if features.get("homeSwipe") and "home-swipe-preview" not in app:
-    fail.append("homeSwipe: home mode does not use finger-following preview")
+if features.get("homeSwipe") and not (("home-pager-track" in app and "data-home-page" in app) or "home-swipe-preview" in app):
+    fail.append("homeSwipe: home mode does not use a finger-following pager")
 if 'data-drawer="profile"' not in app or "drawer-profile-avatar-button" not in app:
     fail.append("drawer profile identity is not clickable")
 if features.get("dmPreviousConversation") and "data-dm-previous" not in app:
