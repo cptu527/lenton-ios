@@ -144,7 +144,7 @@ async function api(path,{method="GET",form=null,query=null}={}){
   if(query){const q=new URLSearchParams(query);url+=`?${q}`}
   const h={Accept:"application/json",Authorization:`Bearer ${state.session.token}`};
   const o={method,headers:h};
-  if(form){h["Content-Type"]="application/x-www-form-urlencoded;charset=UTF-8";o.body=new URLSearchParams(form)}
+  if(form){h["Content-Type"]="application/x-www-form-urlencoded;charset=UTF-8";o.body=form instanceof URLSearchParams?form:new URLSearchParams(form)}
   const res=await fetch(url,o); const txt=await res.text(); let data=null; try{data=txt?JSON.parse(txt):null}catch{data=txt}
   if(!res.ok) throw new Error((data&&data.error)||`HTTP ${res.status}`);
   return data;
@@ -888,38 +888,116 @@ async function newList(){
   const title=prompt("새 리스트 이름");if(!title)return;
   try{await api("/api/v1/lists",{method:"POST",form:{title}});await loadLists();render()}catch(e){toast(e.message)}
 }
+async function loadCustomEmojis(){
+  if(Array.isArray(state.customEmojis))return state.customEmojis;
+  try{state.customEmojis=await api("/api/v1/custom_emojis");return state.customEmojis}catch{state.customEmojis=[];return []}
+}
+async function uploadComposerFile(file){
+  const fd=new FormData();fd.append("file",file);
+  try{return await apiMultipart("/api/v2/media",fd)}
+  catch{return await apiMultipart("/api/v1/media",fd)}
+}
 function compose(reply=null,forcedVisibility=null){
-  let parts=[{text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||""}];
+  let parts=[{text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[]}];
+  let visibility=forcedVisibility||reply?.visibility||"public",activePart=0,uploading=false;
   const recips=[];
-  if(reply){const add=(a)=>{if(a&&a.id!==state.me?.id&&!recips.some(x=>x.id===a.id))recips.push({...a,on:true})};add(reply.account);(reply.mentions||[]).forEach(add)}
-  const draw=()=>{
+  if(reply){
+    const add=a=>{if(a&&a.id!==state.me?.id&&!recips.some(x=>x.id===a.id))recips.push({...a,on:true})};
+    add(reply.account);(reply.mentions||[]).forEach(add);
+  }
+  const dirty=()=>parts.some(p=>p.text.trim()||p.spoiler.trim()||p.media.length);
+  const confirmClose=()=>!dirty()||confirm("작성 중인 내용을 버릴까요?");
+  const hydrateRecipients=async()=>{
+    for(let i=0;i<recips.length;i++){
+      if(recips[i].avatar||!recips[i].id)continue;
+      try{const a=await api(`/api/v1/accounts/${recips[i].id}`);recips[i]={...recips[i],avatar:a.avatar_static||a.avatar||"",display_name:a.display_name||a.username||recips[i].acct}}catch{}
+    }
+    draw(false);
+  };
+  const draw=(refocus=true)=>{
     let old=$(".modal");if(old)old.remove();
-    const m=document.createElement("div");m.className="modal";
-    const ct=ANDROID?.renderer?.compose||{};m.innerHTML=`<div class="sheet"><div class="sheet-head"><button class="iconbtn" id="closeCompose">×</button><h2>${reply?(ct.replyTitle||"답글"):(ct.newTitle||"새 게시물")}</h2><button class="primary" id="sendCompose">${reply?(ct.replyButton||"답글"):(ct.postButton||"게시")}</button></div>
-      ${recips.length?`<div class="recips">${recips.map((r,i)=>`<button data-r="${i}" class="${r.on?"":"off"}">@${esc(r.acct)}</button>`).join("")}</div>`:""}
-      <div id="parts">${parts.map((p,i)=>`<div class="part" data-p="${i}"><div class="part-head"><b>게시물 ${i+1}</b><label><input type="checkbox" data-cw="${i}" ${p.cw?"checked":""}> CW</label></div><div class="part-body"><img class="avatar" src="${esc(state.me?.avatar_static||state.me?.avatar||"")}" alt=""><div class="part-fields">${p.cw?`<input type="text" data-sp="${i}" placeholder="내용 경고" value="${esc(p.spoiler)}">`:""}<textarea data-t="${i}" placeholder="${reply?"답글을 입력하세요":"무슨 일이 일어나고 있나요?"}">${esc(p.text)}</textarea></div></div></div>`).join("")}</div>
-      <div class="compose-tools"><button type="button">▧</button><button type="button" class="gif">GIF</button><button type="button">☷</button><button type="button">⌖</button><button type="button" class="part-add" id="addPart">＋ 타래</button></div></div>`;
+    const m=document.createElement("div");m.className="modal compose-modal";
+    const ct=ANDROID?.renderer?.compose||{};
+    const visOptions=[["public","공개"],["unlisted","조용히 공개"],["private","팔로워만"],["direct","DM"]];
+    m.innerHTML=`<div class="sheet compose-sheet">
+      <div class="sheet-head"><button class="iconbtn" id="closeCompose">×</button><h2>${reply?(ct.replyTitle||"답글"):(ct.newTitle||"새 게시물")}</h2><button class="primary" id="sendCompose">${reply?(ct.replyButton||"답글"):(ct.postButton||"게시")}</button></div>
+      <div class="compose-meta-row"><select id="composeVisibility" class="compose-visibility">${visOptions.map(x=>`<option value="${x[0]}" ${visibility===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select></div>
+      ${recips.length?`<div class="recips">${recips.map((r,i)=>`<button data-r="${i}" class="${r.on?"":"off"}">${r.avatar?`<img src="${esc(r.avatar)}" alt="">`:""}<span>@${esc(r.acct)}</span></button>`).join("")}</div>`:""}
+      <div id="parts">${parts.map((p,i)=>`<div class="part ${i===activePart?"active":""}" data-p="${i}">
+        <div class="part-head"><b>게시물 ${i+1}</b><label><input type="checkbox" data-cw="${i}" ${p.cw?"checked":""}> CW</label></div>
+        <div class="part-body"><img class="avatar" src="${esc(state.me?.avatar_static||state.me?.avatar||"")}" alt=""><div class="part-fields">
+          ${p.cw?`<input type="text" data-sp="${i}" placeholder="내용 경고" value="${esc(p.spoiler)}">`:""}
+          <textarea data-t="${i}" placeholder="${reply?"답글을 입력하세요":"무슨 일이 일어나고 있나요?"}">${esc(p.text)}</textarea>
+          ${p.media.length?`<div class="compose-media">${p.media.map((x,j)=>`<div class="compose-media-item"><img src="${esc(x.preview_url||x.url||"")}" alt=""><button data-remove-media="${i}:${j}">×</button></div>`).join("")}</div>`:""}
+        </div></div>
+      </div>`).join("")}</div>
+      <div class="compose-tools">
+        <button type="button" id="composeAttach" aria-label="이미지 첨부">▧</button>
+        <button type="button" id="composeEmoji" aria-label="이모지">☺</button>
+        <button type="button" class="compose-cw-toggle" id="composeCW">CW</button>
+        <button type="button" class="part-add" id="addPart">＋ 타래</button>
+        <input id="composeFile" type="file" accept="image/*,video/*" multiple hidden>
+      </div>
+      <div id="emojiPicker" class="emoji-picker" hidden></div>
+    </div>`;
     document.body.append(m);
-    m.querySelectorAll("[data-t]").forEach(x=>x.addEventListener("input",e=>parts[+e.target.dataset.t].text=e.target.value));
+    const ta=m.querySelector(`[data-t="${activePart}"]`);
+    if(refocus)requestAnimationFrame(()=>ta?.focus());
+    m.querySelectorAll("[data-t]").forEach(x=>{
+      x.addEventListener("focus",e=>activePart=+e.target.dataset.t);
+      x.addEventListener("input",e=>parts[+e.target.dataset.t].text=e.target.value);
+    });
     m.querySelectorAll("[data-sp]").forEach(x=>x.addEventListener("input",e=>parts[+e.target.dataset.sp].spoiler=e.target.value));
-    m.querySelectorAll("[data-cw]").forEach(x=>x.addEventListener("change",e=>{parts[+e.target.dataset.cw].cw=e.target.checked;draw()}));
-    m.querySelectorAll("[data-r]").forEach(x=>x.addEventListener("click",e=>{recips[+e.target.dataset.r].on=!recips[+e.target.dataset.r].on;draw()}));
-    $("#addPart",m).onclick=()=>{parts.push({text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||""});draw()};
-    $("#closeCompose",m).onclick=()=>{if(parts.some(p=>p.text.trim())&&!confirm("작성 중인 내용을 버릴까요?"))return;m.remove()};
+    m.querySelectorAll("[data-cw]").forEach(x=>x.addEventListener("change",e=>{parts[+e.target.dataset.cw].cw=e.target.checked;draw(false)}));
+    m.querySelectorAll("[data-r]").forEach(x=>x.addEventListener("click",e=>{recips[+e.currentTarget.dataset.r].on=!recips[+e.currentTarget.dataset.r].on;draw(false)}));
+    m.querySelectorAll("[data-remove-media]").forEach(x=>x.onclick=e=>{const [pi,mi]=e.currentTarget.dataset.removeMedia.split(":").map(Number);parts[pi].media.splice(mi,1);activePart=pi;draw(false)});
+    $("#composeVisibility",m).onchange=e=>visibility=e.target.value;
+    $("#addPart",m).onclick=()=>{parts.push({text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[]});activePart=parts.length-1;draw()};
+    $("#composeCW",m).onclick=()=>{parts[activePart].cw=!parts[activePart].cw;if(parts[activePart].cw&&!parts[activePart].spoiler&&reply?.spoiler_text)parts[activePart].spoiler=reply.spoiler_text;draw()};
+    $("#closeCompose",m).onclick=()=>{if(confirmClose())m.remove()};
+    $("#composeAttach",m).onclick=()=>$("#composeFile",m).click();
+    $("#composeFile",m).onchange=async e=>{
+      const files=[...e.target.files].slice(0,Math.max(0,4-parts[activePart].media.length));
+      if(!files.length)return;uploading=true;$("#sendCompose",m).disabled=true;toast("미디어 업로드 중…");
+      try{
+        for(const file of files){const media=await uploadComposerFile(file);parts[activePart].media.push(media)}
+        toast("첨부했어요.");
+      }catch(err){toast("첨부 실패: "+err.message)}
+      uploading=false;draw(false);
+    };
+    $("#composeEmoji",m).onclick=async()=>{
+      const box=$("#emojiPicker",m);box.hidden=!box.hidden;if(box.hidden)return;
+      box.innerHTML='<div class="center">이모지 불러오는 중…</div>';
+      const emojis=await loadCustomEmojis();
+      box.innerHTML=emojis.length?emojis.map(e=>`<button data-emoji="${esc(e.shortcode)}" title=":${esc(e.shortcode)}:"><img src="${esc(e.static_url||e.url)}" alt=":${esc(e.shortcode)}:"></button>`).join(""):'<div class="center">서버 이모지가 없어요.</div>';
+      box.querySelectorAll("[data-emoji]").forEach(b=>b.onclick=()=>{
+        const textarea=m.querySelector(`[data-t="${activePart}"]`);if(!textarea)return;
+        const ins=":"+b.dataset.emoji+":",start=textarea.selectionStart??textarea.value.length,end=textarea.selectionEnd??start;
+        parts[activePart].text=textarea.value.slice(0,start)+ins+textarea.value.slice(end);
+        textarea.value=parts[activePart].text;textarea.focus();textarea.setSelectionRange(start+ins.length,start+ins.length);
+      });
+    };
     $("#sendCompose",m).onclick=async()=>{
-      const valid=parts.filter(p=>p.text.trim());if(!valid.length){toast("내용을 입력해주세요.");return}
+      if(uploading){toast("미디어 업로드가 끝날 때까지 기다려주세요.");return}
+      const valid=parts.filter(p=>p.text.trim()||p.media.length);if(!valid.length){toast("내용을 입력해주세요.");return}
       const btn=$("#sendCompose",m);btn.disabled=true;btn.textContent="게시 중…";
       try{
-        let replyId=reply?.id||null, prefix=recips.filter(x=>x.on).map(x=>"@"+x.acct).join(" ");
+        let replyId=reply?.id||null,prefix=recips.filter(x=>x.on).map(x=>"@"+x.acct).join(" ");
         for(let i=0;i<valid.length;i++){
-          const p=valid[i], form={status:(i===0&&prefix?prefix+" ":"")+p.text.trim(),visibility:forcedVisibility||reply?.visibility||"public",spoiler_text:p.cw?p.spoiler.trim():""};
-          if(replyId)form.in_reply_to_id=replyId;
+          const p=valid[i],form=new URLSearchParams();
+          form.append("status",(i===0&&prefix?prefix+" ":"")+p.text.trim());
+          form.append("visibility",visibility);
+          form.append("spoiler_text",p.cw?p.spoiler.trim():"");
+          if(replyId)form.append("in_reply_to_id",replyId);
+          for(const media of p.media)if(media.id)form.append("media_ids[]",media.id);
           const posted=await api("/api/v1/statuses",{method:"POST",form});replyId=posted.id;
         }
         m.remove();toast("게시했어요.");if(state.view==="home")render()
-      }catch(e){toast(e.message);btn.disabled=false;btn.textContent="게시"}
+      }catch(e){toast(e.message);btn.disabled=false;btn.textContent=reply?"답글":"게시"}
     };
-  };draw();
+  };
+  draw();
+  if(recips.some(x=>!x.avatar))hydrateRecipients();
 }
 async function replyById(id,forced=null){try{const s=await api(`/api/v1/statuses/${id}`);compose(s,forced)}catch(e){toast(e.message)}}
 
