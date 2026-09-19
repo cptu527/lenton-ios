@@ -18,6 +18,15 @@ const REDIRECT_URI = location.origin + location.pathname;
 document.documentElement.style.setProperty("--accent",state.accent);
 if(state.theme!=="system") document.documentElement.dataset.theme=state.theme;
 
+function applyAndroidSpecMetrics(){
+  const ui=ANDROID?.ui||{}, root=document.documentElement;
+  root.style.setProperty("--android-topbar", String(ui.topBarDp||62)+"px");
+  root.style.setProperty("--android-bottom", String(ui.bottomBarDp||64)+"px");
+  root.style.setProperty("--android-avatar", String(ui.avatarDp||46)+"px");
+  root.style.setProperty("--android-body", String(ui.bodySp||16)+"px");
+}
+applyAndroidSpecMetrics();
+
 function toast(msg){ state.toast=msg; renderToast(); setTimeout(()=>{state.toast="";renderToast()},2600) }
 function renderToast(){ const old=$(".toast"); if(old) old.remove(); if(state.toast){const x=document.createElement("div");x.className="toast";x.textContent=state.toast;document.body.append(x)}}
 function normalizeHost(v){ return v.trim().replace(/^https?:\/\//i,"").split("/")[0].replace(/\/+$/,""); }
@@ -480,7 +489,7 @@ async function settingsView(){
       <div class="setting-row"><b>서버</b><span>${esc(state.session.host)}</span></div>
       <div class="setting-row"><button class="danger" data-action="logout">로그아웃</button></div>
     </div>
-    <div class="section"><h3>버전</h3><div class="setting-row"><b>렌톤 Web</b><span>PWA preview · Android v0.25.17 UI 기준</span></div></div>
+    <div class="section"><h3>버전</h3><div class="setting-row"><b>Android 원본</b><span>v${esc(ANDROID?.versionName||"?")} · code ${esc(ANDROID?.versionCode||"?")}</span></div><div class="setting-row"><b>웹 생성 기준</b><span>${esc(ANDROID?.generatedFrom||"unknown")}</span></div></div>
   </div>`;
   $("#app").innerHTML=shell("설정",body,{gear:false});
   $("#themeSel").value=state.theme; bind();
