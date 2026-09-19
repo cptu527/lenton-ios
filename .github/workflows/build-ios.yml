@@ -1,0 +1,81 @@
+name: Build Lenton iOS
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'LentonIOS/**'
+      - 'project.yml'
+      - '.github/workflows/build-ios.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lenton-ios-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Xcode
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build simulator
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project LentonIOS.xcodeproj \
+            -scheme LentonIOS \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build-simulator \
+            CODE_SIGNING_ALLOWED=NO \
+            build | xcpretty
+
+      - name: Build unsigned iPhone app
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project LentonIOS.xcodeproj \
+            -scheme LentonIOS \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build-device \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY='' \
+            build | xcpretty
+
+      - name: Package unsigned IPA
+        run: |
+          APP='build-device/Build/Products/Release-iphoneos/렌톤.app'
+          if [ ! -d "$APP" ]; then
+            APP='build-device/Build/Products/Release-iphoneos/LentonIOS.app'
+          fi
+          test -d "$APP"
+          rm -rf Payload
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          /usr/bin/zip -qry Lenton-v0.25.17-unsigned.ipa Payload
+          shasum -a 256 Lenton-v0.25.17-unsigned.ipa
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lenton-v0.25.17-unsigned-ipa
+          path: Lenton-v0.25.17-unsigned.ipa
+          if-no-files-found: error
