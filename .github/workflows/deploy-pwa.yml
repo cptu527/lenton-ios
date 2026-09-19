@@ -96,7 +96,7 @@ jobs:
           rm -rf dist-pwa
           cp -R PWA dist-pwa
           python3 - <<'PY'
-          import json, re, struct, zipfile
+          import json, os, re, struct, zipfile
           from pathlib import Path
 
           apk=Path("/tmp/lenton.apk")
