@@ -2429,3 +2429,55 @@ img{display:block}
   -webkit-appearance:auto;
   appearance:auto;
 }
+
+
+/* 2026-09-20 reply visibility bottom / far-right thread add */
+.reply-compose .compose-sheet{
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+.reply-compose #parts{
+  flex:1 1 auto;
+  min-height:0;
+  overflow:auto;
+}
+.reply-compose .reply-visibility-row{
+  flex:0 0 52px;
+  min-height:52px;
+  padding:0 18px;
+  border-top:1px solid var(--line);
+  border-bottom:0;
+  justify-content:flex-start;
+  background:var(--bg);
+}
+.reply-compose .reply-visibility-row .compose-visibility{
+  min-height:44px;
+  padding:0 4px 0 0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  color:var(--accent);
+  font-size:14px;
+  font-weight:700;
+  -webkit-appearance:auto;
+  appearance:auto;
+}
+.reply-compose .android-compose-tools{
+  position:static;
+  flex:0 0 58px;
+  grid-template-columns:52px 52px 52px 52px minmax(0,1fr) 52px;
+}
+.reply-compose .android-compose-tools #composeAttach{grid-column:1}
+.reply-compose .android-compose-tools #composeCamera{grid-column:2}
+.reply-compose .android-compose-tools #composeCW{grid-column:3}
+.reply-compose .android-compose-tools #composeEmoji{grid-column:4}
+.reply-compose .android-compose-tools #addPart{
+  grid-column:6;
+  justify-self:end;
+  margin:0;
+  width:52px;
+  min-width:52px;
+  padding:0;
+  font-size:28px;
+}
