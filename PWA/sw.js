@@ -46,6 +46,10 @@ self.addEventListener("fetch",event=>{
   event.respondWith(caches.match(req).then(hit=>hit||fetch(req).then(r=>{if(r.ok){const c=r.clone();caches.open(CACHE).then(x=>x.put(req,c))}return r})));
 });
 
+self.addEventListener("message",event=>{
+  if(event.data?.type==="SKIP_WAITING")self.skipWaiting();
+});
+
 self.addEventListener("push",event=>{
   let data={};
   try{data=event.data?event.data.json():{}}catch{try{data={body:event.data?.text()||""}}catch{}}

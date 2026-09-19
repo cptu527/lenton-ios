@@ -2,7 +2,7 @@ name: Sync Android APK and Deploy Lenton PWA
 
 on:
   push:
-    branches: [ main, pwa/apk-source-pipeline-v02517, pwa/apk-renderer-v02517, pwa/android-structure-v02517, pwa/android-gestures-v02517, pwa/full-parity-v02517, pwa/ui-parity-fixes-20260919 , pwa/android-parity-pass-20260919 , pwa/android-parity-pass3-20260919 , pwa/apk-analyzer-authoritative-20260919 , pwa/post-apk-swipe-fix-20260919 , pwa/apk-runtime-parity-20260919 , pwa/fix-hidden-tabs-swipe-metadata-20260919 ]
+    branches: [ main, pwa/apk-source-pipeline-v02517, pwa/apk-renderer-v02517, pwa/android-structure-v02517, pwa/android-gestures-v02517, pwa/full-parity-v02517, pwa/ui-parity-fixes-20260919 , pwa/android-parity-pass-20260919 , pwa/android-parity-pass3-20260919 , pwa/apk-analyzer-authoritative-20260919 , pwa/post-apk-swipe-fix-20260919 , pwa/apk-runtime-parity-20260919 , pwa/fix-hidden-tabs-swipe-metadata-20260919 , pwa/force-runtime-refresh-20260919 ]
     paths:
       - 'PWA/**'
       - 'tools/**'

@@ -2105,6 +2105,12 @@ async function registerSW(){
   if("serviceWorker"in navigator){
     const reg=await navigator.serviceWorker.register("./sw.js",{scope:"./",updateViaCache:"none"});
     navigator.serviceWorker.addEventListener("message",e=>{if(e.data?.type==="push"){toast("새 알림이 도착했어요.");if(state.view==="notifications")notificationsView()}});
+    navigator.serviceWorker.addEventListener("controllerchange",()=>{
+      if(window.__lentonControllerReloading)return;
+      window.__lentonControllerReloading=true;
+      const u=new URL(location.href);u.searchParams.set("__sw_refresh",Date.now().toString());
+      location.replace(u.toString());
+    });
     await reg.update().catch(()=>{});
   }
 }
