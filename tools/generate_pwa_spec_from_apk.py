@@ -181,14 +181,19 @@ def parse_profile_tabs(main_text: str):
         vals=first_matching_literals(block,allowed)
         if vals:score+=len(vals)*3
         if score>=8:candidates.append((score,len(block),vals,name))
-    if not candidates:
-        return []
-    candidates.sort(reverse=True)
-    vals=candidates[0][2]
-    # v0.25.17 profile renderer exposes only posts/replies; "고정"/"미디어"
-    # elsewhere belong to status/media management and are not profile tabs.
-    clean=[v for v in vals if v in ("게시물","답글","게시물과 답글")]
-    return clean
+    if candidates:
+        candidates.sort(reverse=True)
+        vals=candidates[0][2]
+        clean=[v for v in vals if v in ("게시물","답글","게시물과 답글")]
+        if clean:
+            return clean
+    # JADX can inline/reshape the profile method enough that method extraction misses it.
+    # Fall back only to explicit tab-construction patterns, not generic string presence.
+    explicit=[]
+    for label in ("게시물","답글","게시물과 답글"):
+        if re.search(r'\btab\(\s*"'+re.escape(label)+r'"\s*,',main_text):
+            explicit.append(label)
+    return explicit
 
 def parse_compose_literals(main_text: str):
     vals=quoted_literals(main_text)
@@ -269,11 +274,15 @@ def parse_notification_glyphs(text: str):
     if returns: out["default"]=returns[-1]
     return out
 
-def parse_profile_counts(profile_method: str):
+def parse_profile_counts(profile_method: str, main_text: str):
+    block=profile_method or ""
+    if not block:
+        pos=main_text.find("renderProfile")
+        if pos>=0:block=main_text[pos:pos+18000]
     fields=[]
-    if "statuses_count" in (profile_method or ""): fields.append("statuses")
-    if "following_count" in (profile_method or ""): fields.append("following")
-    if "followers_count" in (profile_method or ""): fields.append("followers")
+    if "statuses_count" in block: fields.append("statuses")
+    if "following_count" in block: fields.append("following")
+    if "followers_count" in block: fields.append("followers")
     return fields or ["following","followers"]
 
 def notification_labels(text: str):
@@ -375,7 +384,7 @@ def build_spec(main_text: str, latest: dict, apk_sha: str, source_path: str):
         "drawerRows":drawer_rows,
         "actions":parse_action_glyphs(action_method),
         "profileTabs":profile_tabs,
-        "profileCounts":parse_profile_counts(profile_method),
+        "profileCounts":parse_profile_counts(profile_method,main_text),
         "notificationTabs":parse_notification_tabs(main_text),
         "notificationLabels":notification_labels(main_text),
         "notificationGlyphs":parse_notification_glyphs(main_text),
