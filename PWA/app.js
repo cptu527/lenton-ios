@@ -47,9 +47,12 @@ function visibleNavItems(){
 }
 function renderEmojiText(text,emojis=[]){
   let out=esc(text||"");
-  for(const e of emojis||[]){
-    const code=e?.shortcode;if(!code)continue;
-    const src=e.static_url||e.url;if(!src)continue;
+  const merged=[],seen=new Set();
+  for(const e of [...(emojis||[]),...(state.customEmojis||[])]){
+    const code=e?.shortcode;if(!code||seen.has(code))continue;seen.add(code);merged.push(e);
+  }
+  for(const e of merged){
+    const code=e.shortcode,src=e.static_url||e.url;if(!src)continue;
     const needle=":"+code+":";
     out=out.split(esc(needle)).join('<img class="custom-emoji" src="'+esc(src)+'" alt="'+esc(needle)+'">');
   }
@@ -58,7 +61,7 @@ function renderEmojiText(text,emojis=[]){
 function renderRichText(html=""){
   const d=document.createElement("div");d.innerHTML=html;
   const walk=node=>{
-    if(node.nodeType===Node.TEXT_NODE)return esc(node.nodeValue||"");
+    if(node.nodeType===Node.TEXT_NODE)return renderEmojiText(node.nodeValue||"",state.customEmojis||[]);
     if(node.nodeType!==Node.ELEMENT_NODE)return "";
     const tag=node.tagName.toLowerCase();
     if(tag==="br")return "<br>";
@@ -213,7 +216,7 @@ function resetAccountState(){
 async function switchSavedAccount(index){
   const list=savedAccounts(),entry=list[index];if(!entry?.session)return;
   rememberScroll();state.session=entry.session;store.set("lenton_session",state.session);resetAccountState();
-  try{state.me=await api("/api/v1/accounts/verify_credentials");saveCurrentAccount();state.view="home";render();toast("계정을 전환했어요.")}
+  try{state.me=await api("/api/v1/accounts/verify_credentials");state.customEmojis=null;await loadCustomEmojis();saveCurrentAccount();state.view="home";render();toast("계정을 전환했어요.")}
   catch(e){toast("계정 전환 실패: "+e.message)}
 }
 function addAccountFlow(){
@@ -352,7 +355,7 @@ function shell(title,body,opts={}){
       <div class="topbar-actions">${right}</div>
     </header>
     <main class="main">${body}</main>
-    <nav class="bottom lenton-bottom">${navBar()}</nav>
+    <nav class="bottom lenton-bottom" style="--nav-count:${Math.max(1,visibleNavItems().length)}">${navBar()}</nav>
     ${opts.fab?`<button class="fab lenton-fab" data-action="${esc(opts.fabAction||"compose")}">＋</button>`:""}
   </div>`;
 }
@@ -856,13 +859,26 @@ function profileQuery(mode){
   return q;
 }
 function profileModes(){return ["posts","replies","pinned","media"]}
-function profilePageHtml(items){
+function profileMediaGrid(items){
+  const cells=[];
+  for(const raw of items||[]){
+    const st=raw.reblog||raw;
+    for(let i=0;i<(st.media_attachments||[]).length;i++){
+      const m=st.media_attachments[i],preview=m.preview_url||m.url||m.remote_url||"";
+      if(!preview)continue;
+      cells.push('<button class="profile-media-cell" data-profile-media-status="'+esc(st.id||"")+'" data-profile-media-index="'+i+'" aria-label="미디어 게시물 열기"><img src="'+esc(preview)+'" alt="'+esc(m.description||"")+'" loading="lazy"></button>');
+    }
+  }
+  return cells.length?'<div class="profile-media-gallery">'+cells.join("")+'</div>':'<div class="center">미디어가 없어요.</div>';
+}
+function profilePageHtml(items,mode="posts"){
+  if(mode==="media")return profileMediaGrid(items);
   return items?.length?items.map(statusCard).join(""):'<div class="center">게시물이 없어요.</div>';
 }
 function buildProfilePager(mode,data){
   const modes=profileModes(),index=Math.max(0,modes.indexOf(mode));
   return '<div class="profile-pager" data-profile-pager><div class="profile-pager-track" data-profile-track style="transform:translate3d(-'+(index*100)+'%,0,0)">'+
-    modes.map(m=>'<section class="profile-pager-page" data-profile-page="'+m+'">'+profilePageHtml(data[m]||[])+'</section>').join("")+
+    modes.map(m=>'<section class="profile-pager-page" data-profile-page="'+m+'">'+profilePageHtml(data[m]||[],m)+'</section>').join("")+
     '</div></div>';
 }
 function syncProfilePagerUi(mode,animate=true){
@@ -1535,6 +1551,21 @@ function openMediaViewer(url,alt=""){
   v.querySelector(".media-viewer-close").onclick=()=>v.remove();
   v.onclick=e=>{if(e.target===v||e.target.classList.contains("media-viewer-stage"))v.remove()};
 }
+async function openProfileMediaDetail(statusId,index=0){
+  if(!statusId)return;
+  $("#app").innerHTML='<div class="media-status-page"><header class="media-status-top"><button class="back" data-action="backScreen" aria-label="뒤로가기">‹</button><button class="media-status-more" data-media-thread="'+esc(statusId)+'" aria-label="게시물 보기">⋮</button></header><div class="center">불러오는 중…</div></div>';bind();
+  try{
+    const st=await api("/api/v1/statuses/"+statusId),a=st.account||{},media=st.media_attachments||[],m=media[Math.max(0,Math.min(media.length-1,Number(index)||0))]||media[0];
+    const src=m?.url||m?.remote_url||m?.preview_url||"",preview=m?.preview_url||src,type=m?.type||"image";
+    const stage=(type==="video"||type==="gifv")?'<video class="media-status-asset" controls playsinline poster="'+esc(preview)+'" src="'+esc(src)+'"></video>':'<img class="media-status-asset" src="'+esc(src)+'" alt="'+esc(m?.description||"")+'">';
+    const body='<header class="media-status-top"><button class="back" data-action="backScreen" aria-label="뒤로가기">‹</button><button class="media-status-more" data-media-thread="'+esc(statusId)+'" aria-label="게시물 보기">⋮</button></header>'+
+      '<div class="media-status-stage">'+stage+'</div>'+
+      '<div class="media-status-info"><div class="media-status-author"><img src="'+esc(a.avatar_static||a.avatar||"")+'" alt=""><div><b>'+renderEmojiText(a.display_name||a.username||"",a.emojis||[])+'</b><span>@'+esc(a.acct||"")+'</span></div></div>'+
+      '<div class="media-status-body">'+renderRichText(st.content||"")+'</div>'+
+      '<button class="media-status-readmore" data-media-thread="'+esc(statusId)+'">…더보기</button></div>';
+    $("#app").innerHTML='<div class="media-status-page">'+body+'</div>';bind();
+  }catch(e){toast(e.message);goBackScreen()}
+}
 async function openThread(id,showAllAncestors=false){
   state.returnView=state.view;
   $("#app").innerHTML=standaloneShell("게시물",'<div class="center">불러오는 중…</div>');bind();
@@ -2087,6 +2118,8 @@ function bind(){
   document.querySelectorAll("[data-conv]").forEach(b=>b.onclick=()=>{pushNavSnapshot();openConversation(b.dataset.conv)});
   document.querySelectorAll("[data-dm-previous]").forEach(b=>b.onclick=()=>{pushNavSnapshot();openConversation(b.dataset.dmPrevious)});
   document.querySelectorAll("[data-media-url]").forEach(b=>b.onclick=e=>{e.stopPropagation();openMediaViewer(b.dataset.mediaUrl,b.dataset.mediaAlt||"")});
+  document.querySelectorAll("[data-profile-media-status]").forEach(b=>b.onclick=e=>{e.stopPropagation();pushNavSnapshot();openProfileMediaDetail(b.dataset.profileMediaStatus,Number(b.dataset.profileMediaIndex||0))});
+  document.querySelectorAll("[data-media-thread]").forEach(b=>b.onclick=()=>{const id=b.dataset.mediaThread;pushNavSnapshot();openThread(id)});
   document.querySelectorAll(".status[data-status-id]").forEach(card=>card.onclick=e=>{if(e.target.closest("button,a,video,audio"))return;pushNavSnapshot();openThread(card.dataset.statusId)});
   document.querySelectorAll("[data-thread-older]").forEach(b=>b.onclick=()=>openThread(b.dataset.threadOlder,true));
   document.querySelectorAll("[data-notify]").forEach(b=>b.onclick=()=>notificationsView(b.dataset.notify==="mention"));
@@ -2190,7 +2223,7 @@ window.addEventListener("beforeunload",e=>{
 });
 (async()=>{
   try{await registerSW();await finishOAuth()}catch(e){toast(e.message)}
-  if(state.session){try{state.me=await api("/api/v1/accounts/verify_credentials");saveCurrentAccount()}catch{store.del("lenton_session");state.session=null}}
+  if(state.session){try{state.me=await api("/api/v1/accounts/verify_credentials");await loadCustomEmojis();saveCurrentAccount()}catch{store.del("lenton_session");state.session=null}}
   const q=new URLSearchParams(location.search),notificationId=q.get("notification_id"),deep=q.get("view");if(["home","notifications","dm","profile","settings"].includes(deep))state.view=deep;
   render();
   if(notificationId&&state.session)setTimeout(()=>openNotificationDeepLink(notificationId),0);
