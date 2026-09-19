@@ -20,10 +20,40 @@ if(state.theme!=="system") document.documentElement.dataset.theme=state.theme;
 
 function applyAndroidSpecMetrics(){
   const ui=ANDROID?.ui||{}, root=document.documentElement;
-  root.style.setProperty("--android-topbar", String(ui.topBarDp||62)+"px");
-  root.style.setProperty("--android-bottom", String(ui.bottomBarDp||64)+"px");
-  root.style.setProperty("--android-avatar", String(ui.avatarDp||46)+"px");
-  root.style.setProperty("--android-body", String(ui.bodySp||16)+"px");
+  const px=(name,value,fallback)=>root.style.setProperty(name,String(value??fallback)+"px");
+  px("--android-topbar",ui.topBarDp,62);
+  px("--android-bottom",ui.bottomBarDp,64);
+  px("--android-topbar-avatar",ui.topBarAvatarDp,40);
+  px("--android-topbar-title",ui.topBarTitleSp,20);
+  px("--android-topbar-search",ui.topBarSearchDp,48);
+  px("--android-topbar-more",ui.topBarMoreDp,44);
+  px("--android-avatar",ui.avatarDp,46);
+  px("--android-body",ui.bodySp,16);
+  px("--android-author-line",ui.authorLineDp,28);
+  px("--android-content-inset",ui.statusContentInsetDp,12);
+  px("--android-action-row",ui.actionRowDp,48);
+  px("--android-action-item",ui.actionItemDp,46);
+  px("--android-action-glyph",ui.actionGlyphSp,22);
+  px("--android-media-single",ui.mediaSingleDp,260);
+  px("--android-media-multi",ui.mediaMultiDp,220);
+  px("--android-drawer-avatar",ui.drawerAvatarDp,64);
+  px("--android-drawer-row",ui.drawerRowDp,58);
+  px("--android-drawer-glyph",ui.drawerGlyphDp,25);
+  px("--android-drawer-text",ui.drawerTextSp,19);
+  px("--android-profile-header",ui.profileHeaderDp,170);
+  px("--android-profile-avatar",ui.profileAvatarDp,92);
+  px("--android-profile-avatar-left",ui.profileAvatarLeftDp,18);
+  px("--android-profile-avatar-top",ui.profileAvatarTopDp,126);
+  px("--android-profile-hero",ui.profileHeroDp,226);
+  px("--android-profile-name",ui.profileNameSp,22);
+  px("--android-profile-tab",ui.profileTabDp,50);
+  px("--android-message-avatar",ui.messageAvatarDp,48);
+  px("--android-standalone-top",ui.standaloneTopDp,60);
+  root.style.setProperty("--android-drawer-width",String(Math.round((ui.drawerWidthRatio||.88)*100))+"vw");
+  const sp=ui.statusPadding||[16,10,14,8];
+  root.style.setProperty("--android-status-padding",sp.map(x=>String(x)+"px").join(" "));
+  const dp=ui.drawerPadding||[24,24,24,20];
+  root.style.setProperty("--android-drawer-padding",dp.map(x=>String(x)+"px").join(" "));
 }
 applyAndroidSpecMetrics();
 
@@ -92,12 +122,15 @@ async function finishOAuth(){
 function logout(){ if(!confirm("로그아웃할까요?"))return; store.del("lenton_session");state.session=null;state.me=null;render() }
 function standalone(){return matchMedia("(display-mode: standalone)").matches||navigator.standalone===true}
 
+function androidNavItems(){
+  const items=ANDROID?.renderer?.bottomNavItems;
+  return Array.isArray(items)&&items.length?items:[
+    {id:"home",glyph:"⌂"},{id:"search",glyph:"⌕"},{id:"notifications",glyph:"♢"},{id:"dm",glyph:"✉"}
+  ];
+}
 function navIcon(v){
-  const common='class="nav-svg" viewBox="0 0 32 32" aria-hidden="true"';
-  if(v==="home")return `<svg ${common}><path d="M5 14.2 16 5l11 9.2v12.3h-7.1v-8.1h-7.8v8.1H5z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>`;
-  if(v==="search")return `<svg ${common}><circle cx="13.5" cy="13.5" r="7.8" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="m19.2 19.2 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>`;
-  if(v==="notifications")return `<svg ${common}><path d="M16 5 27 16 16 27 5 16Z" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
-  return `<svg ${common}><rect x="4.5" y="7.5" width="23" height="17" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="m5.5 9 10.5 8 10.5-8" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>`;
+  const item=androidNavItems().find(x=>x.id===v);
+  return `<span class="android-glyph" aria-hidden="true">${esc(item?.glyph||"○")}</span>`;
 }
 function shell(title,body,opts={}){
   const av=state.me?.avatar_static||state.me?.avatar||"";
@@ -108,8 +141,8 @@ function shell(title,body,opts={}){
     <header class="topbar">
       <button class="topbar-avatar" data-action="drawer">${avatar}</button>
       <h1>${esc(title)}</h1>
-      <button class="top-icon search" data-view="search" aria-label="검색">⌕</button>
-      <button class="top-icon" data-action="settings" aria-label="설정">⋮</button>
+      <button class="top-icon search" data-view="search" aria-label="검색"><span class="android-glyph">⌕</span></button>
+      <button class="top-icon" data-action="settings" aria-label="설정"><span class="android-glyph">⋮</span></button>
     </header>
     <main class="main">${body}</main>
     <nav class="bottom">
@@ -119,7 +152,7 @@ function shell(title,body,opts={}){
   </div>`;
 }
 function nav(v){return `<button data-view="${v}" class="${state.view===v?"active":""}" aria-label="${v}">${navIcon(v)}</button>`}
-function navBar(){const order=ANDROID?.bottomNav?.order||["home","search","notifications","dm"];return order.map(nav).join("")}
+function navBar(){return androidNavItems().map(x=>nav(x.id)).join("")}
 
 function loginView(){
   const install=!standalone()?'<div class="install-card"><b>아이폰/아이패드 설치</b><p>Safari 공유 버튼 → <b>홈 화면에 추가</b> → <b>웹 앱으로 열기</b></p></div>':"";
@@ -153,10 +186,11 @@ function statusCard(raw){
         ${cw}<div class="content"${hidden}>${esc(plain(st.content||""))}</div>
         ${media}
         <div class="actions">
-          <button data-action="reply" data-id="${st.id}">○ <span class="count">${st.replies_count||""}</span></button>
-          <button class="boost ${st.reblogged?"on":""}" data-action="boost" data-id="${st.id}">↻ <span class="count">${st.reblogs_count||""}</span></button>
-          <button class="fav ${st.favourited?"on":""}" data-action="fav" data-id="${st.id}">${st.favourited?"♥":"♡"} <span class="count">${st.favourites_count||""}</span></button>
-          <button class="bookmark ${st.bookmarked?"on":""}" data-action="bookmark" data-id="${st.id}">${st.bookmarked?"▣":"▢"}</button>
+          ${(()=>{const x=ANDROID?.renderer?.actions||{};return `
+          <button data-action="reply" data-id="${st.id}">${esc(x.reply||"○")} <span class="count">${st.replies_count||""}</span></button>
+          <button class="boost ${st.reblogged?"on":""}" data-action="boost" data-id="${st.id}">${esc(x.boost||"↻")} <span class="count">${st.reblogs_count||""}</span></button>
+          <button class="fav ${st.favourited?"on":""}" data-action="fav" data-id="${st.id}">${esc(st.favourited?(x.favouriteOn||"♥"):(x.favouriteOff||"♡"))} <span class="count">${st.favourites_count||""}</span></button>
+          <button class="bookmark ${st.bookmarked?"on":""}" data-action="bookmark" data-id="${st.id}">${esc(st.bookmarked?(x.bookmarkOn||"▣"):(x.bookmarkOff||"▢"))}</button>`})()}
         </div>
       </div>
     </div>
@@ -267,10 +301,11 @@ async function notificationsView(mentionsOnly=false){
   try{
     const query={limit:"40"}; if(mentionsOnly) query["types[]"]="mention";
     const n=await api("/api/v1/notifications",{query});
-    const labels={mention:"나를 멘션했어요",follow:"나를 팔로우했어요",follow_request:"팔로우를 요청했어요",favourite:"내 게시물을 좋아해요",reblog:"내 게시물을 부스트했어요",poll:"투표가 종료됐어요",status:"새 게시물을 올렸어요",update:"게시물을 수정했어요"};
+    const labels={update:"게시물을 수정했어요",...(ANDROID?.renderer?.notificationLabels||{})};
+    const glyphs=ANDROID?.renderer?.notificationGlyphs||{};
     const tabs=`<div class="notify-tabs"><button data-notify="all" class="${mentionsOnly?"":"active"}">전체</button><button data-notify="mention" class="${mentionsOnly?"active":""}">멘션</button></div>`;
     const rows=n.length?n.map(x=>{
-      const glyph=x.type==="mention"?"@":x.type==="favourite"?"♥":x.type==="reblog"?"↻":(x.type==="follow"||x.type==="follow_request")?"+":"♢";
+      const glyph=glyphs[x.type]||glyphs.default||"♢";
       return `<div class="row"><div class="notification-mark ${esc(x.type)}">${glyph}</div><div class="grow"><div class="row-title"><img class="avatar" style="width:36px;height:36px" src="${esc(x.account?.avatar_static||x.account?.avatar||"")}" alt=""><b>${esc(x.account?.display_name||x.account?.username||"알림")} · ${esc(labels[x.type]||x.type)}</b></div>${x.status?`<div class="content" style="color:var(--sub);font-size:15px;max-height:88px;overflow:hidden">${esc(plain(x.status.content||""))}</div>`:""}</div></div>`;
     }).join(""):'<div class="center">새 알림이 없어요.</div>';
     $("#app").innerHTML=shell("알림",tabs+rows);bind()
@@ -314,7 +349,7 @@ function profileMarkup(a,{own=false,replies=false,relationship=null}={}){
   const privateNote=own?"":`<div class="private-note-card" data-action="editPrivateNote" style="color:${noteColor}"><div class="label">비밀 메모</div><div class="note">${esc(note.trim()?note:"메모를 추가하려면 탭하세요.")}</div></div>`;
   return `<div class="profile-hero"><img class="profile-header" src="${esc(a.header_static||a.header||"")}" alt=""><img class="profile-avatar" src="${esc(a.avatar_static||a.avatar||"")}" alt=""></div>
     <div class="profile-info"><div class="profile-name-row"><div class="profile-names"><h2>${esc(a.display_name||a.username)}</h2><div class="profile-handle">@${esc(a.acct)}</div></div>${controls}</div><div class="profile-bio">${esc(plain(a.note||""))}</div>${privateNote}<div class="profile-counts"><b style="color:var(--fg)">${a.following_count||0}</b> 팔로잉&nbsp;&nbsp;&nbsp;<b style="color:var(--fg)">${a.followers_count||0}</b> 팔로워</div></div>
-    <div class="home-tabs"><button data-action="profilePosts" class="${replies?"":"active"}">게시물</button><button data-action="profileReplies" class="${replies?"active":""}">답글</button></div>`;
+    <div class="home-tabs"><button data-action="profilePosts" class="${replies?"":"active"}">${esc((ANDROID?.renderer?.profileTabs||["게시물","답글"])[0])}</button><button data-action="profileReplies" class="${replies?"active":""}">${esc((ANDROID?.renderer?.profileTabs||["게시물","답글"])[1])}</button></div>`;
 }
 async function profileView(replies=state.profileReplies){
   state.profileAccount=null; state.profileRelationship=null; state.profileReplies=!!replies;
@@ -422,6 +457,19 @@ async function bookmarksView(){
 function openDrawer(){
   closeDrawer();
   const m=state.me||{}, shade=document.createElement("div");
+  const rows=Array.isArray(ANDROID?.renderer?.drawerRows)&&ANDROID.renderer.drawerRows.length
+    ? ANDROID.renderer.drawerRows
+    : [
+      {id:"profile",label:"프로필",glyph:"♙"},{id:"bookmarks",label:"북마크",glyph:"▢"},
+      {id:"lists",label:"리스트",glyph:"☷"},{id:"followrequests",label:"팔로우 요청",glyph:"♧"},
+      {id:"settings",label:"설정",glyph:"⚙"},{id:"theme",labelLight:"다크 모드",labelDark:"라이트 모드",glyphLight:"◐",glyphDark:"☀"}
+    ];
+  const rowHtml=rows.map(r=>{
+    const dark=state.theme==="dark";
+    const label=r.id==="theme"?(dark?(r.labelDark||"라이트 모드"):(r.labelLight||"다크 모드")):(r.label||r.id);
+    const glyph=r.id==="theme"?(dark?(r.glyphDark||"☀"):(r.glyphLight||"◐")):(r.glyph||"");
+    return `<button class="drawer-row" data-drawer="${esc(r.id)}"><span class="glyph android-glyph">${esc(glyph)}</span>${esc(label)}</button>`;
+  }).join("");
   shade.className="drawer-shade";
   shade.innerHTML=`<aside class="drawer">
     <img class="drawer-avatar" src="${esc(m.avatar_static||m.avatar||"")}" alt="">
@@ -429,12 +477,7 @@ function openDrawer(){
     <div class="drawer-handle">@${esc(m.acct||state.session?.host||"")}</div>
     <div class="drawer-counts"><b>${m.following_count||0}</b> 팔로잉&nbsp;&nbsp;&nbsp;<b>${m.followers_count||0}</b> 팔로워</div>
     <div class="drawer-divider"></div>
-    <button class="drawer-row" data-drawer="profile"><span class="glyph">♙</span>프로필</button>
-    <button class="drawer-row" data-drawer="bookmarks"><span class="glyph">▢</span>북마크</button>
-    <button class="drawer-row" data-drawer="lists"><span class="glyph">☷</span>리스트</button>
-    <button class="drawer-row" data-drawer="followrequests"><span class="glyph">♧</span>팔로우 요청</button>
-    <button class="drawer-row" data-drawer="settings"><span class="glyph">⚙</span>설정</button>
-    <button class="drawer-row" data-drawer="theme"><span class="glyph">${state.theme==="dark"?"☀":"◐"}</span>${state.theme==="dark"?"라이트 모드":"다크 모드"}</button>
+    ${rowHtml}
   </aside>`;
   document.body.append(shade);
   shade.addEventListener("click",e=>{if(e.target===shade)closeDrawer()});
@@ -448,6 +491,7 @@ function openDrawer(){
     else if(v==="theme"){state.theme=state.theme==="dark"?"light":"dark";store.set("lenton_theme",state.theme);document.documentElement.dataset.theme=state.theme;closeDrawer();render()}
   });
 }
+
 async function listsScreen(){
   closeDrawer();$("#app").innerHTML=standaloneShell("리스트",'<div class="center">불러오는 중…</div>');bind();
   try{const lists=await api("/api/v1/lists");const rows=lists.length?lists.map(x=>`<button class="row" data-open-list="${esc(x.id)}"><div class="grow"><div class="row-title"><b>${esc(x.title||"리스트")}</b></div></div></button>`).join(""):'<div class="center">리스트가 없어요.</div>';$("#app").innerHTML=standaloneShell("리스트",rows);bind()}catch(e){toast(e.message)}
@@ -525,7 +569,7 @@ function compose(reply=null,forcedVisibility=null){
   const draw=()=>{
     let old=$(".modal");if(old)old.remove();
     const m=document.createElement("div");m.className="modal";
-    m.innerHTML=`<div class="sheet"><div class="sheet-head"><button class="iconbtn" id="closeCompose">×</button><h2>${reply?"답글":"새 게시물"}</h2><button class="primary" id="sendCompose">${reply?"답글":"게시"}</button></div>
+    const ct=ANDROID?.renderer?.compose||{};m.innerHTML=`<div class="sheet"><div class="sheet-head"><button class="iconbtn" id="closeCompose">×</button><h2>${reply?(ct.replyTitle||"답글"):(ct.newTitle||"새 게시물")}</h2><button class="primary" id="sendCompose">${reply?(ct.replyButton||"답글"):(ct.postButton||"게시")}</button></div>
       ${recips.length?`<div class="recips">${recips.map((r,i)=>`<button data-r="${i}" class="${r.on?"":"off"}">@${esc(r.acct)}</button>`).join("")}</div>`:""}
       <div id="parts">${parts.map((p,i)=>`<div class="part" data-p="${i}"><div class="part-head"><b>게시물 ${i+1}</b><label><input type="checkbox" data-cw="${i}" ${p.cw?"checked":""}> CW</label></div><div class="part-body"><img class="avatar" src="${esc(state.me?.avatar_static||state.me?.avatar||"")}" alt=""><div class="part-fields">${p.cw?`<input type="text" data-sp="${i}" placeholder="내용 경고" value="${esc(p.spoiler)}">`:""}<textarea data-t="${i}" placeholder="${reply?"답글을 입력하세요":"무슨 일이 일어나고 있나요?"}">${esc(p.text)}</textarea></div></div></div>`).join("")}</div>
       <div class="compose-tools"><button type="button">▧</button><button type="button" class="gif">GIF</button><button type="button">☷</button><button type="button">⌖</button><button type="button" class="part-add" id="addPart">＋ 타래</button></div></div>`;
@@ -625,13 +669,35 @@ function bind(){
   $("#accentSel")?.addEventListener("input",e=>{state.accent=e.target.value;store.set("lenton_accent",state.accent);document.documentElement.style.setProperty("--accent",state.accent)});
 }
 
+let pendingAutomaticUpdate=false;
+function composeIsOpen(){return !!document.querySelector(".modal .sheet")}
+async function applyAutomaticUpdate(){
+  try{
+    const current=String(ANDROID?.apkSha256||"").toLowerCase();
+    const r=await fetch("./build.json?ts="+Date.now(),{cache:"no-store"});
+    if(!r.ok)return;
+    const remote=await r.json();
+    const next=String(remote?.apkSha256||"").toLowerCase();
+    if(!current||!next||current===next)return;
+    if(composeIsOpen()){pendingAutomaticUpdate=true;return}
+    const key="lenton_reload_"+next;
+    if(sessionStorage.getItem(key))return;
+    sessionStorage.setItem(key,"1");
+    const reg=await navigator.serviceWorker.getRegistration("./");
+    await reg?.update().catch(()=>{});
+    location.reload();
+  }catch{}
+}
 async function registerSW(){
   if("serviceWorker"in navigator){
-    const reg=await navigator.serviceWorker.register("./sw.js",{scope:"./"});
+    const reg=await navigator.serviceWorker.register("./sw.js",{scope:"./",updateViaCache:"none"});
     navigator.serviceWorker.addEventListener("message",e=>{if(e.data?.type==="push"){toast("새 알림이 도착했어요.");if(state.view==="notifications")notificationsView()}});
-    reg.addEventListener("updatefound",()=>{const w=reg.installing;if(w)w.addEventListener("statechange",()=>{if(w.state==="installed"&&navigator.serviceWorker.controller){toast("새 버전이 준비됐어요. 다음 실행에 적용됩니다.")}})});
+    await reg.update().catch(()=>{});
   }
 }
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")applyAutomaticUpdate()});
+window.addEventListener("focus",applyAutomaticUpdate);
+setInterval(()=>{if(document.visibilityState==="visible")applyAutomaticUpdate()},60000);
 window.addEventListener("beforeinstallprompt",e=>e.preventDefault());
 window.addEventListener("popstate",()=>{});
 (async()=>{
@@ -639,4 +705,5 @@ window.addEventListener("popstate",()=>{});
   if(state.session){try{state.me=await api("/api/v1/accounts/verify_credentials")}catch{store.del("lenton_session");state.session=null}}
   const q=new URLSearchParams(location.search);const deep=q.get("view");if(["home","notifications","dm","profile","settings"].includes(deep))state.view=deep;
   render();
+  applyAutomaticUpdate();
 })();
