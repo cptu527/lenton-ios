@@ -1,7 +1,7 @@
 const $ = (s, r=document) => r.querySelector(s);
 const esc = (s="") => String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
 const plain = (html="") => { const d=document.createElement("div"); d.innerHTML=html; return d.textContent||""; };
-const fmtTime = (v) => { try { return new Intl.DateTimeFormat("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}).format(new Date(v)); } catch { return ""; } };
+const fmtTime = (v) => { try { const sec=Math.max(0,Math.floor((Date.now()-new Date(v).getTime())/1000)); if(sec<60)return "지금"; if(sec<3600)return Math.floor(sec/60)+"분"; if(sec<86400)return Math.floor(sec/3600)+"시간"; if(sec<604800)return Math.floor(sec/86400)+"일"; const d=new Date(v); return (d.getMonth()+1)+"월 "+d.getDate()+"일"; } catch { return ""; } };
 const store = {
   get(k,d=null){try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}},
   set(k,v){localStorage.setItem(k,JSON.stringify(v))},
@@ -11,7 +11,7 @@ const state = {
   session: store.get("lenton_session"),
   me:null, view:"home", homeMode:"home", listId:null, lists:[], busy:false,
   theme:store.get("lenton_theme","system"), accent:store.get("lenton_accent","#1d9bf0"),
-  pushError:"", toast:"", currentConversation:null
+  pushError:"", toast:"", currentConversation:null, profileReplies:false, profileAccount:null, profileRelationship:null, returnView:"home"
 };
 const REDIRECT_URI = location.origin + location.pathname;
 document.documentElement.style.setProperty("--accent",state.accent);
@@ -83,40 +83,64 @@ function logout(){ if(!confirm("로그아웃할까요?"))return; store.del("lent
 function standalone(){return matchMedia("(display-mode: standalone)").matches||navigator.standalone===true}
 
 function shell(title,body,opts={}){
+  const av=state.me?.avatar_static||state.me?.avatar||"";
+  const avatar=av
+    ? `<img src="${esc(av)}" alt="">`
+    : '<span class="fallback">○</span>';
   return `<div class="app">
-    <header class="topbar"><h1>${esc(title)}</h1>${opts.gear!==false?'<button class="iconbtn" data-action="settings">⚙︎</button>':""}</header>
+    <header class="topbar">
+      <button class="topbar-avatar" data-action="drawer">${avatar}</button>
+      <h1>${esc(title)}</h1>
+      <button class="top-icon search" data-view="search" aria-label="검색">⌕</button>
+      <button class="top-icon" data-action="settings" aria-label="설정">⋮</button>
+    </header>
     <main class="main">${body}</main>
     <nav class="bottom">
-      ${nav("home","⌂","홈")}${nav("notifications","♢","알림")}${nav("dm","✉","DM")}${nav("profile","○","프로필")}
+      ${nav("home","⌂")}${nav("search","⌕")}${nav("notifications","♢")}${nav("dm","✉")}${nav("profile","○")}
     </nav>
     ${opts.fab?'<button class="fab" data-action="compose">✎</button>':""}
   </div>`;
 }
-function nav(v,icon,label){return `<button data-view="${v}" class="${state.view===v?"active":""}"><span>${icon}</span>${label}</button>`}
+
+function nav(v,icon){return `<button data-view="${v}" class="${state.view===v?"active":""}" aria-label="${v}">${icon}</button>`}
 
 function loginView(){
-  const install=!standalone()?'<div class="install-card"><b>아이폰/아이패드 설치</b><p>Safari의 공유 버튼을 누른 뒤 <b>홈 화면에 추가</b> → <b>웹 앱으로 열기</b>를 켜주세요.</p></div>':"";
+  const install=!standalone()?'<div class="install-card"><b>아이폰/아이패드 설치</b><p>Safari 공유 버튼 → <b>홈 화면에 추가</b> → <b>웹 앱으로 열기</b></p></div>':"";
   return `<div class="login">
-    <img class="logo" src="./icon-1024.png" alt="렌톤">
-    <h1>렌톤</h1><p>빠른 알림을 지원하는 Mastodon 웹앱 프리뷰입니다.</p>
+    <img class="logo" src="./icon-192.png" alt="렌톤">
+    <h1>렌톤</h1>
+    <p class="tagline">마스토돈은 그대로, 더 편하고 예쁘게.</p>
     ${install}
-    <input id="server" class="field" inputmode="url" autocapitalize="none" placeholder="예: occm.cc">
-    <button id="loginBtn" class="primary" ${state.busy?"disabled":""}>${state.busy?"연결 중…":"Mastodon으로 로그인"}</button>
-    <p class="muted">로그인 토큰은 이 기기 브라우저에만 저장합니다.</p>
+    <div class="login-form">
+      <input id="server" class="field" inputmode="url" autocapitalize="none" autocomplete="off" placeholder="예: occm.cc">
+      <button id="loginBtn" class="primary" ${state.busy?"disabled":""}>${state.busy?"로그인 준비 중…":"Mastodon으로 로그인"}</button>
+    </div>
+    <p class="login-note">로그인 토큰은 이 기기 브라우저에만 저장합니다.</p>
   </div>`;
 }
 
 function statusCard(raw){
-  const s=raw.reblog||raw, boosted=!!raw.reblog;
-  const cw=s.spoiler_text? `<div class="cw">CW · ${esc(s.spoiler_text)} <button class="pill" data-action="togglecw">보기</button></div>`:"";
-  const hidden=s.spoiler_text?" style=\"display:none\" data-cwbody":"";
-  return `<article class="status" data-status-id="${s.id}">
-    ${boosted?'<div class="muted">부스트됨</div>':""}
+  const st=raw.reblog||raw, boosted=!!raw.reblog, a=st.account||{};
+  const boostLine=boosted?`<div class="boosted">↻ ${esc(raw.account?.display_name||raw.account?.username||"")}님이 부스트</div>`:"";
+  const cw=st.spoiler_text? `<div class="cw">CW · ${esc(st.spoiler_text)} <button class="pill" data-action="togglecw">보기</button></div>`:"";
+  const hidden=st.spoiler_text?' style="display:none" data-cwbody':"";
+  const media=Array.isArray(st.media_attachments)&&st.media_attachments.length
+    ? `<img class="media" src="${esc(st.media_attachments[0].preview_url||st.media_attachments[0].url||"")}" alt="">`
+    :"";
+  return `<article class="status" data-status-id="${st.id}">
+    ${boostLine}
     <div class="status-head">
-      <img class="avatar" src="${esc(s.account.avatar_static||s.account.avatar)}" alt="">
-      <div class="status-main"><div><span class="name">${esc(s.account.display_name||s.account.username)}</span> <span class="acct">@${esc(s.account.acct)}</span></div><div class="time">${fmtTime(s.created_at)}</div>
-      ${cw}<div class="content"${hidden}>${esc(plain(s.content))}</div>
-      <div class="actions"><button data-action="reply" data-id="${s.id}">↩ ${s.replies_count||0}</button><button data-action="boost" data-id="${s.id}">↻ ${s.reblogs_count||0}</button><button data-action="fav" data-id="${s.id}">♡ ${s.favourites_count||0}</button></div>
+      <img class="avatar" src="${esc(a.avatar_static||a.avatar||"")}" alt="">
+      <div class="status-main">
+        <div class="author-line" data-profile="${esc(a.id||"")}"><span class="name">${esc(a.display_name||a.username||"")}</span><span class="acctline">&nbsp;@${esc(a.acct||"")} · ${fmtTime(st.created_at)}</span></div>
+        ${cw}<div class="content"${hidden}>${esc(plain(st.content||""))}</div>
+        ${media}
+        <div class="actions">
+          <button data-action="reply" data-id="${st.id}">○ <span class="count">${st.replies_count||""}</span></button>
+          <button class="boost ${st.reblogged?"on":""}" data-action="boost" data-id="${st.id}">↻ <span class="count">${st.reblogs_count||""}</span></button>
+          <button class="fav ${st.favourited?"on":""}" data-action="fav" data-id="${st.id}">${st.favourited?"♥":"♡"} <span class="count">${st.favourites_count||""}</span></button>
+          <button class="bookmark ${st.bookmarked?"on":""}" data-action="bookmark" data-id="${st.id}">${st.bookmarked?"▣":"▢"}</button>
+        </div>
       </div>
     </div>
   </article>`;
@@ -129,32 +153,39 @@ async function homeView(){
     if(!state.lists.length) await loadLists();
     if(state.listId) data=await api(`/api/v1/timelines/list/${state.listId}`,{query:{limit:"30"}});
     else data=await api(state.homeMode==="public"?"/api/v1/timelines/public":"/api/v1/timelines/home",{query:{limit:"30"}});
-    const seg=`<div class="segment"><button data-home-mode="home" class="${state.homeMode==="home"&&!state.listId?"active":""}">시간순</button><button data-home-mode="public" class="${state.homeMode==="public"&&!state.listId?"active":""}">퍼블릭</button></div>`;
+    const tabs=`<div class="home-tabs"><button data-home-mode="home" class="${state.homeMode==="home"&&!state.listId?"active":""}">팔로잉</button><button data-home-mode="public" class="${state.homeMode==="public"&&!state.listId?"active":""}">공개</button></div>`;
     const chips=state.lists.length?`<div class="chips">${state.lists.map(x=>`<button class="chip ${state.listId===x.id?"active":""}" data-list="${x.id}">${esc(x.title)}</button>`).join("")}<button class="chip" data-action="newlist">＋ 리스트</button></div>`:"";
-    $("#app").innerHTML=shell(state.listId?(state.lists.find(x=>x.id===state.listId)?.title||"리스트"):"홈",seg+chips+(data.length?data.map(statusCard).join(""):'<div class="center">게시물이 없습니다.</div>'),{fab:true});
-  }catch(e){$("#app").innerHTML=shell("홈",`<div class="center">불러오지 못했어요.<br>${esc(e.message)}<br><br><button class="primary" data-action="reload">다시 시도</button></div>`,{fab:true})}
+    $("#app").innerHTML=shell(state.listId?(state.lists.find(x=>x.id===state.listId)?.title||"리스트"):"홈",tabs+chips+(data.length?data.map(statusCard).join(""):'<div class="center">표시할 게시물이 없어요.</div>'),{fab:true});
+  }catch(e){$("#app").innerHTML=shell("홈",`<div class="center">타임라인을 불러오지 못했어요.<br><br>${esc(e.message)}<br><br><button class="primary" data-action="reload">다시 시도</button></div>`,{fab:true})}
   state.busy=false; bind();
 }
+
 function renderLoadingShell(title){$("#app").innerHTML=shell(title,'<div class="center">불러오는 중…</div>',{fab:title==="홈"});bind()}
 
-async function notificationsView(){
+async function notificationsView(mentionsOnly=false){
   renderLoadingShell("알림");
   try{
-    const n=await api("/api/v1/notifications",{query:{limit:"40"}});
-    const labels={mention:"멘션",follow:"팔로우",favourite:"좋아요",reblog:"부스트",poll:"투표",status:"새 게시물",update:"수정"};
-    const body=n.length?n.map(x=>`<div class="row"><img class="avatar" src="${esc(x.account?.avatar_static||x.account?.avatar||"")}" alt=""><div class="grow"><b>${esc(x.account?.display_name||x.account?.username||"알림")}</b><div class="muted">${labels[x.type]||esc(x.type)} · ${fmtTime(x.created_at)}</div>${x.status?`<div>${esc(plain(x.status.content)).slice(0,180)}</div>`:""}</div></div>`).join(""):'<div class="center">알림이 없습니다.</div>';
-    $("#app").innerHTML=shell("알림",body);bind()
+    const query={limit:"40"}; if(mentionsOnly) query["types[]"]="mention";
+    const n=await api("/api/v1/notifications",{query});
+    const labels={mention:"나를 멘션했어요",follow:"나를 팔로우했어요",follow_request:"팔로우를 요청했어요",favourite:"내 게시물을 좋아해요",reblog:"내 게시물을 부스트했어요",poll:"투표가 종료됐어요",status:"새 게시물을 올렸어요",update:"게시물을 수정했어요"};
+    const tabs=`<div class="notify-tabs"><button data-notify="all" class="${mentionsOnly?"":"active"}">전체</button><button data-notify="mention" class="${mentionsOnly?"active":""}">멘션</button></div>`;
+    const rows=n.length?n.map(x=>{
+      const glyph=x.type==="mention"?"@":x.type==="favourite"?"♥":x.type==="reblog"?"↻":(x.type==="follow"||x.type==="follow_request")?"+":"♢";
+      return `<div class="row"><div class="notification-mark ${esc(x.type)}">${glyph}</div><div class="grow"><div class="row-title"><img class="avatar" style="width:36px;height:36px" src="${esc(x.account?.avatar_static||x.account?.avatar||"")}" alt=""><b>${esc(x.account?.display_name||x.account?.username||"알림")} · ${esc(labels[x.type]||x.type)}</b></div>${x.status?`<div class="content" style="color:var(--sub);font-size:15px;max-height:88px;overflow:hidden">${esc(plain(x.status.content||""))}</div>`:""}</div></div>`;
+    }).join(""):'<div class="center">새 알림이 없어요.</div>';
+    $("#app").innerHTML=shell("알림",tabs+rows);bind()
   }catch(e){$("#app").innerHTML=shell("알림",`<div class="center">${esc(e.message)}</div>`);bind()}
 }
 
 async function dmView(){
-  renderLoadingShell("DM");
+  renderLoadingShell("메시지");
   try{
-    const cs=await api("/api/v1/conversations",{query:{limit:"40"}});
-    const body=cs.length?cs.map(c=>{const a=c.accounts?.[0],txt=c.last_status?plain(c.last_status.content):"";return `<button class="row" data-conv="${c.id}" style="width:100%;text-align:left;border-left:0;border-right:0;border-top:0"><img class="avatar" src="${esc(a?.avatar_static||a?.avatar||"")}" alt=""><div class="grow"><b>${esc(a?.display_name||a?.username||"대화")}</b><div class="muted">${esc(txt).slice(0,100)}</div></div>${c.unread?'<span class="badge"></span>':""}</button>`}).join(""):'<div class="center">DM이 없습니다.</div>';
-    $("#app").innerHTML=shell("DM",body);bind(); state._conversations=cs;
-  }catch(e){$("#app").innerHTML=shell("DM",`<div class="center">${esc(e.message)}</div>`);bind()}
+    const cs=await api("/api/v1/conversations",{query:{limit:"30"}});
+    const body=cs.length?cs.map(c=>{const a=c.accounts?.[0],txt=c.last_status?plain(c.last_status.content):"";return `<button class="row" data-conv="${c.id}"><img class="avatar" style="width:48px;height:48px" src="${esc(a?.avatar_static||a?.avatar||"")}" alt=""><div class="grow"><div class="row-title"><b>${esc(a?.display_name||a?.username||"대화")}</b></div><div style="color:var(--sub);font-size:15px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(txt)}</div></div>${c.unread?'<span class="badge"></span>':""}</button>`}).join(""):'<div class="center">대화가 없어요.</div>';
+    $("#app").innerHTML=shell("메시지",body);bind(); state._conversations=cs;
+  }catch(e){$("#app").innerHTML=shell("메시지",`<div class="center">${esc(e.message)}</div>`);bind()}
 }
+
 async function openConversation(id){
   const c=state._conversations?.find(x=>x.id===id); if(!c?.last_status)return;
   state.currentConversation=c; renderLoadingShell("DM");
@@ -166,16 +197,167 @@ async function openConversation(id){
     api(`/api/v1/conversations/${id}/read`,{method:"POST",form:{}}).catch(()=>{});
   }catch(e){toast(e.message)}
 }
-async function profileView(){
+
+function accentTextColor(){
+  let h=String(state.accent||"#1d9bf0").replace("#","");
+  if(h.length===3) h=h.split("").map(x=>x+x).join("");
+  const r=parseInt(h.slice(0,2),16)||0,g=parseInt(h.slice(2,4),16)||0,b=parseInt(h.slice(4,6),16)||0;
+  return ((r*299+g*587+b*114)/1000)>=160?"#000":"#fff";
+}
+function standaloneShell(title,body,right=""){
+  return `<div class="standalone-page"><header class="standalone-top"><button class="back" data-action="backMain">‹</button><h1>${esc(title)}</h1>${right}</header><main class="main">${body}</main></div>`;
+}
+function profileMarkup(a,{own=false,replies=false,relationship=null}={}){
+  const note=relationship?.note||"";
+  const noteColor=accentTextColor();
+  const controls=own?"":`<button class="outline-btn" data-action="followProfile">${relationship?.following?"팔로잉":"팔로우"}</button>`;
+  const privateNote=own?"":`<div class="private-note-card" data-action="editPrivateNote" style="color:${noteColor}"><div class="label">비밀 메모</div><div class="note">${esc(note.trim()?note:"메모를 추가하려면 탭하세요.")}</div></div>`;
+  return `<div class="profile-hero"><img class="profile-header" src="${esc(a.header_static||a.header||"")}" alt=""><img class="profile-avatar" src="${esc(a.avatar_static||a.avatar||"")}" alt=""></div>
+    <div class="profile-info"><div class="profile-name-row"><div class="profile-names"><h2>${esc(a.display_name||a.username)}</h2><div class="profile-handle">@${esc(a.acct)}</div></div>${controls}</div><div class="profile-bio">${esc(plain(a.note||""))}</div>${privateNote}<div class="profile-counts"><b style="color:var(--fg)">${a.following_count||0}</b> 팔로잉&nbsp;&nbsp;&nbsp;<b style="color:var(--fg)">${a.followers_count||0}</b> 팔로워</div></div>
+    <div class="home-tabs"><button data-action="profilePosts" class="${replies?"":"active"}">게시물</button><button data-action="profileReplies" class="${replies?"active":""}">답글</button></div>`;
+}
+async function profileView(replies=state.profileReplies){
+  state.profileAccount=null; state.profileRelationship=null; state.profileReplies=!!replies;
   renderLoadingShell("프로필");
   try{
     if(!state.me) state.me=await api("/api/v1/accounts/verify_credentials");
-    const s=await api(`/api/v1/accounts/${state.me.id}/statuses`,{query:{limit:"30",exclude_replies:"false"}});
-    const a=state.me;
-    const head=`<div class="profile-head"><img src="${esc(a.header_static||a.header)}" alt=""></div><div class="profile-body"><img class="profile-avatar" src="${esc(a.avatar_static||a.avatar)}" alt=""><h2>${esc(a.display_name||a.username)}</h2><div class="muted">@${esc(a.acct)}</div><p>${esc(plain(a.note))}</p><div class="muted">${a.statuses_count} 게시물 · ${a.following_count} 팔로잉 · ${a.followers_count} 팔로워</div></div>`;
-    $("#app").innerHTML=shell("프로필",head+s.map(statusCard).join(""));bind()
+    const a=state.me, query={limit:"25"}; if(!state.profileReplies)query.exclude_replies="true";
+    const statuses=await api(`/api/v1/accounts/${a.id}/statuses`,{query});
+    $("#app").innerHTML=shell("프로필",profileMarkup(a,{own:true,replies:state.profileReplies})+(statuses.length?statuses.map(statusCard).join(""):'<div class="center">게시물이 없어요.</div>'));bind()
   }catch(e){$("#app").innerHTML=shell("프로필",`<div class="center">${esc(e.message)}</div>`);bind()}
 }
+async function openProfile(id,replies=false){
+  if(!id)return;
+  state.returnView=state.view; state.profileReplies=!!replies;
+  $("#app").innerHTML=standaloneShell("프로필",'<div class="center">불러오는 중…</div>');bind();
+  try{
+    const [a,rels]=await Promise.all([
+      api(`/api/v1/accounts/${id}`),
+      api("/api/v1/accounts/relationships",{query:{"id[]":id}})
+    ]);
+    const relationship=Array.isArray(rels)?(rels[0]||{}):{};
+    const query={limit:"25"}; if(!state.profileReplies)query.exclude_replies="true";
+    const statuses=await api(`/api/v1/accounts/${id}/statuses`,{query});
+    state.profileAccount=a; state.profileRelationship=relationship;
+    const more='<button class="profile-more" data-action="profileMenu" aria-label="프로필 관리">⋮</button>';
+    $("#app").innerHTML=standaloneShell("프로필",profileMarkup(a,{own:false,replies:state.profileReplies,relationship})+(statuses.length?statuses.map(statusCard).join(""):'<div class="center">게시물이 없어요.</div>'),more);bind();
+  }catch(e){$("#app").innerHTML=standaloneShell("프로필",`<div class="center">${esc(e.message)}</div>`);bind()}
+}
+function closePopup(){document.querySelector(".android-popup-shade")?.remove()}
+function openProfilePopup(){
+  closePopup(); const a=state.profileAccount,rel=state.profileRelationship||{}; if(!a)return;
+  const shade=document.createElement("div");shade.className="android-popup-shade";
+  shade.innerHTML=`<div class="android-popup">
+    <button data-pm="lists">리스트 관리</button>
+    <button data-pm="mute">${rel.muting?"뮤트 해제":"뮤트"}</button>
+    <button data-pm="block">${rel.blocking?"차단 해제":"차단"}</button>
+    <button data-pm="report">신고</button>
+    <button data-pm="copy">프로필 링크 복사</button>
+  </div>`;
+  document.body.append(shade);shade.onclick=e=>{if(e.target===shade)closePopup()};
+  shade.querySelectorAll("[data-pm]").forEach(b=>b.onclick=async()=>{const x=b.dataset.pm;closePopup();if(x==="lists")await showProfileListManager();else if(x==="mute")await toggleProfileRelation(rel.muting?"unmute":"mute");else if(x==="block")await toggleProfileRelation(rel.blocking?"unblock":"block");else if(x==="report")await reportProfile();else if(x==="copy"){try{await navigator.clipboard.writeText(a.url||"");toast("프로필 링크를 복사했어요.")}catch{toast("프로필 링크를 복사하지 못했어요.")}}});
+}
+function dialogBox(title,message,bodyHtml){
+  document.querySelector(".android-dialog-shade")?.remove();
+  const shade=document.createElement("div");shade.className="android-dialog-shade";
+  shade.innerHTML=`<div class="android-dialog"><h3>${esc(title)}</h3>${message?`<p>${esc(message)}</p>`:""}${bodyHtml}</div>`;document.body.append(shade);return shade;
+}
+async function editPrivateNote(){
+  const a=state.profileAccount,rel=state.profileRelationship;if(!a||!rel)return;
+  const shade=dialogBox("비밀 메모","상대방에게는 보이지 않습니다. 비워서 저장하면 메모가 삭제됩니다.",`<textarea id="privateNoteInput" placeholder="나만 볼 수 있는 메모">${esc(rel.note||"")}</textarea><div class="android-dialog-actions"><button data-cancel>취소</button><button data-save>저장</button></div>`);
+  shade.querySelector("[data-cancel]").onclick=()=>shade.remove();
+  shade.querySelector("[data-save]").onclick=async()=>{const btn=shade.querySelector("[data-save]"),value=$("#privateNoteInput",shade).value.trim();btn.disabled=true;try{const r=await api(`/api/v1/accounts/${a.id}/note`,{method:"POST",form:{comment:value}});state.profileRelationship={...rel,...r,note:r?.note??value};shade.remove();toast(value?"비밀 메모를 저장했어요.":"비밀 메모를 삭제했어요.");openProfile(a.id,state.profileReplies)}catch(e){btn.disabled=false;toast(e.message)}};
+}
+async function toggleProfileRelation(endpoint){
+  const a=state.profileAccount;if(!a)return;
+  const title=endpoint==="mute"?"뮤트":endpoint==="unmute"?"뮤트 해제":endpoint==="block"?"차단":"차단 해제";
+  if(!confirm(endpoint==="block"?"이 계정을 차단할까요?\n\n차단하면 현재 팔로우 중인 상태가 해제될 수 있어요.":`이 계정을 ${title}할까요?`))return;
+  try{const r=await api(`/api/v1/accounts/${a.id}/${endpoint}`,{method:"POST",form:{}});state.profileRelationship={...(state.profileRelationship||{}),...r};toast(title+" 완료");openProfile(a.id,state.profileReplies)}catch(e){toast(e.message)}
+}
+async function toggleFollowProfile(){
+  const a=state.profileAccount,rel=state.profileRelationship||{};if(!a)return;
+  try{const r=await api(`/api/v1/accounts/${a.id}/${rel.following?"unfollow":"follow"}`,{method:"POST",form:{}});state.profileRelationship={...rel,...r};openProfile(a.id,state.profileReplies)}catch(e){toast(e.message)}
+}
+async function reportProfile(){
+  const a=state.profileAccount;if(!a)return;
+  const shade=dialogBox("신고","신고 사유를 입력해 주세요.",'<textarea id="reportInput" placeholder="신고 내용"></textarea><div class="android-dialog-actions"><button data-cancel>취소</button><button data-save>신고</button></div>');
+  shade.querySelector("[data-cancel]").onclick=()=>shade.remove();
+  shade.querySelector("[data-save]").onclick=async()=>{const comment=$("#reportInput",shade).value.trim();try{await api("/api/v1/reports",{method:"POST",form:{account_id:a.id,comment,forward:"false"}});shade.remove();toast("신고를 접수했어요.")}catch(e){toast(e.message)}};
+}
+async function showProfileListManager(){
+  const a=state.profileAccount;if(!a)return;
+  try{
+    const [all,member]=await Promise.all([api("/api/v1/lists"),api(`/api/v1/accounts/${a.id}/lists`)]);
+    if(!all.length){toast("리스트가 없어요.");return}
+    const have=new Set((member||[]).map(x=>x.id));
+    const shade=dialogBox("리스트 관리","",`<div class="choices">${all.map((x,i)=>`<label><input type="checkbox" data-list-choice="${esc(x.id)}" ${have.has(x.id)?"checked":""}> ${esc(x.title||"리스트")}</label>`).join("")}</div><div class="android-dialog-actions"><button data-cancel>취소</button><button data-save>저장</button></div>`);
+    shade.querySelector("[data-cancel]").onclick=()=>shade.remove();
+    shade.querySelector("[data-save]").onclick=async()=>{const selected=new Set([...shade.querySelectorAll("[data-list-choice]:checked")].map(x=>x.dataset.listChoice));try{for(const list of all){const was=have.has(list.id),now=selected.has(list.id);if(was===now)continue;await api(`/api/v1/lists/${list.id}/accounts`,{method:now?"POST":"DELETE",form:{"account_ids[]":a.id}})}shade.remove();toast("리스트 설정을 저장했어요.")}catch(e){toast(e.message)}};
+  }catch(e){toast(e.message)}
+}
+
+async function searchView(){
+  $("#app").innerHTML=shell("검색",`<div class="search-box"><input id="searchInput" class="field" placeholder="사람, 게시물, 해시태그 검색"><button class="primary" data-action="runsearch">검색</button></div><div id="searchResults" class="center">검색어를 입력해 주세요.</div>`);bind();
+}
+async function runSearch(){
+  const q=$("#searchInput")?.value.trim(); if(!q)return;
+  const box=$("#searchResults"); box.className="center"; box.textContent="검색 중…";
+  try{
+    const r=await api("/api/v2/search",{query:{q,resolve:"true",limit:"20"}});
+    let html="";
+    if(r.accounts?.length){html+=`<div class="section-title">사람</div>`+r.accounts.map(a=>`<div class="row"><img class="avatar" style="width:48px;height:48px" src="${esc(a.avatar_static||a.avatar||"")}" alt=""><div class="grow"><b>${esc(a.display_name||a.username)}</b><div class="muted">@${esc(a.acct)}</div></div></div>`).join("")}
+    if(r.statuses?.length){html+=`<div class="section-title">게시물</div>`+r.statuses.map(statusCard).join("")}
+    box.className="";box.innerHTML=html||'<div class="center">검색 결과가 없어요.</div>';bind();
+  }catch(e){box.className="center";box.textContent=e.message}
+}
+
+async function bookmarksView(){
+  closeDrawer(); renderLoadingShell("북마크");
+  try{
+    const a=await api("/api/v1/bookmarks",{query:{limit:"30"}});
+    $("#app").innerHTML=shell("북마크",a.length?a.map(statusCard).join(""):'<div class="center">북마크가 없어요.</div>');bind();
+  }catch(e){toast(e.message)}
+}
+
+function openDrawer(){
+  closeDrawer();
+  const m=state.me||{}, shade=document.createElement("div");
+  shade.className="drawer-shade";
+  shade.innerHTML=`<aside class="drawer">
+    <img class="drawer-avatar" src="${esc(m.avatar_static||m.avatar||"")}" alt="">
+    <div class="drawer-name">${esc(m.display_name||m.username||"렌톤")}</div>
+    <div class="drawer-handle">@${esc(m.acct||state.session?.host||"")}</div>
+    <div class="drawer-counts"><b>${m.following_count||0}</b> 팔로잉&nbsp;&nbsp;&nbsp;<b>${m.followers_count||0}</b> 팔로워</div>
+    <div class="drawer-divider"></div>
+    <button class="drawer-row" data-drawer="profile"><span class="glyph">♙</span>프로필</button>
+    <button class="drawer-row" data-drawer="bookmarks"><span class="glyph">▢</span>북마크</button>
+    <button class="drawer-row" data-drawer="lists"><span class="glyph">☷</span>리스트</button>
+    <button class="drawer-row" data-drawer="followrequests"><span class="glyph">♧</span>팔로우 요청</button>
+    <button class="drawer-row" data-drawer="settings"><span class="glyph">⚙</span>설정</button>
+    <button class="drawer-row" data-drawer="theme"><span class="glyph">${state.theme==="dark"?"☀":"◐"}</span>${state.theme==="dark"?"라이트 모드":"다크 모드"}</button>
+  </aside>`;
+  document.body.append(shade);
+  shade.addEventListener("click",e=>{if(e.target===shade)closeDrawer()});
+  shade.querySelectorAll("[data-drawer]").forEach(b=>b.onclick=async()=>{
+    const v=b.dataset.drawer;
+    if(v==="profile"){closeDrawer();state.view="profile";render()}
+    else if(v==="bookmarks")bookmarksView();
+    else if(v==="lists"){closeDrawer();listsScreen()}
+    else if(v==="followrequests"){closeDrawer();followRequestsScreen()}
+    else if(v==="settings"){closeDrawer();state.view="settings";render()}
+    else if(v==="theme"){state.theme=state.theme==="dark"?"light":"dark";store.set("lenton_theme",state.theme);document.documentElement.dataset.theme=state.theme;closeDrawer();render()}
+  });
+}
+async function listsScreen(){
+  closeDrawer();$("#app").innerHTML=standaloneShell("리스트",'<div class="center">불러오는 중…</div>');bind();
+  try{const lists=await api("/api/v1/lists");const rows=lists.length?lists.map(x=>`<button class="row" data-open-list="${esc(x.id)}"><div class="grow"><div class="row-title"><b>${esc(x.title||"리스트")}</b></div></div></button>`).join(""):'<div class="center">리스트가 없어요.</div>';$("#app").innerHTML=standaloneShell("리스트",rows);bind()}catch(e){toast(e.message)}
+}
+async function followRequestsScreen(){
+  closeDrawer();$("#app").innerHTML=standaloneShell("팔로우 요청",'<div class="center">불러오는 중…</div>');bind();
+  try{const a=await api("/api/v1/follow_requests",{query:{limit:"40"}});const rows=a.length?a.map(x=>`<div class="row"><img class="avatar" data-profile="${esc(x.id||"")}" style="width:48px;height:48px" src="${esc(x.avatar_static||x.avatar||"")}" alt=""><div class="grow"><b>${esc(x.display_name||x.username)}</b><div class="muted">@${esc(x.acct)}</div></div></div>`).join(""):'<div class="center">팔로우 요청이 없어요.</div>';$("#app").innerHTML=standaloneShell("팔로우 요청",rows);bind()}catch(e){toast(e.message)}
+}
+
+function closeDrawer(){document.querySelector(".drawer-shade")?.remove()}
 
 async function pushDiagnostics(){
   const supported="serviceWorker"in navigator&&"PushManager"in window&&"Notification"in window;
@@ -197,14 +379,17 @@ async function settingsView(){
       <div class="kv"><span>Push 등록</span><b class="${d.regd?"ok":"bad"}">${d.regd?"등록됨":"미등록"}</b></div>
       <div class="kv"><span>마지막 Push 수신</span><b>${esc(d.last)}</b></div>
       ${state.pushError?`<div class="notice bad">${esc(state.pushError)}</div>`:""}
-      <p><button class="primary" data-action="enablepush">빠른 알림 켜기 / 재등록</button></p>
+      <div class="setting-row"><button class="primary" data-action="enablepush">빠른 알림 켜기 / 재등록</button></div>
     </div>
     <div class="section"><h3>화면</h3>
-      <label>모드 <select id="themeSel" class="field"><option value="system">시스템</option><option value="light">라이트</option><option value="dark">다크</option></select></label>
-      <br><br><label>강조색 <input id="accentSel" type="color" value="${esc(state.accent)}"></label>
+      <div class="setting-row"><b>모드</b><select id="themeSel" class="field" style="height:46px;margin-top:8px"><option value="system">시스템</option><option value="light">라이트</option><option value="dark">다크</option></select></div>
+      <div class="setting-row"><b>강조색</b><input id="accentSel" type="color" value="${esc(state.accent)}" style="width:54px;height:38px;border:0;background:none;margin-top:8px"></div>
     </div>
-    <div class="section"><h3>계정</h3><div class="card">${state.me?"@"+esc(state.me.acct):esc(state.session.host)}</div><button class="danger" data-action="logout">로그아웃</button></div>
-    <div class="section"><h3>버전</h3><div class="muted">Lenton Web · PWA preview 0.1</div></div>
+    <div class="section"><h3>계정</h3>
+      <div class="setting-row"><b>서버</b><span>${esc(state.session.host)}</span></div>
+      <div class="setting-row"><button class="danger" data-action="logout">로그아웃</button></div>
+    </div>
+    <div class="section"><h3>버전</h3><div class="setting-row"><b>렌톤 Web</b><span>PWA preview · Android v0.25.17 UI 기준</span></div></div>
   </div>`;
   $("#app").innerHTML=shell("설정",body,{gear:false});
   $("#themeSel").value=state.theme; bind();
@@ -212,15 +397,23 @@ async function settingsView(){
 
 function render(){
   if(!state.session){$("#app").innerHTML=loginView();$("#loginBtn")?.addEventListener("click",beginLogin);renderToast();return}
-  if(state.view==="home")homeView(); else if(state.view==="notifications")notificationsView(); else if(state.view==="dm")dmView(); else if(state.view==="profile")profileView(); else settingsView();
+  if(state.view==="home")homeView();
+  else if(state.view==="search")searchView();
+  else if(state.view==="notifications")notificationsView(false);
+  else if(state.view==="dm")dmView();
+  else if(state.view==="profile")profileView();
+  else settingsView();
 }
 
 async function statusAction(id,kind){
-  const el=document.querySelector(`[data-status-id="${id}"]`); 
   try{
-    const map={fav:"favourite",boost:"reblog"};await api(`/api/v1/statuses/${id}/${map[kind]}`,{method:"POST",form:{}});toast(kind==="fav"?"좋아요 했어요.":"부스트했어요.")
+    const map={fav:"favourite",boost:"reblog",bookmark:"bookmark"};
+    await api(`/api/v1/statuses/${id}/${map[kind]}`,{method:"POST",form:{}});
+    toast(kind==="fav"?"좋아요 완료":kind==="boost"?"부스트 완료":"북마크 완료");
+    if(state.view==="home")render();
   }catch(e){toast(e.message)}
 }
+
 async function newList(){
   const title=prompt("새 리스트 이름");if(!title)return;
   try{await api("/api/v1/lists",{method:"POST",form:{title}});await loadLists();render()}catch(e){toast(e.message)}
@@ -232,10 +425,10 @@ function compose(reply=null,forcedVisibility=null){
   const draw=()=>{
     let old=$(".modal");if(old)old.remove();
     const m=document.createElement("div");m.className="modal";
-    m.innerHTML=`<div class="sheet"><div class="sheet-head"><button class="iconbtn" id="closeCompose">닫기</button><h2>${reply?"답글":"새 게시물"}</h2><button class="primary" id="sendCompose">게시</button></div>
+    m.innerHTML=`<div class="sheet"><div class="sheet-head"><button class="iconbtn" id="closeCompose">×</button><h2>${reply?"답글":"새 게시물"}</h2><button class="primary" id="sendCompose">${reply?"답글":"게시"}</button></div>
       ${recips.length?`<div class="recips">${recips.map((r,i)=>`<button data-r="${i}" class="${r.on?"":"off"}">@${esc(r.acct)}</button>`).join("")}</div>`:""}
-      <div id="parts">${parts.map((p,i)=>`<div class="part" data-p="${i}"><div><b>게시물 ${i+1}</b> <label style="float:right"><input type="checkbox" data-cw="${i}" ${p.cw?"checked":""}> CW</label></div>${p.cw?`<input data-sp="${i}" placeholder="내용 경고" value="${esc(p.spoiler)}">`:""}<textarea data-t="${i}" placeholder="내용을 입력하세요">${esc(p.text)}</textarea></div>`).join("")}</div>
-      <button class="pill" id="addPart">＋ 다른 게시물 추가</button></div>`;
+      <div id="parts">${parts.map((p,i)=>`<div class="part" data-p="${i}"><div class="part-head"><b>게시물 ${i+1}</b><label><input type="checkbox" data-cw="${i}" ${p.cw?"checked":""}> CW</label></div><div class="part-body"><img class="avatar" src="${esc(state.me?.avatar_static||state.me?.avatar||"")}" alt=""><div class="part-fields">${p.cw?`<input type="text" data-sp="${i}" placeholder="내용 경고" value="${esc(p.spoiler)}">`:""}<textarea data-t="${i}" placeholder="${reply?"답글을 입력하세요":"무슨 일이 일어나고 있나요?"}">${esc(p.text)}</textarea></div></div></div>`).join("")}</div>
+      <div class="compose-tools"><button type="button">▧</button><button type="button" class="gif">GIF</button><button type="button">☷</button><button type="button">⌖</button><button type="button" class="part-add" id="addPart">＋ 타래</button></div></div>`;
     document.body.append(m);
     m.querySelectorAll("[data-t]").forEach(x=>x.addEventListener("input",e=>parts[+e.target.dataset.t].text=e.target.value));
     m.querySelectorAll("[data-sp]").forEach(x=>x.addEventListener("input",e=>parts[+e.target.dataset.sp].spoiler=e.target.value));
@@ -297,24 +490,37 @@ async function enablePush(){
 }
 function urlBase64ToUint8Array(s){const p="=".repeat((4-s.length%4)%4),b=(s+p).replace(/-/g,"+").replace(/_/g,"/"),raw=atob(b),a=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)a[i]=raw.charCodeAt(i);return a}
 
+
 function bind(){
+  document.querySelectorAll("[data-profile]").forEach(b=>b.onclick=e=>{e.stopPropagation();openProfile(b.dataset.profile)});
+  document.querySelectorAll("[data-open-list]").forEach(b=>b.onclick=()=>{state.view="home";state.listId=b.dataset.openList;render()});
   document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{state.view=b.dataset.view;state.listId=null;render()});
   document.querySelectorAll("[data-action]").forEach(b=>b.onclick=async()=>{
     const a=b.dataset.action;
     if(a==="settings"){state.view="settings";render()}
+    else if(a==="drawer")openDrawer()
     else if(a==="compose")compose()
     else if(a==="reload")render()
     else if(a==="logout")logout()
     else if(a==="enablepush")enablePush()
     else if(a==="newlist")newList()
+    else if(a==="runsearch")runSearch()
     else if(a==="togglecw"){const body=b.closest(".status-main").querySelector("[data-cwbody]");body.style.display=body.style.display==="none"?"block":"none"}
     else if(a==="reply")replyById(b.dataset.id)
-    else if(a==="fav"||a==="boost")statusAction(b.dataset.id,a)
+    else if(a==="fav"||a==="boost"||a==="bookmark")statusAction(b.dataset.id,a)
     else if(a==="replydm"){if(state.currentConversation?.last_status)compose(state.currentConversation.last_status,"direct")}
+    else if(a==="profileReplies"){if(state.profileAccount)openProfile(state.profileAccount.id,true);else profileView(true)}
+    else if(a==="profilePosts"){if(state.profileAccount)openProfile(state.profileAccount.id,false);else profileView(false)}
+    else if(a==="profileMenu")openProfilePopup()
+    else if(a==="editPrivateNote")editPrivateNote()
+    else if(a==="followProfile")toggleFollowProfile()
+    else if(a==="backMain"){state.profileAccount=null;state.profileRelationship=null;render()}
   });
   document.querySelectorAll("[data-home-mode]").forEach(b=>b.onclick=()=>{state.homeMode=b.dataset.homeMode;state.listId=null;render()});
   document.querySelectorAll("[data-list]").forEach(b=>b.onclick=()=>{state.listId=state.listId===b.dataset.list?null:b.dataset.list;render()});
   document.querySelectorAll("[data-conv]").forEach(b=>b.onclick=()=>openConversation(b.dataset.conv));
+  document.querySelectorAll("[data-notify]").forEach(b=>b.onclick=()=>notificationsView(b.dataset.notify==="mention"));
+  $("#searchInput")?.addEventListener("keydown",e=>{if(e.key==="Enter")runSearch()});
   $("#themeSel")?.addEventListener("change",e=>{state.theme=e.target.value;store.set("lenton_theme",state.theme);if(state.theme==="system")delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=state.theme});
   $("#accentSel")?.addEventListener("input",e=>{state.accent=e.target.value;store.set("lenton_accent",state.accent);document.documentElement.style.setProperty("--accent",state.accent)});
 }

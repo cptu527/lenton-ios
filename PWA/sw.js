@@ -1,8 +1,8 @@
-const CACHE="lenton-pwa-v1";
-const SHELL=["./","./index.html","./styles.css","./app.js","./manifest.webmanifest","./icon-1024.png"];
+const CACHE="lenton-pwa-v2";
+const SHELL=["./","./index.html","./styles.css","./app.js","./manifest.webmanifest","./icon-192.png","./icon-512.png","./icon-1024.png"];
 
 self.addEventListener("install",event=>{
-  event.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL.filter(x=>!x.endsWith("icon-1024.png")))).then(()=>self.skipWaiting()));
+  event.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL.filter(x=>!x.includes("icon-")))).then(()=>self.skipWaiting()));
 });
 self.addEventListener("activate",event=>{
   event.waitUntil(Promise.all([

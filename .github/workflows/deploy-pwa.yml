@@ -2,7 +2,7 @@ name: Deploy Lenton PWA
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, pwa/android-ui-v02517 ]
     paths:
       - 'PWA/**'
       - 'LentonIOS/Resources/AppIconSource/**'
@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
@@ -45,12 +45,25 @@ jobs:
           data = base64.b64decode(encoded, validate=True)
           out = Path("dist-pwa/icon-1024.png")
           out.write_bytes(data)
-          print("Wrote", out, len(data), "bytes")
+          print("Wrote original", out, len(data), "bytes")
           PY
+          test "$(sips -g pixelWidth dist-pwa/icon-1024.png | awk '/pixelWidth/{print $2}')" = "1024"
+          test "$(sips -g pixelHeight dist-pwa/icon-1024.png | awk '/pixelHeight/{print $2}')" = "1024"
+          cp dist-pwa/icon-1024.png dist-pwa/icon-512.png
+          cp dist-pwa/icon-1024.png dist-pwa/icon-192.png
+          sips -z 512 512 dist-pwa/icon-512.png >/dev/null
+          sips -z 192 192 dist-pwa/icon-192.png >/dev/null
+          test "$(sips -g pixelWidth dist-pwa/icon-512.png | awk '/pixelWidth/{print $2}')" = "512"
+          test "$(sips -g pixelHeight dist-pwa/icon-512.png | awk '/pixelHeight/{print $2}')" = "512"
+          test "$(sips -g pixelWidth dist-pwa/icon-192.png | awk '/pixelWidth/{print $2}')" = "192"
+          test "$(sips -g pixelHeight dist-pwa/icon-192.png | awk '/pixelHeight/{print $2}')" = "192"
           printf '%s\n' '' > dist-pwa/.nojekyll
+          test -s dist-pwa/icon-192.png
+          test -s dist-pwa/icon-512.png
           test -s dist-pwa/icon-1024.png
 
       - name: Publish gh-pages branch
+        if: github.ref == 'refs/heads/main'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
