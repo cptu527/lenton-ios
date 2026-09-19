@@ -31,6 +31,30 @@ require("multiAccount","addAccountFlow","accountManagerScreen","switchSavedAccou
 require("updater","updateHistoryScreen","applyAutomaticUpdate")
 require("draftGuard","작성 중인 내용을 버릴까요?")
 
+
+markers=spec.get("markerPresence") or {}
+def require_marker(marker,*runtime_markers):
+    if not markers.get(marker):
+        return
+    missing=[m for m in runtime_markers if m not in app]
+    if missing:
+        fail.append(f"marker {marker}: missing runtime markers {missing}")
+
+require_marker("프로필 편집","profileEditScreen","profileEditHeaderPreview","profileEditAvatarPreview","saveProfileEdit")
+require_marker("고정","profilePinned","q.pinned")
+require_marker("미디어","profileMedia","q.only_media")
+require_marker("앱 업데이트","currentReleaseNotes","showCurrentReleaseNotes","checkPwaUpdate")
+if features.get("bottomNavSwipe") and "main-swipe-preview" not in app:
+    fail.append("bottomNavSwipe: main view does not use finger-following preview")
+if features.get("homeSwipe") and "home-swipe-preview" not in app:
+    fail.append("homeSwipe: home mode does not use finger-following preview")
+if 'data-drawer="profile"' not in app or "drawer-profile-avatar-button" not in app:
+    fail.append("drawer profile identity is not clickable")
+if features.get("dmPreviousConversation") and "data-dm-previous" not in app:
+    fail.append("DM previous conversation is not wired")
+if "showCurrentReleaseNotes" in app and "build?.notes" not in app:
+    fail.append("update details must use current release notes only")
+
 renderer=spec.get("renderer") or {}
 compose=renderer.get("compose") or {}
 if compose.get("toolOrder"):
