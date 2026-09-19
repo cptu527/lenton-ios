@@ -240,29 +240,41 @@ function loginView(){
   </div>`;
 }
 
+function mediaMarkup(attachments=[]){
+  if(!Array.isArray(attachments)||!attachments.length)return "";
+  const items=attachments.map((m,i)=>{
+    const type=m.type||"unknown",url=m.url||m.remote_url||"",preview=m.preview_url||url;
+    const desc=m.description||"";
+    if(type==="video"||type==="gifv"){
+      return `<div class="media-item media-video"><video controls playsinline preload="metadata" poster="${esc(preview)}"><source src="${esc(url)}"></video></div>`;
+    }
+    if(type==="audio"){
+      return `<div class="media-item media-audio"><audio controls preload="metadata" src="${esc(url)}"></audio></div>`;
+    }
+    return `<button class="media-item media-image" data-media-url="${esc(url)}" data-media-alt="${esc(desc)}"><img src="${esc(preview)}" alt="${esc(desc)}" loading="lazy"></button>`;
+  }).join("");
+  return `<div class="media-grid media-count-${Math.min(attachments.length,4)}">${items}</div>`;
+}
 function statusCard(raw){
   const st=raw.reblog||raw, boosted=!!raw.reblog, a=st.account||{};
-  const boostLine=boosted?`<div class="boosted">↻ ${esc(raw.account?.display_name||raw.account?.username||"")}님이 부스트</div>`:"";
-  const cw=st.spoiler_text? `<div class="cw">CW · ${esc(st.spoiler_text)} <button class="pill" data-action="togglecw">보기</button></div>`:"";
+  const boostLine=boosted?`<div class="boosted">↻ ${renderEmojiText(raw.account?.display_name||raw.account?.username||"",raw.account?.emojis||[])}님이 부스트</div>`:"";
+  const cw=st.spoiler_text? `<div class="cw"><span>CW · ${renderEmojiText(st.spoiler_text,st.emojis||[])}</span> <button class="pill" data-action="togglecw">보기</button></div>`:"";
   const hidden=st.spoiler_text?' style="display:none" data-cwbody':"";
-  const media=Array.isArray(st.media_attachments)&&st.media_attachments.length
-    ? `<img class="media" src="${esc(st.media_attachments[0].preview_url||st.media_attachments[0].url||"")}" alt="">`
-    :"";
   return `<article class="status lenton-status" data-status-id="${st.id}">
     ${boostLine}
     <div class="status-head">
-      <img class="avatar" data-profile="${esc(a.id||"")}" src="${esc(a.avatar_static||a.avatar||"")}" alt="">
+      <button class="avatar-button" data-profile="${esc(a.id||"")}"><img class="avatar" src="${esc(a.avatar_static||a.avatar||"")}" alt=""></button>
       <div class="status-main">
         <div class="lenton-status-top">
-          <div class="author-line" data-profile="${esc(a.id||"")}"><span class="name">${esc(a.display_name||a.username||"")}</span><span class="acctline">&nbsp;@${esc(a.acct||"")} · ${fmtTime(st.created_at)}</span></div>
+          <button class="author-line" data-profile="${esc(a.id||"")}"><span class="name">${renderEmojiText(a.display_name||a.username||"",a.emojis||[])}</span><span class="acctline">&nbsp;@${esc(a.acct||"")} · ${fmtTime(st.created_at)}</span></button>
           <button class="status-more" data-action="statusmenu" data-id="${st.id}" aria-label="더보기">⋮</button>
         </div>
-        ${cw}<div class="content"${hidden}>${esc(plain(st.content||""))}</div>
-        ${media}
+        ${cw}<div class="content"${hidden}>${renderRichText(st.content||"")}</div>
+        ${mediaMarkup(st.media_attachments||[])}
         <div class="actions lenton-actions">
-          <button data-action="reply" data-id="${st.id}" aria-label="답글">▢</button>
-          <button class="boost ${st.reblogged?"on":""}" data-action="boost" data-id="${st.id}" aria-label="부스트">↔</button>
-          <button class="fav ${st.favourited?"on":""}" data-action="fav" data-id="${st.id}" aria-label="좋아요">${st.favourited?"♥":"♡"}</button>
+          <button data-action="reply" data-id="${st.id}" aria-label="답글">▢ <span class="count">${st.replies_count||""}</span></button>
+          <button class="boost ${st.reblogged?"on":""}" data-action="boost" data-id="${st.id}" aria-label="부스트">↔ <span class="count">${st.reblogs_count||""}</span></button>
+          <button class="fav ${st.favourited?"on":""}" data-action="fav" data-id="${st.id}" aria-label="좋아요">${st.favourited?"♥":"♡"} <span class="count">${st.favourites_count||""}</span></button>
           <button class="bookmark ${st.bookmarked?"on":""}" data-action="bookmark" data-id="${st.id}" aria-label="북마크">${st.bookmarked?"▮":"♧"}</button>
           <button data-action="share" data-id="${st.id}" data-url="${esc(st.url||"")}" aria-label="공유">⌯</button>
         </div>
@@ -270,6 +282,7 @@ function statusCard(raw){
     </div>
   </article>`;
 }
+
 async function loadLists(){try{state.lists=await api("/api/v1/lists")}catch{state.lists=[]}}
 async function loadAllFollowing(){
   if(!state.me) state.me=await api("/api/v1/accounts/verify_credentials");
