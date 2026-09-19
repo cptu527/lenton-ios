@@ -199,7 +199,7 @@ function saveCurrentAccount(){
   store.set("lenton_accounts",list);
 }
 function resetAccountState(){
-  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.homeMode="home";state.scrolls={};
+  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];
 }
 async function switchSavedAccount(index){
   const list=savedAccounts(),entry=list[index];if(!entry?.session)return;
@@ -246,7 +246,12 @@ function realtimeSettingsScreen(){
   $("#realtimeToggle").onchange=e=>{store.set("lenton_realtime_indicator",e.target.checked);toast("설정을 저장했어요.")};bind();
 }
 
-function logout(){ if(!confirm("로그아웃할까요?"))return; store.del("lenton_session");state.session=null;state.me=null;render() }
+function logout(){
+  if(!confirm("로그아웃할까요?"))return;
+  const key=state.session&&state.me?state.session.host+"|"+state.me.id:"";
+  if(key)store.set("lenton_accounts",savedAccounts().filter(x=>x.key!==key));
+  store.del("lenton_session");state.session=null;state.me=null;resetAccountState();render();
+}
 function standalone(){return matchMedia("(display-mode: standalone)").matches||navigator.standalone===true}
 
 function androidNavItems(){
@@ -1090,7 +1095,7 @@ async function sendInquiry(){
     if(navigator.share){await navigator.share({title:`[Lenton] ${title}`,text:info});toast("문의 내용을 공유했어요.");return}
   }catch(e){if(e?.name==="AbortError")return}
   try{await navigator.clipboard.writeText(info);toast("문의 내용을 복사했어요. 메일 앱을 엽니다.")}catch{}
-  location.href=`mailto:?subject=${encodeURIComponent("[Lenton] "+title)}&body=${encodeURIComponent(info)}`;
+  location.href=`mailto:cptu527@gmail.com?subject=${encodeURIComponent("[Lenton] "+title)}&body=${encodeURIComponent(info)}`;
 }
 async function updateHistoryScreen(){
   let build=null,entries=[];
