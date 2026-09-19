@@ -1242,8 +1242,19 @@ async function showCurrentReleaseNotes(){
 }
 async function checkPwaUpdate(){
   toast("업데이트를 확인하고 있어요.");
-  await applyAutomaticUpdate();
-  toast(state.updateAvailable?"새 버전이 준비됐어요. 앱을 다시 열면 적용됩니다.":"현재 최신 버전이에요.");
+  try{
+    const r=await fetch("./build.json?ts="+Date.now(),{cache:"no-store"});if(!r.ok)throw new Error("업데이트 정보를 불러오지 못했어요.");
+    const remote=await r.json();state.buildInfo=remote;
+    const current=currentPwaToken(),next=String(remote?.cacheToken||"");
+    if(next&&current&&next!==current){
+      state.updateAvailable=remote;
+      if(hasUnsavedLentonWork()){toast("새 버전이 있지만 작성 중인 내용이 있어 자동 적용하지 않았어요.");return}
+      toast("새 버전을 적용합니다.");
+      setTimeout(()=>activateLatestPwaNow(),250);
+      return;
+    }
+    toast("현재 최신 버전이에요.");
+  }catch(e){toast(e.message||"업데이트 확인에 실패했어요.")}
 }
 async function updateHistoryScreen(){
   let build=null;
@@ -2027,6 +2038,23 @@ function currentPwaToken(){
 }
 let pendingAutomaticUpdate=false;
 function composeIsOpen(){return !!document.querySelector(".modal .sheet")}
+function hasUnsavedLentonWork(){
+  const compose=document.querySelector(".compose-modal textarea,.compose-modal input[type='text']");
+  if(compose&&String(compose.value||"").trim())return true;
+  const dm=document.querySelector("#dmInlineInput");
+  if(dm&&String(dm.value||"").trim())return true;
+  return false;
+}
+async function activateLatestPwaNow(){
+  try{
+    const reg=await navigator.serviceWorker.getRegistration("./");
+    await reg?.update().catch(()=>{});
+    if(reg?.waiting)reg.waiting.postMessage?.({type:"SKIP_WAITING"});
+  }catch{}
+  const u=new URL(location.href);
+  u.searchParams.set("__lenton_refresh",Date.now().toString());
+  location.replace(u.toString());
+}
 async function applyAutomaticUpdate(){
   try{
     const r=await fetch("./build.json?ts="+Date.now(),{cache:"no-store"});if(!r.ok)return;
@@ -2036,11 +2064,16 @@ async function applyAutomaticUpdate(){
     state.updateAvailable=remote;
     const reg=await navigator.serviceWorker.getRegistration("./");await reg?.update().catch(()=>{});
     const noticeKey="lenton_update_notice_"+next;
-    if(!store.get(noticeKey,false)){
-      store.set(noticeKey,true);
-      if(composeIsOpen())pendingAutomaticUpdate=true;
-      else toast("새 렌톤 버전이 준비됐어요. 앱을 다음에 열면 자동 적용됩니다.");
+    if(hasUnsavedLentonWork()){
+      pendingAutomaticUpdate=true;
+      if(!store.get(noticeKey,false)){store.set(noticeKey,true);toast("새 렌톤 버전이 준비됐어요. 작성 중인 내용을 보존하기 위해 나중에 적용됩니다.")}
+      return;
     }
+    if(document.visibilityState==="visible"){
+      await activateLatestPwaNow();
+      return;
+    }
+    if(!store.get(noticeKey,false)){store.set(noticeKey,true);toast("새 렌톤 버전이 준비됐어요.")}
   }catch{}
 }
 async function registerSW(){
