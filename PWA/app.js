@@ -85,65 +85,65 @@ function standalone(){return matchMedia("(display-mode: standalone)").matches||n
 function shell(title,body,opts={}){
   const av=state.me?.avatar_static||state.me?.avatar||"";
   const avatar=av
-    ? \`<img src="\${esc(av)}" alt="">\`
+    ? `<img src="${esc(av)}" alt="">`
     : '<span class="fallback">○</span>';
-  return \`<div class="app">
+  return `<div class="app">
     <header class="topbar">
-      <button class="topbar-avatar" data-action="drawer">\${avatar}</button>
-      <h1>\${esc(title)}</h1>
+      <button class="topbar-avatar" data-action="drawer">${avatar}</button>
+      <h1>${esc(title)}</h1>
       <button class="top-icon search" data-view="search" aria-label="검색">⌕</button>
       <button class="top-icon" data-action="settings" aria-label="설정">⋮</button>
     </header>
-    <main class="main">\${body}</main>
+    <main class="main">${body}</main>
     <nav class="bottom">
-      \${nav("home","⌂")}\${nav("search","⌕")}\${nav("notifications","♢")}\${nav("dm","✉")}\${nav("profile","○")}
+      ${nav("home","⌂")}${nav("search","⌕")}${nav("notifications","♢")}${nav("dm","✉")}${nav("profile","○")}
     </nav>
-    \${opts.fab?'<button class="fab" data-action="compose">✎</button>':""}
-  </div>\`;
+    ${opts.fab?'<button class="fab" data-action="compose">✎</button>':""}
+  </div>`;
 }
 
-function nav(v,icon){return \`<button data-view="\${v}" class="\${state.view===v?"active":""}" aria-label="\${v}">\${icon}</button>\`}
+function nav(v,icon){return `<button data-view="${v}" class="${state.view===v?"active":""}" aria-label="${v}">${icon}</button>`}
 
 function loginView(){
   const install=!standalone()?'<div class="install-card"><b>아이폰/아이패드 설치</b><p>Safari 공유 버튼 → <b>홈 화면에 추가</b> → <b>웹 앱으로 열기</b></p></div>':"";
-  return \`<div class="login">
+  return `<div class="login">
     <img class="logo" src="./icon-192.png" alt="렌톤">
     <h1>렌톤</h1>
     <p class="tagline">마스토돈은 그대로, 더 편하고 예쁘게.</p>
-    \${install}
+    ${install}
     <div class="login-form">
       <input id="server" class="field" inputmode="url" autocapitalize="none" autocomplete="off" placeholder="예: occm.cc">
-      <button id="loginBtn" class="primary" \${state.busy?"disabled":""}>\${state.busy?"로그인 준비 중…":"Mastodon으로 로그인"}</button>
+      <button id="loginBtn" class="primary" ${state.busy?"disabled":""}>${state.busy?"로그인 준비 중…":"Mastodon으로 로그인"}</button>
     </div>
     <p class="login-note">로그인 토큰은 이 기기 브라우저에만 저장합니다.</p>
-  </div>\`;
+  </div>`;
 }
 
 function statusCard(raw){
   const st=raw.reblog||raw, boosted=!!raw.reblog, a=st.account||{};
-  const boostLine=boosted?\`<div class="boosted">↻ \${esc(raw.account?.display_name||raw.account?.username||"")}님이 부스트</div>\`:"";
-  const cw=st.spoiler_text? \`<div class="cw">CW · \${esc(st.spoiler_text)} <button class="pill" data-action="togglecw">보기</button></div>\`:"";
+  const boostLine=boosted?`<div class="boosted">↻ ${esc(raw.account?.display_name||raw.account?.username||"")}님이 부스트</div>`:"";
+  const cw=st.spoiler_text? `<div class="cw">CW · ${esc(st.spoiler_text)} <button class="pill" data-action="togglecw">보기</button></div>`:"";
   const hidden=st.spoiler_text?' style="display:none" data-cwbody':"";
   const media=Array.isArray(st.media_attachments)&&st.media_attachments.length
-    ? \`<img class="media" src="\${esc(st.media_attachments[0].preview_url||st.media_attachments[0].url||"")}" alt="">\`
+    ? `<img class="media" src="${esc(st.media_attachments[0].preview_url||st.media_attachments[0].url||"")}" alt="">`
     :"";
-  return \`<article class="status" data-status-id="\${st.id}">
-    \${boostLine}
+  return `<article class="status" data-status-id="${st.id}">
+    ${boostLine}
     <div class="status-head">
-      <img class="avatar" src="\${esc(a.avatar_static||a.avatar||"")}" alt="">
+      <img class="avatar" src="${esc(a.avatar_static||a.avatar||"")}" alt="">
       <div class="status-main">
-        <div class="author-line" data-profile="${esc(a.id||"")}"><span class="name">\${esc(a.display_name||a.username||"")}</span><span class="acctline">&nbsp;@\${esc(a.acct||"")} · \${fmtTime(st.created_at)}</span></div>
-        \${cw}<div class="content"\${hidden}>\${esc(plain(st.content||""))}</div>
-        \${media}
+        <div class="author-line" data-profile="${esc(a.id||"")}"><span class="name">${esc(a.display_name||a.username||"")}</span><span class="acctline">&nbsp;@${esc(a.acct||"")} · ${fmtTime(st.created_at)}</span></div>
+        ${cw}<div class="content"${hidden}>${esc(plain(st.content||""))}</div>
+        ${media}
         <div class="actions">
-          <button data-action="reply" data-id="\${st.id}">○ <span class="count">\${st.replies_count||""}</span></button>
-          <button class="boost \${st.reblogged?"on":""}" data-action="boost" data-id="\${st.id}">↻ <span class="count">\${st.reblogs_count||""}</span></button>
-          <button class="fav \${st.favourited?"on":""}" data-action="fav" data-id="\${st.id}">\${st.favourited?"♥":"♡"} <span class="count">\${st.favourites_count||""}</span></button>
-          <button class="bookmark \${st.bookmarked?"on":""}" data-action="bookmark" data-id="\${st.id}">\${st.bookmarked?"▣":"▢"}</button>
+          <button data-action="reply" data-id="${st.id}">○ <span class="count">${st.replies_count||""}</span></button>
+          <button class="boost ${st.reblogged?"on":""}" data-action="boost" data-id="${st.id}">↻ <span class="count">${st.reblogs_count||""}</span></button>
+          <button class="fav ${st.favourited?"on":""}" data-action="fav" data-id="${st.id}">${st.favourited?"♥":"♡"} <span class="count">${st.favourites_count||""}</span></button>
+          <button class="bookmark ${st.bookmarked?"on":""}" data-action="bookmark" data-id="${st.id}">${st.bookmarked?"▣":"▢"}</button>
         </div>
       </div>
     </div>
-  </article>\`;
+  </article>`;
 }
 
 async function loadLists(){try{state.lists=await api("/api/v1/lists")}catch{state.lists=[]}}
@@ -151,12 +151,12 @@ async function homeView(){
   let data=[]; state.busy=true;renderLoadingShell("홈");
   try{
     if(!state.lists.length) await loadLists();
-    if(state.listId) data=await api(\`/api/v1/timelines/list/\${state.listId}\`,{query:{limit:"30"}});
+    if(state.listId) data=await api(`/api/v1/timelines/list/${state.listId}`,{query:{limit:"30"}});
     else data=await api(state.homeMode==="public"?"/api/v1/timelines/public":"/api/v1/timelines/home",{query:{limit:"30"}});
-    const tabs=\`<div class="home-tabs"><button data-home-mode="home" class="\${state.homeMode==="home"&&!state.listId?"active":""}">팔로잉</button><button data-home-mode="public" class="\${state.homeMode==="public"&&!state.listId?"active":""}">공개</button></div>\`;
-    const chips=state.lists.length?\`<div class="chips">\${state.lists.map(x=>\`<button class="chip \${state.listId===x.id?"active":""}" data-list="\${x.id}">\${esc(x.title)}</button>\`).join("")}<button class="chip" data-action="newlist">＋ 리스트</button></div>\`:"";
+    const tabs=`<div class="home-tabs"><button data-home-mode="home" class="${state.homeMode==="home"&&!state.listId?"active":""}">팔로잉</button><button data-home-mode="public" class="${state.homeMode==="public"&&!state.listId?"active":""}">공개</button></div>`;
+    const chips=state.lists.length?`<div class="chips">${state.lists.map(x=>`<button class="chip ${state.listId===x.id?"active":""}" data-list="${x.id}">${esc(x.title)}</button>`).join("")}<button class="chip" data-action="newlist">＋ 리스트</button></div>`:"";
     $("#app").innerHTML=shell(state.listId?(state.lists.find(x=>x.id===state.listId)?.title||"리스트"):"홈",tabs+chips+(data.length?data.map(statusCard).join(""):'<div class="center">표시할 게시물이 없어요.</div>'),{fab:true});
-  }catch(e){$("#app").innerHTML=shell("홈",\`<div class="center">타임라인을 불러오지 못했어요.<br><br>\${esc(e.message)}<br><br><button class="primary" data-action="reload">다시 시도</button></div>\`,{fab:true})}
+  }catch(e){$("#app").innerHTML=shell("홈",`<div class="center">타임라인을 불러오지 못했어요.<br><br>${esc(e.message)}<br><br><button class="primary" data-action="reload">다시 시도</button></div>`,{fab:true})}
   state.busy=false; bind();
 }
 
@@ -168,22 +168,22 @@ async function notificationsView(mentionsOnly=false){
     const query={limit:"40"}; if(mentionsOnly) query["types[]"]="mention";
     const n=await api("/api/v1/notifications",{query});
     const labels={mention:"나를 멘션했어요",follow:"나를 팔로우했어요",follow_request:"팔로우를 요청했어요",favourite:"내 게시물을 좋아해요",reblog:"내 게시물을 부스트했어요",poll:"투표가 종료됐어요",status:"새 게시물을 올렸어요",update:"게시물을 수정했어요"};
-    const tabs=\`<div class="notify-tabs"><button data-notify="all" class="\${mentionsOnly?"":"active"}">전체</button><button data-notify="mention" class="\${mentionsOnly?"active":""}">멘션</button></div>\`;
+    const tabs=`<div class="notify-tabs"><button data-notify="all" class="${mentionsOnly?"":"active"}">전체</button><button data-notify="mention" class="${mentionsOnly?"active":""}">멘션</button></div>`;
     const rows=n.length?n.map(x=>{
       const glyph=x.type==="mention"?"@":x.type==="favourite"?"♥":x.type==="reblog"?"↻":(x.type==="follow"||x.type==="follow_request")?"+":"♢";
-      return \`<div class="row"><div class="notification-mark \${esc(x.type)}">\${glyph}</div><div class="grow"><div class="row-title"><img class="avatar" style="width:36px;height:36px" src="\${esc(x.account?.avatar_static||x.account?.avatar||"")}" alt=""><b>\${esc(x.account?.display_name||x.account?.username||"알림")} · \${esc(labels[x.type]||x.type)}</b></div>\${x.status?\`<div class="content" style="color:var(--sub);font-size:15px;max-height:88px;overflow:hidden">\${esc(plain(x.status.content||""))}</div>\`:""}</div></div>\`;
+      return `<div class="row"><div class="notification-mark ${esc(x.type)}">${glyph}</div><div class="grow"><div class="row-title"><img class="avatar" style="width:36px;height:36px" src="${esc(x.account?.avatar_static||x.account?.avatar||"")}" alt=""><b>${esc(x.account?.display_name||x.account?.username||"알림")} · ${esc(labels[x.type]||x.type)}</b></div>${x.status?`<div class="content" style="color:var(--sub);font-size:15px;max-height:88px;overflow:hidden">${esc(plain(x.status.content||""))}</div>`:""}</div></div>`;
     }).join(""):'<div class="center">새 알림이 없어요.</div>';
     $("#app").innerHTML=shell("알림",tabs+rows);bind()
-  }catch(e){$("#app").innerHTML=shell("알림",\`<div class="center">\${esc(e.message)}</div>\`);bind()}
+  }catch(e){$("#app").innerHTML=shell("알림",`<div class="center">${esc(e.message)}</div>`);bind()}
 }
 
 async function dmView(){
   renderLoadingShell("메시지");
   try{
     const cs=await api("/api/v1/conversations",{query:{limit:"30"}});
-    const body=cs.length?cs.map(c=>{const a=c.accounts?.[0],txt=c.last_status?plain(c.last_status.content):"";return \`<button class="row" data-conv="\${c.id}"><img class="avatar" style="width:48px;height:48px" src="\${esc(a?.avatar_static||a?.avatar||"")}" alt=""><div class="grow"><div class="row-title"><b>\${esc(a?.display_name||a?.username||"대화")}</b></div><div style="color:var(--sub);font-size:15px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">\${esc(txt)}</div></div>\${c.unread?'<span class="badge"></span>':""}</button>\`}).join(""):'<div class="center">대화가 없어요.</div>';
+    const body=cs.length?cs.map(c=>{const a=c.accounts?.[0],txt=c.last_status?plain(c.last_status.content):"";return `<button class="row" data-conv="${c.id}"><img class="avatar" style="width:48px;height:48px" src="${esc(a?.avatar_static||a?.avatar||"")}" alt=""><div class="grow"><div class="row-title"><b>${esc(a?.display_name||a?.username||"대화")}</b></div><div style="color:var(--sub);font-size:15px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(txt)}</div></div>${c.unread?'<span class="badge"></span>':""}</button>`}).join(""):'<div class="center">대화가 없어요.</div>';
     $("#app").innerHTML=shell("메시지",body);bind(); state._conversations=cs;
-  }catch(e){$("#app").innerHTML=shell("메시지",\`<div class="center">\${esc(e.message)}</div>\`);bind()}
+  }catch(e){$("#app").innerHTML=shell("메시지",`<div class="center">${esc(e.message)}</div>`);bind()}
 }
 
 async function openConversation(id){
@@ -297,7 +297,7 @@ async function showProfileListManager(){
 }
 
 async function searchView(){
-  $("#app").innerHTML=shell("검색",\`<div class="search-box"><input id="searchInput" class="field" placeholder="사람, 게시물, 해시태그 검색"><button class="primary" data-action="runsearch">검색</button></div><div id="searchResults" class="center">검색어를 입력해 주세요.</div>\`);bind();
+  $("#app").innerHTML=shell("검색",`<div class="search-box"><input id="searchInput" class="field" placeholder="사람, 게시물, 해시태그 검색"><button class="primary" data-action="runsearch">검색</button></div><div id="searchResults" class="center">검색어를 입력해 주세요.</div>`);bind();
 }
 async function runSearch(){
   const q=$("#searchInput")?.value.trim(); if(!q)return;
@@ -305,8 +305,8 @@ async function runSearch(){
   try{
     const r=await api("/api/v2/search",{query:{q,resolve:"true",limit:"20"}});
     let html="";
-    if(r.accounts?.length){html+=\`<div class="section-title">사람</div>\`+r.accounts.map(a=>\`<div class="row"><img class="avatar" style="width:48px;height:48px" src="\${esc(a.avatar_static||a.avatar||"")}" alt=""><div class="grow"><b>\${esc(a.display_name||a.username)}</b><div class="muted">@\${esc(a.acct)}</div></div></div>\`).join("")}
-    if(r.statuses?.length){html+=\`<div class="section-title">게시물</div>\`+r.statuses.map(statusCard).join("")}
+    if(r.accounts?.length){html+=`<div class="section-title">사람</div>`+r.accounts.map(a=>`<div class="row"><img class="avatar" style="width:48px;height:48px" src="${esc(a.avatar_static||a.avatar||"")}" alt=""><div class="grow"><b>${esc(a.display_name||a.username)}</b><div class="muted">@${esc(a.acct)}</div></div></div>`).join("")}
+    if(r.statuses?.length){html+=`<div class="section-title">게시물</div>`+r.statuses.map(statusCard).join("")}
     box.className="";box.innerHTML=html||'<div class="center">검색 결과가 없어요.</div>';bind();
   }catch(e){box.className="center";box.textContent=e.message}
 }
@@ -323,19 +323,19 @@ function openDrawer(){
   closeDrawer();
   const m=state.me||{}, shade=document.createElement("div");
   shade.className="drawer-shade";
-  shade.innerHTML=\`<aside class="drawer">
-    <img class="drawer-avatar" src="\${esc(m.avatar_static||m.avatar||"")}" alt="">
-    <div class="drawer-name">\${esc(m.display_name||m.username||"렌톤")}</div>
-    <div class="drawer-handle">@\${esc(m.acct||state.session?.host||"")}</div>
-    <div class="drawer-counts"><b>\${m.following_count||0}</b> 팔로잉&nbsp;&nbsp;&nbsp;<b>\${m.followers_count||0}</b> 팔로워</div>
+  shade.innerHTML=`<aside class="drawer">
+    <img class="drawer-avatar" src="${esc(m.avatar_static||m.avatar||"")}" alt="">
+    <div class="drawer-name">${esc(m.display_name||m.username||"렌톤")}</div>
+    <div class="drawer-handle">@${esc(m.acct||state.session?.host||"")}</div>
+    <div class="drawer-counts"><b>${m.following_count||0}</b> 팔로잉&nbsp;&nbsp;&nbsp;<b>${m.followers_count||0}</b> 팔로워</div>
     <div class="drawer-divider"></div>
     <button class="drawer-row" data-drawer="profile"><span class="glyph">♙</span>프로필</button>
     <button class="drawer-row" data-drawer="bookmarks"><span class="glyph">▢</span>북마크</button>
     <button class="drawer-row" data-drawer="lists"><span class="glyph">☷</span>리스트</button>
     <button class="drawer-row" data-drawer="followrequests"><span class="glyph">♧</span>팔로우 요청</button>
     <button class="drawer-row" data-drawer="settings"><span class="glyph">⚙</span>설정</button>
-    <button class="drawer-row" data-drawer="theme"><span class="glyph">\${state.theme==="dark"?"☀":"◐"}</span>\${state.theme==="dark"?"라이트 모드":"다크 모드"}</button>
-  </aside>\`;
+    <button class="drawer-row" data-drawer="theme"><span class="glyph">${state.theme==="dark"?"☀":"◐"}</span>${state.theme==="dark"?"라이트 모드":"다크 모드"}</button>
+  </aside>`;
   document.body.append(shade);
   shade.addEventListener("click",e=>{if(e.target===shade)closeDrawer()});
   shade.querySelectorAll("[data-drawer]").forEach(b=>b.onclick=async()=>{
@@ -370,27 +370,27 @@ async function pushDiagnostics(){
 async function settingsView(){
   const d=await pushDiagnostics();
   const notif=("Notification"in window)?Notification.permission:"unsupported";
-  const body=\`<div class="settings">
-    \${!standalone()?'<div class="install-card"><b>홈 화면에 설치하기</b><p>Safari 공유 버튼 → 홈 화면에 추가 → 웹 앱으로 열기</p></div>':""}
+  const body=`<div class="settings">
+    ${!standalone()?'<div class="install-card"><b>홈 화면에 설치하기</b><p>Safari 공유 버튼 → 홈 화면에 추가 → 웹 앱으로 열기</p></div>':""}
     <div class="section"><h3>빠른 알림</h3>
-      <div class="kv"><span>홈 화면 웹앱</span><b class="\${standalone()?"ok":"bad"}">\${standalone()?"예":"아니오"}</b></div>
-      <div class="kv"><span>Web Push 지원</span><b class="\${d.supported?"ok":"bad"}">\${d.supported?"지원":"미지원"}</b></div>
-      <div class="kv"><span>알림 권한</span><b>\${esc(notif)}</b></div>
-      <div class="kv"><span>Push 등록</span><b class="\${d.regd?"ok":"bad"}">\${d.regd?"등록됨":"미등록"}</b></div>
-      <div class="kv"><span>마지막 Push 수신</span><b>\${esc(d.last)}</b></div>
-      \${state.pushError?\`<div class="notice bad">\${esc(state.pushError)}</div>\`:""}
+      <div class="kv"><span>홈 화면 웹앱</span><b class="${standalone()?"ok":"bad"}">${standalone()?"예":"아니오"}</b></div>
+      <div class="kv"><span>Web Push 지원</span><b class="${d.supported?"ok":"bad"}">${d.supported?"지원":"미지원"}</b></div>
+      <div class="kv"><span>알림 권한</span><b>${esc(notif)}</b></div>
+      <div class="kv"><span>Push 등록</span><b class="${d.regd?"ok":"bad"}">${d.regd?"등록됨":"미등록"}</b></div>
+      <div class="kv"><span>마지막 Push 수신</span><b>${esc(d.last)}</b></div>
+      ${state.pushError?`<div class="notice bad">${esc(state.pushError)}</div>`:""}
       <div class="setting-row"><button class="primary" data-action="enablepush">빠른 알림 켜기 / 재등록</button></div>
     </div>
     <div class="section"><h3>화면</h3>
       <div class="setting-row"><b>모드</b><select id="themeSel" class="field" style="height:46px;margin-top:8px"><option value="system">시스템</option><option value="light">라이트</option><option value="dark">다크</option></select></div>
-      <div class="setting-row"><b>강조색</b><input id="accentSel" type="color" value="\${esc(state.accent)}" style="width:54px;height:38px;border:0;background:none;margin-top:8px"></div>
+      <div class="setting-row"><b>강조색</b><input id="accentSel" type="color" value="${esc(state.accent)}" style="width:54px;height:38px;border:0;background:none;margin-top:8px"></div>
     </div>
     <div class="section"><h3>계정</h3>
-      <div class="setting-row"><b>서버</b><span>\${esc(state.session.host)}</span></div>
+      <div class="setting-row"><b>서버</b><span>${esc(state.session.host)}</span></div>
       <div class="setting-row"><button class="danger" data-action="logout">로그아웃</button></div>
     </div>
     <div class="section"><h3>버전</h3><div class="setting-row"><b>렌톤 Web</b><span>PWA preview · Android v0.25.17 UI 기준</span></div></div>
-  </div>\`;
+  </div>`;
   $("#app").innerHTML=shell("설정",body,{gear:false});
   $("#themeSel").value=state.theme; bind();
 }
@@ -408,7 +408,7 @@ function render(){
 async function statusAction(id,kind){
   try{
     const map={fav:"favourite",boost:"reblog",bookmark:"bookmark"};
-    await api(\`/api/v1/statuses/\${id}/\${map[kind]}\`,{method:"POST",form:{}});
+    await api(`/api/v1/statuses/${id}/${map[kind]}`,{method:"POST",form:{}});
     toast(kind==="fav"?"좋아요 완료":kind==="boost"?"부스트 완료":"북마크 완료");
     if(state.view==="home")render();
   }catch(e){toast(e.message)}
