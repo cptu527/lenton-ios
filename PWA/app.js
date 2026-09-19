@@ -151,9 +151,13 @@ async function api(path,{method="GET",form=null,query=null}={}){
 }
 
 async function beginLogin(){
-  const input=$("#server"); const host=normalizeHost(input?.value||"");
+  const input=$("#server");const host=normalizeHost(input?.value||"");
+  return beginLoginForHost(host);
+}
+async function beginLoginForHost(rawHost){
+  const host=normalizeHost(rawHost||"");
   if(!host||!host.includes(".")){toast("서버 주소를 확인해주세요.");return}
-  state.busy=true; render();
+  state.busy=true;if(!document.querySelector(".drawer-shade"))render();
   try{
     const scopes="read write push";
     const body=new URLSearchParams({client_name:"Lenton Web",redirect_uris:REDIRECT_URI,scopes,website:location.origin});
@@ -163,8 +167,7 @@ async function beginLogin(){
       const meta=await rawFetch(host,"/.well-known/oauth-authorization-server");
       pkce=Array.isArray(meta.code_challenge_methods_supported)&&meta.code_challenge_methods_supported.includes("S256");
     }catch{}
-    const verifier=pkce?randB64(48):null;
-    const stateToken=randB64(24);
+    const verifier=pkce?randB64(48):null,stateToken=randB64(24);
     const pending={host,client_id:reg.client_id,client_secret:reg.client_secret,vapid_key:reg.vapid_key||null,verifier,state:stateToken,scopes};
     sessionStorage.setItem("lenton_oauth_pending",JSON.stringify(pending));
     const u=new URL(`https://${host}/oauth/authorize`);
@@ -173,7 +176,6 @@ async function beginLogin(){
     location.href=u.toString();
   }catch(e){toast("로그인 준비 실패: "+e.message);state.busy=false;render()}
 }
-
 async function finishOAuth(){
   const q=new URLSearchParams(location.search), code=q.get("code"); if(!code) return false;
   const pending=JSON.parse(sessionStorage.getItem("lenton_oauth_pending")||"null");
@@ -186,6 +188,62 @@ async function finishOAuth(){
   store.set("lenton_session",state.session);sessionStorage.removeItem("lenton_oauth_pending");
   history.replaceState({},document.title,REDIRECT_URI);
   return true;
+}
+
+function savedAccounts(){return store.get("lenton_accounts",[])||[]}
+function saveCurrentAccount(){
+  if(!state.session||!state.me)return;
+  const list=savedAccounts(),key=state.session.host+"|"+state.me.id;
+  const entry={key,id:state.me.id,host:state.session.host,acct:state.me.acct,display_name:state.me.display_name||state.me.username,avatar:state.me.avatar_static||state.me.avatar||"",session:state.session};
+  const i=list.findIndex(x=>x.key===key);if(i>=0)list[i]=entry;else list.push(entry);
+  store.set("lenton_accounts",list);
+}
+function resetAccountState(){
+  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.homeMode="home";state.scrolls={};
+}
+async function switchSavedAccount(index){
+  const list=savedAccounts(),entry=list[index];if(!entry?.session)return;
+  rememberScroll();state.session=entry.session;store.set("lenton_session",state.session);resetAccountState();
+  try{state.me=await api("/api/v1/accounts/verify_credentials");saveCurrentAccount();state.view="home";render();toast("계정을 전환했어요.")}
+  catch(e){toast("계정 전환 실패: "+e.message)}
+}
+function addAccountFlow(){
+  const host=prompt("추가할 Mastodon 서버 주소",state.session?.host||"");if(!host)return;
+  beginLoginForHost(host);
+}
+async function profileEditScreen(){
+  closeDrawer();
+  try{
+    if(!state.me)state.me=await api("/api/v1/accounts/verify_credentials");
+    const m=state.me;
+    const body=`<div class="profile-editor">
+      <label>표시 이름<input id="profileEditName" class="field" value="${esc(m.display_name||"")}"></label>
+      <label>소개<textarea id="profileEditNote" class="field">${esc(plain(m.note||""))}</textarea></label>
+      <label class="check-row"><input id="profileEditLocked" type="checkbox" ${m.locked?"checked":""}> 팔로우 요청 승인 필요</label>
+      <label>프로필 사진<input id="profileEditAvatar" type="file" accept="image/*"></label>
+      <label>헤더 이미지<input id="profileEditHeader" type="file" accept="image/*"></label>
+      <button class="primary profile-save" data-action="saveProfileEdit">저장</button>
+    </div>`;
+    $("#app").innerHTML=standaloneShell("프로필 편집",body);bind();
+  }catch(e){toast(e.message)}
+}
+async function saveProfileEdit(){
+  const fd=new FormData();
+  fd.append("display_name",$("#profileEditName")?.value||"");
+  fd.append("note",$("#profileEditNote")?.value||"");
+  fd.append("locked",$("#profileEditLocked")?.checked?"true":"false");
+  const avatar=$("#profileEditAvatar")?.files?.[0],header=$("#profileEditHeader")?.files?.[0];
+  if(avatar)fd.append("avatar",avatar);if(header)fd.append("header",header);
+  try{
+    state.me=await apiMultipart("/api/v1/accounts/update_credentials",fd,{method:"PATCH"});
+    saveCurrentAccount();toast("프로필을 저장했어요.");state.view="profile";render();
+  }catch(e){toast(e.message)}
+}
+function realtimeSettingsScreen(){
+  const on=store.get("lenton_realtime_indicator",true)!==false;
+  const body=`<div class="settings"><div class="section"><h3>실시간 연결 상태 표시</h3><div class="setting-row toggle-row"><span>상단에 연결 상태 표시</span><label><input id="realtimeToggle" type="checkbox" ${on?"checked":""}></label></div><div class="notice">온라인 상태와 네트워크 연결 여부를 작은 표시로 보여줍니다.</div></div></div>`;
+  $("#app").innerHTML=standaloneShell("실시간 연결 상태 표시 설정",body);
+  $("#realtimeToggle").onchange=e=>{store.set("lenton_realtime_indicator",e.target.checked);toast("설정을 저장했어요.")};bind();
 }
 
 function logout(){ if(!confirm("로그아웃할까요?"))return; store.del("lenton_session");state.session=null;state.me=null;render() }
@@ -215,7 +273,7 @@ function shell(title,body,opts={}){
     <header class="topbar lenton-topbar">
       <button class="topbar-avatar" data-action="drawer">${avatar}</button>
       <h1>${esc(title)}</h1>
-      <div class="topbar-actions">${right}</div>
+      ${store.get("lenton_realtime_indicator",true)!==false?`<span class="realtime-dot ${navigator.onLine?"online":"offline"}" title="${navigator.onLine?"온라인":"오프라인"}"></span>`:""}<div class="topbar-actions">${right}</div>
     </header>
     <main class="main">${body}</main>
     <nav class="bottom lenton-bottom">${navBar()}</nav>
@@ -609,13 +667,13 @@ async function bookmarksView(){
 
 function buildDrawerElement(){
   const m=state.me||{},shade=document.createElement("div");
-  const otherAccounts=(store.get("lenton_accounts")||[]).filter(x=>x&&x.avatar&&x.acct!==m.acct).slice(0,3);
+  const allAccounts=savedAccounts(),currentKey=state.session?.host+"|"+m.id;const otherAccounts=allAccounts.filter(x=>x&&x.avatar&&x.key!==currentKey).slice(0,3);
   shade.className="drawer-shade";
   shade.innerHTML=`<aside class="drawer lenton-drawer">
     <div class="drawer-account-strip">
       <img class="drawer-avatar" src="${esc(m.avatar_static||m.avatar||"")}" alt="">
       <div class="drawer-switchers">
-        ${otherAccounts.map((x,i)=>`<button class="drawer-account-btn" data-switch-account="${i}"><img class="drawer-switch-avatar" src="${esc(x.avatar)}" alt=""></button>`).join("")}
+        ${otherAccounts.map(x=>`<button class="drawer-account-btn" data-switch-account-key="${esc(x.key)}"><img class="drawer-switch-avatar" src="${esc(x.avatar)}" alt=""></button>`).join("")}
         <button class="drawer-add-account" data-drawer="addaccount">＋</button>
       </div>
     </div>
@@ -651,6 +709,9 @@ function buildDrawerElement(){
     else if(v==="realtime"){closeDrawer();realtimeSettingsScreen()}
     else if(v==="update"){closeDrawer();applyAutomaticUpdate();toast("최신 버전을 확인했어요.")}
     else if(v==="addaccount"){closeDrawer();addAccountFlow()}
+  });
+  shade.querySelectorAll("[data-switch-account-key]").forEach(b=>b.onclick=()=>{
+    const list=savedAccounts(),i=list.findIndex(x=>x.key===b.dataset.switchAccountKey);closeDrawer();if(i>=0)switchSavedAccount(i);
   });
   return shade;
 }
@@ -1346,6 +1407,7 @@ function bind(){
     else if(a==="newlist")newList()
     else if(a==="resetLayout")resetMainTabLayout()
     else if(a==="loadmorehome")loadMoreHome()
+    else if(a==="saveProfileEdit")saveProfileEdit()
     else if(a==="runsearch")runSearch()
     else if(a==="togglecw"){const body=b.closest(".status-main").querySelector("[data-cwbody]");body.style.display=body.style.display==="none"?"block":"none"}
     else if(a==="reply")replyById(b.dataset.id)
@@ -1408,7 +1470,7 @@ window.addEventListener("beforeinstallprompt",e=>e.preventDefault());
 window.addEventListener("popstate",()=>{});
 (async()=>{
   try{await registerSW();await finishOAuth()}catch(e){toast(e.message)}
-  if(state.session){try{state.me=await api("/api/v1/accounts/verify_credentials")}catch{store.del("lenton_session");state.session=null}}
+  if(state.session){try{state.me=await api("/api/v1/accounts/verify_credentials");saveCurrentAccount()}catch{store.del("lenton_session");state.session=null}}
   const q=new URLSearchParams(location.search);const deep=q.get("view");if(["home","notifications","dm","profile","settings"].includes(deep))state.view=deep;
   render();
   applyAutomaticUpdate();
