@@ -278,9 +278,9 @@ function shell(title,body,opts={}){
   const view=opts.view||state.view;
   let right="";
   if(view==="home"||view==="search"||view==="settings"){
-    right='<button class="top-icon search" data-view="search" aria-label="검색">${lentonIcon("search")}</button><button class="top-icon" data-action="topmenu" aria-label="더보기">${lentonIcon("more")}</button>';
+    right=`<button class="top-icon search" data-view="search" aria-label="검색">${lentonIcon("search")}</button><button class="top-icon" data-action="topmenu" aria-label="더보기">${lentonIcon("more")}</button>`;
   }else if(view==="notifications"){
-    right='<button class="top-icon" data-action="topmenu" aria-label="더보기">${lentonIcon("more")}</button>';
+    right=`<button class="top-icon" data-action="topmenu" aria-label="더보기">${lentonIcon("more")}</button>`;
   }
   return `<div class="app lenton-view-${esc(view)}">
     <header class="topbar lenton-topbar">
@@ -338,7 +338,7 @@ function statusCard(raw){
       <div class="status-main">
         <div class="lenton-status-top">
           <button class="author-line" data-profile="${esc(a.id||"")}"><span class="name">${renderEmojiText(a.display_name||a.username||"",a.emojis||[])}</span><span class="acctline">&nbsp;@${esc(a.acct||"")} · ${fmtTime(st.created_at)}</span></button>
-          <button class="status-more" data-action="statusmenu" data-id="${st.id}" aria-label="더보기">⋮</button>
+          <button class="status-more" data-action="statusmenu" data-id="${st.id}" aria-label="더보기">${lentonIcon("more")}</button>
         </div>
         ${cw}<div class="content"${hidden}>${renderRichText(st.content||"")}</div>
         ${mediaMarkup(st.media_attachments||[])}
@@ -499,13 +499,13 @@ async function notificationsView(replyMentions=false){
     const rows=n.length?n.map(x=>{
       const a=x.account||{}, st=x.status||null;
       if(st){
-        const replyMeta=st.in_reply_to_id?`<div class="notify-reply-meta">카이덴 로웰에게 보내는 답글</div>`:"";
+        const replyTarget=state.me?.display_name||state.me?.username||"나"; const replyMeta=st.in_reply_to_id?`<div class="notify-reply-meta">${renderEmojiText(replyTarget,state.me?.emojis||[])}에게 보내는 답글</div>`:"";
         const isNew=(new Date(x.created_at||0).getTime()||0)>seenAt; return `<article class="notify-status ${isNew?"notification-new":""}" data-notification-id="${esc(x.id||"")}">
           <img class="notify-avatar" data-profile="${esc(a.id||"")}" src="${esc(a.avatar_static||a.avatar||"")}" alt="">
           <div class="notify-body">
             <div class="notify-head">
               <div><b>${renderEmojiText(a.display_name||a.username||"알림",a.emojis||[])}</b> <span>@${esc(a.acct||"")} · ${fmtTime(x.created_at)}</span></div>
-              <button class="status-more" data-action="statusmenu" data-id="${esc(st.id||"")}">⋮</button>
+              <button class="status-more" data-action="statusmenu" data-id="${esc(st.id||"")}">${lentonIcon("more")}</button>
             </div>
             ${replyMeta}
             <div class="notify-content">${renderRichText(st.content||"")}</div>
@@ -604,7 +604,7 @@ async function openProfile(id,replies=false){
     const query={limit:"25"}; if(!state.profileReplies)query.exclude_replies="true";
     const statuses=await api(`/api/v1/accounts/${id}/statuses`,{query});
     state.profileAccount=a; state.profileRelationship=relationship;
-    const more='<button class="profile-more" data-action="profileMenu" aria-label="프로필 관리">⋮</button>';
+    const more=`<button class="profile-more" data-action="profileMenu" aria-label="프로필 관리">${lentonIcon("more")}</button>`;
     $("#app").innerHTML=standaloneShell("프로필",profileMarkup(a,{own:false,replies:state.profileReplies,relationship})+(statuses.length?statuses.map(statusCard).join(""):'<div class="center">게시물이 없어요.</div>'),more);bind();
   }catch(e){$("#app").innerHTML=standaloneShell("프로필",`<div class="center">${esc(e.message)}</div>`);bind()}
 }
