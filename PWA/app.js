@@ -1390,6 +1390,23 @@ async function uploadComposerFile(file){
   try{return await apiMultipart("/api/v2/media",fd)}
   catch{return await apiMultipart("/api/v1/media",fd)}
 }
+function composeToolMarkup(ct={}){
+  const order=Array.isArray(ct.toolOrder)&&ct.toolOrder.length?ct.toolOrder:["photo","camera","gif","poll","cw","plus"];
+  const enabled={
+    photo:ct.hasPhoto!==false,camera:ct.hasCamera!==false,gif:ct.hasGif!==false,
+    poll:ct.hasPoll!==false,cw:ct.cw!==""&&ct.cw!==false,plus:ct.hasThread!==false
+  };
+  const html={
+    photo:'<button type="button" id="composeAttach" aria-label="사진">▧</button>',
+    camera:'<button type="button" id="composeCamera" aria-label="카메라">◉</button>',
+    gif:'<button type="button" id="composeGif" aria-label="GIF">GIF</button>',
+    poll:'<button type="button" id="composePoll" aria-label="투표">☷</button>',
+    cw:'<button type="button" class="compose-cw-toggle" id="composeCW" aria-label="CW">CW</button>',
+    plus:'<button type="button" class="part-add" id="addPart" aria-label="타래 추가">＋</button>'
+  };
+  return order.filter(x=>enabled[x]&&html[x]).map(x=>html[x]).join("")+
+    '<button type="button" id="composeEmoji" class="compose-emoji-secondary" aria-label="서버 이모지">☺</button>';
+}
 function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
   let historyPushed=false;
   let parts=[{text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[],poll:null}];
@@ -1436,13 +1453,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
         </div></div>
       </div>`).join("")}</div>
       <div class="compose-tools android-compose-tools">
-        <button type="button" id="composeAttach" aria-label="사진">▧</button>
-        <button type="button" id="composeCamera" aria-label="카메라">◉</button>
-        <button type="button" id="composeGif" aria-label="GIF">GIF</button>
-        <button type="button" id="composePoll" aria-label="투표">☷</button>
-        <button type="button" class="compose-cw-toggle" id="composeCW" aria-label="CW">CW</button>
-        <button type="button" class="part-add" id="addPart" aria-label="타래 추가">＋</button>
-        <button type="button" id="composeEmoji" class="compose-emoji-secondary" aria-label="서버 이모지">☺</button>
+        ${composeToolMarkup(ct)}
         <input id="composeFile" type="file" accept="image/*,video/*" multiple hidden>
         <input id="composeCameraFile" type="file" accept="image/*" capture="environment" hidden>
         <input id="composeGifFile" type="file" accept="image/gif" hidden>
@@ -1469,12 +1480,12 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
     m.querySelectorAll("[data-poll-expire]").forEach(x=>x.onchange=e=>{const pi=+e.currentTarget.dataset.pollExpire;if(parts[pi].poll)parts[pi].poll.expires=+e.currentTarget.value});
     m.querySelectorAll("[data-poll-multiple]").forEach(x=>x.onchange=e=>{const pi=+e.currentTarget.dataset.pollMultiple;if(parts[pi].poll)parts[pi].poll.multiple=e.currentTarget.checked});
     $("#composeVisibility",m).onchange=e=>visibility=e.target.value;
-    $("#addPart",m).onclick=()=>{parts.push({text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[],poll:null});activePart=parts.length-1;draw()};
-    $("#composeCW",m).onclick=()=>{parts[activePart].cw=!parts[activePart].cw;if(parts[activePart].cw&&!parts[activePart].spoiler&&reply?.spoiler_text)parts[activePart].spoiler=reply.spoiler_text;draw()};
+    $("#addPart",m)?.addEventListener("click",()=>{parts.push({text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[],poll:null});activePart=parts.length-1;draw()});
+    $("#composeCW",m)?.addEventListener("click",()=>{parts[activePart].cw=!parts[activePart].cw;if(parts[activePart].cw&&!parts[activePart].spoiler&&reply?.spoiler_text)parts[activePart].spoiler=reply.spoiler_text;draw()});
     $("#closeCompose",m).onclick=()=>{if(!confirmClose())return;if(historyPushed){window.__lentonComposeBypass=true;history.back()}else window.__lentonComposeClose?.()};
-    $("#composeAttach",m).onclick=()=>$("#composeFile",m).click();
-    $("#composeCamera",m).onclick=()=>$("#composeCameraFile",m).click();
-    $("#composeGif",m).onclick=()=>$("#composeGifFile",m).click();
+    $("#composeAttach",m)?.addEventListener("click",()=>$("#composeFile",m)?.click());
+    $("#composeCamera",m)?.addEventListener("click",()=>$("#composeCameraFile",m)?.click());
+    $("#composeGif",m)?.addEventListener("click",()=>$("#composeGifFile",m)?.click());
     $("#composePoll",m).onclick=()=>{
       const p=parts[activePart];
       p.poll=p.poll?null:{options:["",""],expires:86400,multiple:false};
