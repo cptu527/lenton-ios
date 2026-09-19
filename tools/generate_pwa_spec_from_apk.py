@@ -232,16 +232,49 @@ def detect_features(main_text: str):
     return checks
 
 def parse_action_glyphs(method: str):
-    calls=re.findall(r'addAction\([^,]+,\s*(?:([^,]+)\?\s*"([^"]+)"\s*:\s*"([^"]+)"|"([^"]+)")',method or "")
-    # Current Lenton action order is stable; source hash below protects structural drift.
-    return {
-        "reply":"○",
-        "boost":"↻",
-        "favouriteOff":"♡",
-        "favouriteOn":"♥",
-        "bookmarkOff":"▢",
-        "bookmarkOn":"▣",
-    }
+    out={"reply":"○","boost":"↻","favouriteOff":"♡","favouriteOn":"♥","bookmarkOff":"▢","bookmarkOn":"▣"}
+    literals=re.findall(r'"([^"]+)"',method or "")
+    # Prefer glyphs around action construction, but keep safe fallbacks.
+    for key,candidates in {
+      "reply":["○","↩","↪"],"boost":["↻","⟳"],"favouriteOff":["♡"],"favouriteOn":["♥"],
+      "bookmarkOff":["▢","☆"],"bookmarkOn":["▣","★"]
+    }.items():
+        for candidate in candidates:
+            if candidate in literals:
+                out[key]=candidate
+                break
+    return out
+
+def parse_notification_tabs(main_text: str):
+    allowed={"전체","멘션","답장할멘션"}
+    sig=re.compile(r'(?:private|public|protected)\s+[^\n{;]+\s+(\w+)\s*\([^)]*\)\s*\{')
+    best=[]
+    for m in sig.finditer(main_text):
+        block=extract_method(main_text,m.group(1))
+        if not block or "/api/v1/notifications" not in block:
+            continue
+        vals=first_matching_literals(block,allowed)
+        if len(vals)>=2:
+            best=vals[:2]
+            break
+    return best or ["전체","멘션"]
+
+def parse_notification_glyphs(text: str):
+    out={"mention":"@","favourite":"♥","reblog":"↻","follow":"+","follow_request":"+","default":"♢"}
+    m=extract_any_method(text,"notificationGlyph")
+    for key in ["mention","favourite","reblog","follow","follow_request"]:
+        mm=re.search(r'"'+re.escape(key)+r'".*?return"([^"]+)"',m,re.S)
+        if mm: out[key]=mm.group(1)
+    returns=re.findall(r'return"([^"]+)"',m)
+    if returns: out["default"]=returns[-1]
+    return out
+
+def parse_profile_counts(profile_method: str):
+    fields=[]
+    if "statuses_count" in (profile_method or ""): fields.append("statuses")
+    if "following_count" in (profile_method or ""): fields.append("following")
+    if "followers_count" in (profile_method or ""): fields.append("followers")
+    return fields or ["following","followers"]
 
 def notification_labels(text: str):
     defaults={
@@ -342,8 +375,10 @@ def build_spec(main_text: str, latest: dict, apk_sha: str, source_path: str):
         "drawerRows":drawer_rows,
         "actions":parse_action_glyphs(action_method),
         "profileTabs":profile_tabs,
+        "profileCounts":parse_profile_counts(profile_method),
+        "notificationTabs":parse_notification_tabs(main_text),
         "notificationLabels":notification_labels(main_text),
-        "notificationGlyphs":{"mention":"@","favourite":"♥","reblog":"↻","follow":"+","follow_request":"+","default":"♢"},
+        "notificationGlyphs":parse_notification_glyphs(main_text),
         "compose":compose_spec,
     }
 
