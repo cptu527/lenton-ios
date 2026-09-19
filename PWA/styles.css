@@ -1,4 +1,8 @@
 :root{
+  --android-topbar:62px;
+  --android-bottom:64px;
+  --android-avatar:46px;
+  --android-body:16px;
   --accent:#1d9bf0;
   --pink:#f91880;
   --green:#00ba7c;
@@ -24,7 +28,7 @@ img{display:block}
   min-height:100dvh;
   background:var(--bg);
   padding-top:env(safe-area-inset-top);
-  padding-bottom:calc(64px + env(safe-area-inset-bottom));
+  padding-bottom:calc(var(--android-bottom) + env(safe-area-inset-bottom));
 }
 .main{
   width:100%;
@@ -37,7 +41,7 @@ img{display:block}
   position:sticky;
   top:env(safe-area-inset-top);
   z-index:30;
-  height:62px;
+  height:var(--android-topbar);
   display:flex;
   align-items:center;
   gap:0;
@@ -87,7 +91,7 @@ img{display:block}
   position:fixed;
   left:0;right:0;bottom:0;
   z-index:40;
-  height:calc(64px + env(safe-area-inset-bottom));
+  height:calc(var(--android-bottom) + env(safe-area-inset-bottom));
   display:grid;
   grid-template-columns:repeat(4,1fr);
   padding:0 0 env(safe-area-inset-bottom);
@@ -97,7 +101,7 @@ img{display:block}
 }
 .bottom button{
   min-width:0;
-  height:64px;
+  height:var(--android-bottom);
   border:0;
   background:none;
   color:var(--fg);
@@ -249,7 +253,7 @@ img{display:block}
 }
 .status-head{display:flex;align-items:flex-start;gap:12px}
 .avatar{
-  width:46px;height:46px;
+  width:var(--android-avatar);height:var(--android-avatar);
   border-radius:50%;
   object-fit:cover;
   background:var(--line);
@@ -279,7 +283,7 @@ img{display:block}
 .content{
   padding:2px 0 6px;
   color:var(--fg);
-  font-size:16px;
+  font-size:var(--android-body);
   line-height:1.45;
   white-space:pre-wrap;
   overflow-wrap:anywhere;
