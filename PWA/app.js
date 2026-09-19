@@ -1721,7 +1721,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
     const visOptions=[["public","공개"],["unlisted","조용히 공개"],["private","팔로워만"],["direct","DM"]];
     m.innerHTML=`<div class="sheet compose-sheet">
       <div class="sheet-head"><button class="iconbtn" id="closeCompose">×</button><h2>${reply?(ct.replyTitle||"답글"):(visibility==="direct"?"새 DM":(ct.newTitle||"새 게시물"))}</h2><button class="primary" id="sendCompose">${reply?(ct.replyButton||"답글"):(visibility==="direct"?"보내기":(ct.postButton||"게시"))}</button></div>
-      <div class="compose-meta-row${reply?" reply-visibility-row":""}"><select id="composeVisibility" class="compose-visibility" aria-label="공개 범위">${visOptions.map(x=>`<option value="${x[0]}" ${visibility===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select></div>
+      ${!reply?`<div class="compose-meta-row"><select id="composeVisibility" class="compose-visibility" aria-label="공개 범위">${visOptions.map(x=>`<option value="${x[0]}" ${visibility===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select></div>`:""}
       ${reply?replyContextRows()+`<button type="button" class="compose-reply-summary" id="replyRecipientPicker">${esc(replySummaryText())}</button>`:""}
       ${!reply&&recips.length?`<div class="recips">${recips.map((r,i)=>`<button data-r="${i}" class="${r.on?"":"off"}">${r.avatar?`<img src="${esc(r.avatar)}" alt="">`:""}<span>@${esc(r.acct)}</span></button>`).join("")}</div>`:""}
       <div id="parts">${parts.map((p,i)=>`<div class="part ${i===activePart?"active":""}" data-p="${i}">
@@ -1740,6 +1740,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
           ${p.media.length?`<div class="compose-media">${p.media.map((x,j)=>`<div class="compose-media-item"><img src="${esc(x.preview_url||x.url||"")}" alt=""><button data-remove-media="${i}:${j}">×</button></div>`).join("")}</div>`:""}
         </div></div>
       </div>`).join("")}</div>
+      ${reply?`<div class="compose-meta-row reply-visibility-row"><select id="composeVisibility" class="compose-visibility" aria-label="공개 범위">${visOptions.map(x=>`<option value="${x[0]}" ${visibility===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select></div>`:""}
       <div class="compose-tools android-compose-tools">
         ${composeToolMarkup(ct,!!reply)}
         <input id="composeFile" type="file" accept="image/*,video/*" multiple hidden>
