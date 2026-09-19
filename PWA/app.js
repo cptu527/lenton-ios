@@ -14,7 +14,7 @@ const state = {
   session: store.get("lenton_session"),
   me:null, view:"home", homeMode:"home", listId:null, lists:[], busy:false,
   theme:store.get("lenton_theme","system"), accent:store.get("lenton_accent",ANDROID?.theme?.accent||"#1d9bf0"),
-  pushError:"", toast:"", currentConversation:null, profileReplies:false, profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}
+  pushError:"", toast:"", currentConversation:null, profileReplies:false, profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}
 };
 
 function accountScope(){
@@ -1068,6 +1068,130 @@ function gesturePoint(e){
   const t=e.changedTouches?.[0]||e.touches?.[0]||e;
   return {x:t.clientX||0,y:t.clientY||0,time:performance.now()};
 }
+function animateTransform(el,to,duration=180){
+  if(!el)return Promise.resolve();
+  return new Promise(resolve=>{
+    el.style.transition=`transform ${duration}ms cubic-bezier(.2,.75,.25,1)`;
+    requestAnimationFrame(()=>{el.style.transform=`translate3d(${to}px,0,0)`});
+    setTimeout(resolve,duration+24);
+  });
+}
+function buildSwipePreview(html,className){
+  const p=document.createElement("div");p.className=className;
+  p.innerHTML=html||'<div class="swipe-empty"></div>';
+  document.body.append(p);return p;
+}
+function previewForMainView(view){
+  if(state.pageCache[view])return state.pageCache[view];
+  const title=view==="home"?"홈":view==="search"?"검색":view==="notifications"?"알림":"메시지";
+  return `<div class="app"><header class="topbar lenton-topbar"><h1>${title}</h1></header><main class="main"><div class="center">불러오는 중…</div></main></div>`;
+}
+function attachInteractiveMainSwipe(bottom){
+  if(!bottom||bottom.dataset.interactiveSwipe==="1")return;
+  bottom.dataset.interactiveSwipe="1";
+  let start=null,active=false,target=null,preview=null,current=null,width=0,dir=0;
+  const cleanup=()=>{
+    if(current){current.style.transition="";current.style.transform="";current.classList.remove("swipe-moving")}
+    preview?.remove();preview=null;start=null;active=false;target=null;current=null;dir=0;
+  };
+  bottom.addEventListener("touchstart",e=>{
+    if(e.touches?.length!==1)return;
+    start=gesturePoint(e);active=false;target=null;current=document.querySelector("#app>.app");width=window.innerWidth||document.documentElement.clientWidth;
+  },{passive:true});
+  bottom.addEventListener("touchmove",e=>{
+    if(!start||e.touches?.length!==1||!current)return;
+    const p=gesturePoint(e),dx=p.x-start.x,dy=p.y-start.y;
+    if(!active){
+      if(Math.abs(dy)>18&&Math.abs(dy)>=Math.abs(dx)){cleanup();return}
+      if(Math.abs(dx)<10||Math.abs(dx)<=Math.abs(dy)*1.25)return;
+      const order=visibleNavItems().map(x=>x.id),i=order.indexOf(state.view);
+      dir=dx<0?1:-1;target=order[i+dir]||null;active=true;
+      if(target){
+        preview=buildSwipePreview(previewForMainView(target),"main-swipe-preview");
+        preview.style.transform=`translate3d(${dir>0?width:-width}px,0,0)`;
+      }
+      current.classList.add("swipe-moving");current.style.transition="none";
+    }
+    if(!active)return;
+    e.preventDefault();
+    const raw=dx,shown=target?raw:raw*.18;
+    current.style.transform=`translate3d(${shown}px,0,0)`;
+    if(preview)preview.style.transform=`translate3d(${shown+(dir>0?width:-width)}px,0,0)`;
+  },{passive:false});
+  bottom.addEventListener("touchend",async e=>{
+    if(!start||!current){cleanup();return}
+    const p=gesturePoint(e),dx=p.x-start.x,dt=Math.max(1,p.time-start.time),vx=dx/dt;
+    if(!active){cleanup();return}
+    const commit=!!target&&(Math.abs(dx)>width*.22||Math.abs(vx)>.65);
+    if(commit){
+      current.style.transition="transform 180ms cubic-bezier(.2,.75,.25,1)";
+      if(preview)preview.style.transition=current.style.transition;
+      requestAnimationFrame(()=>{
+        current.style.transform=`translate3d(${dir>0?-width:width}px,0,0)`;
+        if(preview)preview.style.transform="translate3d(0,0,0)";
+      });
+      await new Promise(r=>setTimeout(r,195));
+      rememberScroll();const next=target;cleanup();state.view=next;state.listId=null;render();
+    }else{
+      current.style.transition="transform 160ms cubic-bezier(.2,.75,.25,1)";
+      if(preview)preview.style.transition=current.style.transition;
+      requestAnimationFrame(()=>{
+        current.style.transform="translate3d(0,0,0)";
+        if(preview)preview.style.transform=`translate3d(${dir>0?width:-width}px,0,0)`;
+      });
+      setTimeout(cleanup,180);
+    }
+  },{passive:true});
+  bottom.addEventListener("touchcancel",cleanup,{passive:true});
+}
+function attachInteractiveHomeSwipe(main){
+  if(!main||main.dataset.homeSwipe==="1"||state.listId)return;
+  main.dataset.homeSwipe="1";
+  let start=null,active=false,target=null,preview=null,width=0,dir=0;
+  const cleanup=()=>{main.style.transition="";main.style.transform="";main.classList.remove("swipe-moving");preview?.remove();preview=null;start=null;active=false;target=null};
+  main.addEventListener("touchstart",e=>{
+    if(e.touches?.length!==1)return;const p=gesturePoint(e);if(p.x<=28)return;
+    start=p;width=window.innerWidth||document.documentElement.clientWidth;active=false;
+  },{passive:true});
+  main.addEventListener("touchmove",e=>{
+    if(!start||e.touches?.length!==1)return;
+    const p=gesturePoint(e),dx=p.x-start.x,dy=p.y-start.y;
+    if(!active){
+      if(Math.abs(dy)>18&&Math.abs(dy)>=Math.abs(dx)){cleanup();return}
+      if(Math.abs(dx)<10||Math.abs(dx)<=Math.abs(dy)*1.15)return;
+      dir=dx<0?1:-1;
+      target=dir>0?(state.homeMode==="home"?"public":null):(state.homeMode==="public"?"home":null);
+      active=true;main.classList.add("swipe-moving");main.style.transition="none";
+      if(target){
+        const html=state.homeCache[target]||'<div class="center">불러오는 중…</div>';
+        preview=buildSwipePreview(html,"home-swipe-preview");
+        preview.style.transform=`translate3d(${dir>0?width:-width}px,0,0)`;
+      }
+    }
+    if(!active)return;e.preventDefault();
+    const shown=target?dx:dx*.18;main.style.transform=`translate3d(${shown}px,0,0)`;
+    if(preview)preview.style.transform=`translate3d(${shown+(dir>0?width:-width)}px,0,0)`;
+  },{passive:false});
+  main.addEventListener("touchend",async e=>{
+    if(!start){cleanup();return}
+    const p=gesturePoint(e),dx=p.x-start.x,dt=Math.max(1,p.time-start.time),vx=dx/dt;
+    if(!active){cleanup();return}
+    const commit=!!target&&(Math.abs(dx)>width*.20||Math.abs(vx)>.65);
+    if(commit){
+      main.style.transition="transform 180ms cubic-bezier(.2,.75,.25,1)";
+      if(preview)preview.style.transition=main.style.transition;
+      requestAnimationFrame(()=>{main.style.transform=`translate3d(${dir>0?-width:width}px,0,0)`;if(preview)preview.style.transform="translate3d(0,0,0)"});
+      await new Promise(r=>setTimeout(r,195));
+      const mode=target;cleanup();rememberScroll();state.homeMode=mode;render();
+    }else{
+      main.style.transition="transform 160ms cubic-bezier(.2,.75,.25,1)";
+      if(preview)preview.style.transition=main.style.transition;
+      requestAnimationFrame(()=>{main.style.transform="translate3d(0,0,0)";if(preview)preview.style.transform=`translate3d(${dir>0?width:-width}px,0,0)`});
+      setTimeout(cleanup,180);
+    }
+  },{passive:true});
+  main.addEventListener("touchcancel",cleanup,{passive:true});
+}
 function attachSwipe(el,{onLeft,onRight,edgeOnly=false,threshold=40,ratio=1.25,startMaxX=28}={}){
   if(!el||el.dataset.lentonSwipe==="1")return;
   el.dataset.lentonSwipe="1";
@@ -1081,61 +1205,39 @@ function attachSwipe(el,{onLeft,onRight,edgeOnly=false,threshold=40,ratio=1.25,s
   el.addEventListener("touchmove",e=>{
     if(!tracking||!start||e.touches?.length!==1)return;
     const p=gesturePoint(e),dx=p.x-start.x,dy=p.y-start.y;
-    if(Math.abs(dx)>threshold&&Math.abs(dx)>Math.abs(dy)*ratio){
-      try{e.preventDefault()}catch{}
-    }else if(Math.abs(dy)>threshold&&Math.abs(dy)>=Math.abs(dx)){
-      tracking=false;
-    }
+    if(Math.abs(dx)>threshold&&Math.abs(dx)>Math.abs(dy)*ratio){try{e.preventDefault()}catch{}}
+    else if(Math.abs(dy)>threshold&&Math.abs(dy)>=Math.abs(dx))tracking=false;
   },{passive:false});
   el.addEventListener("touchend",e=>{
     if(!tracking||!start){start=null;tracking=false;return}
     const p=gesturePoint(e),dx=p.x-start.x,dy=p.y-start.y;
     const ok=Math.abs(dx)>threshold&&Math.abs(dx)>Math.abs(dy)*ratio;
-    start=null;tracking=false;
-    if(!ok)return;
-    if(dx<0)onLeft?.();else onRight?.();
+    start=null;tracking=false;if(!ok)return;if(dx<0)onLeft?.();else onRight?.();
   },{passive:true});
   el.addEventListener("touchcancel",()=>{start=null;tracking=false},{passive:true});
 }
 function moveMainView(dir){
   rememberScroll();
   const order=visibleNavItems().map(x=>x.id);
-  const i=order.indexOf(state.view);
-  if(i<0)return;
-  const n=i+dir;
-  if(n<0||n>=order.length)return;
+  const i=order.indexOf(state.view);if(i<0)return;const n=i+dir;if(n<0||n>=order.length)return;
   state.view=order[n];state.listId=null;render();
 }
 function attachLentonGestures(){
   const bottom=document.querySelector(".bottom");
-  attachSwipe(bottom,{onLeft:()=>moveMainView(1),onRight:()=>moveMainView(-1),threshold:40,ratio:1.25});
+  attachInteractiveMainSwipe(bottom);
 
   const app=document.querySelector(".app");
-  attachSwipe(app,{
-    edgeOnly:true,startMaxX:28,threshold:46,ratio:1.15,
-    onRight:()=>{if(!document.querySelector(".drawer-shade"))openDrawer()}
-  });
+  attachSwipe(app,{edgeOnly:true,startMaxX:28,threshold:46,ratio:1.15,onRight:()=>{if(!document.querySelector(".drawer-shade"))openDrawer()}});
 
   const drawer=document.querySelector(".drawer");
   attachSwipe(drawer,{onLeft:()=>closeDrawer(),threshold:46,ratio:1.15});
 
-  if(state.view==="home"){
-    const main=document.querySelector(".main");
-    attachSwipe(main,{
-      threshold:42,ratio:1.15,
-      onLeft:()=>{if(!state.listId&&state.homeMode!=="public"){state.homeMode="public";render()}},
-      onRight:()=>{if(!state.listId&&state.homeMode!=="home"){state.homeMode="home";render()}}
-    });
-  }
+  if(state.view==="home")attachInteractiveHomeSwipe(document.querySelector(".main"));
 
   const profileTabs=document.querySelector(".profile-info + .home-tabs,.profile-hero ~ .home-tabs");
   if(profileTabs){
     const host=profileTabs.parentElement||document.querySelector(".main");
-    attachSwipe(host,{
-      threshold:42,ratio:1.15,
-      onLeft:()=>{if(state.profileAccount)openProfile(state.profileAccount.id,true);else profileView(true)},
-      onRight:()=>{if(state.profileAccount)openProfile(state.profileAccount.id,false);else profileView(false)}
-    });
+    attachSwipe(host,{threshold:42,ratio:1.15,onLeft:()=>{if(state.profileAccount)openProfile(state.profileAccount.id,true);else profileView(true)},onRight:()=>{if(state.profileAccount)openProfile(state.profileAccount.id,false);else profileView(false)}});
   }
 }
 
@@ -1187,6 +1289,9 @@ function bind(){
   $("#searchInput")?.addEventListener("keydown",e=>{if(e.key==="Enter")runSearch()});
   $("#themeSel")?.addEventListener("change",e=>{state.theme=e.target.value;store.set("lenton_theme",state.theme);if(state.theme==="system")delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=state.theme});
   $("#accentSel")?.addEventListener("input",e=>{state.accent=e.target.value;store.set("lenton_accent",state.accent);document.documentElement.style.setProperty("--accent",state.accent)});
+  const appRoot=document.querySelector("#app>.app");
+  if(appRoot)state.pageCache[state.view]=$("#app").innerHTML;
+  if(state.view==="home"&&document.querySelector(".main"))state.homeCache[state.homeMode]=document.querySelector(".main").innerHTML;
   attachLentonGestures();
   restoreScroll();
 }
