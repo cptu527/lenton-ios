@@ -572,7 +572,7 @@ async function notificationsView(replyMentions=false){
     const n=await api("/api/v1/notifications",{query});
     const tabs=`<div class="notify-tabs lenton-notify-tabs">
       <button data-notify="all" class="${replyMentions?"":"active"}">전체</button>
-      <button data-notify="mention" class="${replyMentions?"active":""}">답장할멘션</button>
+      <button data-notify="mention" class="${replyMentions?"active":""}">멘션</button>
     </div><div class="notification-tools"><button data-action="clearNotifications">알림 지우기</button></div>`;
     const seenAt=Number(store.get(scopedKey("notifications_seen_at"),0)||0);
     const newest=n.reduce((m,x)=>Math.max(m,new Date(x.created_at||0).getTime()||0),seenAt);
@@ -760,11 +760,10 @@ function accentTextColor(){
 function standaloneShell(title,body,right=""){
   return `<div class="standalone-page"><header class="standalone-top"><button class="back" data-action="backScreen" aria-label="뒤로가기">‹</button><h1>${esc(title)}</h1>${right}</header><main class="main">${body}</main></div>`;
 }
+function normalizeProfileMode(mode){return mode==="replies"?"replies":"posts"}
 function profileQuery(mode){
   const q={limit:"25"};
   if(mode==="posts")q.exclude_replies="true";
-  else if(mode==="pinned")q.pinned="true";
-  else if(mode==="media")q.only_media="true";
   return q;
 }
 function profileMarkup(a,opts={}){
@@ -774,18 +773,18 @@ function profileMarkup(a,opts={}){
   const privateNote=own?"":'<div class="private-note-card" data-action="editPrivateNote" style="color:'+noteColor+'"><div class="label">비밀 메모</div><div class="note">'+esc(note.trim()?note:"메모를 추가하려면 탭하세요.")+'</div></div>';
   const header=a.header_static||a.header||"",avatar=a.avatar_static||a.avatar||"";
   const fields=(a.fields||[]).map(f=>'<div class="profile-field"><span>'+renderRichText(f.name||"")+'</span><b>'+renderRichText(f.value||"")+'</b></div>').join("");
-  const tabs=[["posts","게시물","profilePosts"],["replies","게시물과 답글","profileReplies"],["pinned","고정","profilePinned"],["media","미디어","profileMedia"]];
+  const tabs=[["posts","게시물","profilePosts"],["replies","답글","profileReplies"]];
   return '<div class="profile-hero">'+
     (header?'<button class="profile-header-button" data-media-url="'+esc(header)+'" data-media-alt="프로필 헤더"><img class="profile-header" src="'+esc(header)+'" alt=""></button>':'<div class="profile-header"></div>')+
     (avatar?'<button class="profile-avatar-button" data-media-url="'+esc(avatar)+'" data-media-alt="프로필 사진"><img class="profile-avatar" src="'+esc(avatar)+'" alt=""></button>':"")+
     '</div><div class="profile-info"><div class="profile-name-row"><div class="profile-names"><h2>'+renderEmojiText(a.display_name||a.username,a.emojis||[])+'</h2><div class="profile-handle">@'+esc(a.acct)+'</div></div>'+controls+'</div>'+
     '<div class="profile-bio">'+renderRichText(a.note||"")+'</div>'+(fields?'<div class="profile-fields">'+fields+'</div>':"")+privateNote+
     '<div class="profile-count-grid"><div><b>'+Number(a.statuses_count||0).toLocaleString()+'</b><span>게시물</span></div><div><b>'+Number(a.following_count||0).toLocaleString()+'</b><span>팔로잉</span></div><div><b>'+Number(a.followers_count||0).toLocaleString()+'</b><span>팔로워</span></div></div></div>'+
-    '<div class="profile-tabs-4">'+tabs.map(x=>'<button data-action="'+x[2]+'" class="'+(mode===x[0]?"active":"")+'">'+x[1]+'</button>').join("")+'</div>';
+    '<div class="profile-tabs-2">'+tabs.map(x=>'<button data-action="'+x[2]+'" class="'+(mode===x[0]?"active":"")+'">'+x[1]+'</button>').join("")+'</div>';
 }
 async function profileView(mode=state.profileMode||"posts"){
   if(typeof mode==="boolean")mode=mode?"replies":"posts";
-  state.profileAccount=null;state.profileRelationship=null;state.profileMode=mode;state.profileReplies=mode==="replies";
+  state.profileAccount=null;state.profileRelationship=null;mode=normalizeProfileMode(mode);state.profileMode=mode;state.profileReplies=mode==="replies";
   renderLoadingShell("프로필");
   try{
     if(!state.me)state.me=await api("/api/v1/accounts/verify_credentials");
@@ -796,7 +795,7 @@ async function profileView(mode=state.profileMode||"posts"){
 async function openProfile(id,mode=state.profileMode||"posts"){
   if(!id)return;if(typeof mode==="boolean")mode=mode?"replies":"posts";
   if(state.me?.id&&String(id)===String(state.me.id)){rememberScroll();state.view="profile";state.profileAccount=null;state.profileRelationship=null;state.profileMode=mode;return profileView(mode)}
-  rememberScroll();state.returnView=state.view;state.profileMode=mode;state.profileReplies=mode==="replies";
+  rememberScroll();state.returnView=state.view;mode=normalizeProfileMode(mode);state.profileMode=mode;state.profileReplies=mode==="replies";
   $("#app").innerHTML=standaloneShell("프로필",'<div class="center">불러오는 중…</div>');bind();
   try{
     const [a,rels,statuses]=await Promise.all([
@@ -1390,7 +1389,7 @@ async function uploadComposerFile(file){
 }
 function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
   let historyPushed=false;
-  let parts=[{text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[]}];
+  let parts=[{text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[],poll:null}];
   let visibility=forcedVisibility||reply?.visibility||"public",activePart=0,uploading=false;
   const recips=[];
   const addRecipient=a=>{if(a&&a.id!==state.me?.id&&!recips.some(x=>String(x.id)===String(a.id)))recips.push({...a,on:true})};
@@ -1398,7 +1397,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
   if(reply){
     addRecipient(reply.account);(reply.mentions||[]).forEach(addRecipient);
   }
-  const dirty=()=>parts.some(p=>p.text.trim()||p.spoiler.trim()||p.media.length);
+  const dirty=()=>parts.some(p=>p.text.trim()||p.spoiler.trim()||p.media.length||p.poll?.options?.some(x=>x.trim()));
   const confirmClose=()=>!dirty()||confirm("작성 중인 내용을 버릴까요?");
   const hydrateRecipients=async()=>{
     for(let i=0;i<recips.length;i++){
@@ -1422,17 +1421,28 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
         <div class="part-body"><img class="avatar" src="${esc(state.me?.avatar_static||state.me?.avatar||"")}" alt=""><div class="part-fields">
           ${p.cw?`<input type="text" data-sp="${i}" placeholder="내용 경고" value="${esc(p.spoiler)}">`:""}
           <textarea data-t="${i}" placeholder="${reply?"답글을 입력하세요":"무슨 일이 일어나고 있나요?"}">${esc(p.text)}</textarea>
+          ${p.poll?`<div class="compose-poll" data-poll-box="${i}">
+            ${p.poll.options.map((o,j)=>`<div class="compose-poll-option"><input data-poll-option="${i}:${j}" value="${esc(o)}" placeholder="선택지 ${j+1}">${p.poll.options.length>2?`<button type="button" data-poll-remove="${i}:${j}">×</button>`:""}</div>`).join("")}
+            <div class="compose-poll-settings">
+              <button type="button" data-poll-add="${i}" ${p.poll.options.length>=4?"disabled":""}>＋ 선택지</button>
+              <select data-poll-expire="${i}"><option value="300" ${p.poll.expires===300?"selected":""}>5분</option><option value="1800" ${p.poll.expires===1800?"selected":""}>30분</option><option value="3600" ${p.poll.expires===3600?"selected":""}>1시간</option><option value="21600" ${p.poll.expires===21600?"selected":""}>6시간</option><option value="86400" ${p.poll.expires===86400?"selected":""}>1일</option><option value="604800" ${p.poll.expires===604800?"selected":""}>7일</option></select>
+              <label><input type="checkbox" data-poll-multiple="${i}" ${p.poll.multiple?"checked":""}> 복수 선택</label>
+            </div>
+          </div>`:""}
           ${p.media.length?`<div class="compose-media">${p.media.map((x,j)=>`<div class="compose-media-item"><img src="${esc(x.preview_url||x.url||"")}" alt=""><button data-remove-media="${i}:${j}">×</button></div>`).join("")}</div>`:""}
         </div></div>
       </div>`).join("")}</div>
-      <div class="compose-tools">
-        <button type="button" id="composeAttach" aria-label="이미지 첨부">▧</button>
+      <div class="compose-tools android-compose-tools">
+        <button type="button" id="composeAttach" aria-label="사진">▧</button>
         <button type="button" id="composeCamera" aria-label="카메라">◉</button>
-        <button type="button" class="compose-cw-toggle" id="composeCW">CW</button>
-        <button type="button" id="composeEmoji" aria-label="이모지">☺</button>
-        <button type="button" class="part-add" id="addPart">＋ 타래</button>
+        <button type="button" id="composeGif" aria-label="GIF">GIF</button>
+        <button type="button" id="composePoll" aria-label="투표">☷</button>
+        <button type="button" class="compose-cw-toggle" id="composeCW" aria-label="CW">CW</button>
+        <button type="button" class="part-add" id="addPart" aria-label="타래 추가">＋</button>
+        <button type="button" id="composeEmoji" class="compose-emoji-secondary" aria-label="서버 이모지">☺</button>
         <input id="composeFile" type="file" accept="image/*,video/*" multiple hidden>
         <input id="composeCameraFile" type="file" accept="image/*" capture="environment" hidden>
+        <input id="composeGifFile" type="file" accept="image/gif" hidden>
       </div>
       <div id="emojiPicker" class="emoji-picker" hidden></div>
     </div>`;
@@ -1450,12 +1460,23 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
     m.querySelectorAll("[data-cw]").forEach(x=>x.addEventListener("change",e=>{parts[+e.target.dataset.cw].cw=e.target.checked;draw(false)}));
     m.querySelectorAll("[data-r]").forEach(x=>x.addEventListener("click",e=>{recips[+e.currentTarget.dataset.r].on=!recips[+e.currentTarget.dataset.r].on;draw(false)}));
     m.querySelectorAll("[data-remove-media]").forEach(x=>x.onclick=e=>{const [pi,mi]=e.currentTarget.dataset.removeMedia.split(":").map(Number);parts[pi].media.splice(mi,1);activePart=pi;draw(false)});
+    m.querySelectorAll("[data-poll-option]").forEach(x=>x.oninput=e=>{const [pi,oi]=e.currentTarget.dataset.pollOption.split(":").map(Number);if(parts[pi].poll)parts[pi].poll.options[oi]=e.currentTarget.value});
+    m.querySelectorAll("[data-poll-add]").forEach(x=>x.onclick=e=>{const pi=+e.currentTarget.dataset.pollAdd;if(parts[pi].poll&&parts[pi].poll.options.length<4)parts[pi].poll.options.push("");activePart=pi;draw(false)});
+    m.querySelectorAll("[data-poll-remove]").forEach(x=>x.onclick=e=>{const [pi,oi]=e.currentTarget.dataset.pollRemove.split(":").map(Number);if(parts[pi].poll&&parts[pi].poll.options.length>2)parts[pi].poll.options.splice(oi,1);activePart=pi;draw(false)});
+    m.querySelectorAll("[data-poll-expire]").forEach(x=>x.onchange=e=>{const pi=+e.currentTarget.dataset.pollExpire;if(parts[pi].poll)parts[pi].poll.expires=+e.currentTarget.value});
+    m.querySelectorAll("[data-poll-multiple]").forEach(x=>x.onchange=e=>{const pi=+e.currentTarget.dataset.pollMultiple;if(parts[pi].poll)parts[pi].poll.multiple=e.currentTarget.checked});
     $("#composeVisibility",m).onchange=e=>visibility=e.target.value;
-    $("#addPart",m).onclick=()=>{parts.push({text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[]});activePart=parts.length-1;draw()};
+    $("#addPart",m).onclick=()=>{parts.push({text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[],poll:null});activePart=parts.length-1;draw()};
     $("#composeCW",m).onclick=()=>{parts[activePart].cw=!parts[activePart].cw;if(parts[activePart].cw&&!parts[activePart].spoiler&&reply?.spoiler_text)parts[activePart].spoiler=reply.spoiler_text;draw()};
     $("#closeCompose",m).onclick=()=>{if(!confirmClose())return;if(historyPushed){window.__lentonComposeBypass=true;history.back()}else window.__lentonComposeClose?.()};
     $("#composeAttach",m).onclick=()=>$("#composeFile",m).click();
     $("#composeCamera",m).onclick=()=>$("#composeCameraFile",m).click();
+    $("#composeGif",m).onclick=()=>$("#composeGifFile",m).click();
+    $("#composePoll",m).onclick=()=>{
+      const p=parts[activePart];
+      p.poll=p.poll?null:{options:["",""],expires:86400,multiple:false};
+      draw(false);
+    };
     const handleComposeFiles=async filesLike=>{
       const files=[...filesLike].slice(0,Math.max(0,4-parts[activePart].media.length));
       if(!files.length)return;uploading=true;$("#sendCompose",m).disabled=true;toast("미디어 업로드 중…");
@@ -1467,6 +1488,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
     };
     $("#composeFile",m).onchange=async e=>{await handleComposeFiles(e.target.files)};
     $("#composeCameraFile",m).onchange=async e=>{await handleComposeFiles(e.target.files)};
+    $("#composeGifFile",m).onchange=async e=>{await handleComposeFiles(e.target.files)};
     $("#composeEmoji",m).onclick=async()=>{
       const box=$("#emojiPicker",m);box.hidden=!box.hidden;if(box.hidden)return;
       box.innerHTML='<div class="center">이모지 불러오는 중…</div>';
@@ -1481,7 +1503,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
     };
     $("#sendCompose",m).onclick=async()=>{
       if(uploading){toast("미디어 업로드가 끝날 때까지 기다려주세요.");return}
-      const valid=parts.filter(p=>p.text.trim()||p.media.length);if(!valid.length){toast("내용을 입력해주세요.");return}
+      const valid=parts.filter(p=>p.text.trim()||p.media.length||p.poll?.options?.some(x=>x.trim()));if(!valid.length){toast("내용을 입력해주세요.");return}
       const btn=$("#sendCompose",m);btn.disabled=true;btn.textContent="게시 중…";
       try{
         let replyId=reply?.id||null,prefix=recips.filter(x=>x.on).map(x=>"@"+x.acct).join(" ");
@@ -1492,6 +1514,13 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[]){
           form.append("spoiler_text",p.cw?p.spoiler.trim():"");
           if(replyId)form.append("in_reply_to_id",replyId);
           for(const media of p.media)if(media.id)form.append("media_ids[]",media.id);
+          if(p.poll){
+            const opts=p.poll.options.map(x=>x.trim()).filter(Boolean);
+            if(opts.length<2)throw new Error("투표 선택지는 2개 이상 입력해 주세요.");
+            for(const opt of opts)form.append("poll[options][]",opt);
+            form.append("poll[expires_in]",String(p.poll.expires||86400));
+            form.append("poll[multiple]",p.poll.multiple?"true":"false");
+          }
           const posted=await api("/api/v1/statuses",{method:"POST",form});replyId=posted.id;
         }
         window.__lentonComposeClose?.();if(historyPushed){window.__lentonComposeBypass=true;history.back()}toast(visibility==="direct"?"DM을 보냈어요.":"게시했어요.");if(visibility==="direct"){state.dmDraftRecipients=[];if(state.currentConversation?.id)openConversation(state.currentConversation.id);else{state.view="dm";render()}}else if(state.view==="home")render()
@@ -1759,7 +1788,7 @@ function attachDrawerCloseSwipe(drawer){
 function attachInteractiveProfileSwipe(host){
   if(!host||host.dataset.profileSwipe==="1")return;host.dataset.profileSwipe="1";
   let start=null,active=false,targetMode=null,preview=null,width=0,dir=0;
-  const modes=["posts","replies","pinned","media"],accountId=state.profileAccount?.id||state.me?.id||"me";
+  const modes=["posts","replies"],accountId=state.profileAccount?.id||state.me?.id||"me";
   const cleanup=()=>{host.style.transition="";host.style.transform="";host.classList.remove("swipe-moving");preview?.remove();preview=null;start=null;active=false;targetMode=null};
   host.addEventListener("touchstart",e=>{if(e.touches?.length!==1)return;const p=gesturePoint(e);if(p.x<=28)return;start=p;width=window.innerWidth||document.documentElement.clientWidth},{passive:true});
   host.addEventListener("touchmove",e=>{
@@ -1815,7 +1844,7 @@ function attachLentonGestures(){
   if(state.view==="home")attachInteractiveHomeSwipe(document.querySelector(".main"));
 
   attachStandaloneBackSwipe(document.querySelector(".standalone-page"));
-  const profileTabs=document.querySelector(".profile-tabs-4,.profile-info + .home-tabs,.profile-hero ~ .home-tabs");
+  const profileTabs=document.querySelector(".profile-tabs-2,.profile-info + .home-tabs,.profile-hero ~ .home-tabs");
   if(profileTabs){
     const host=document.querySelector(".standalone-page .main")||document.querySelector(".app .main");
     attachInteractiveProfileSwipe(host);
@@ -1864,8 +1893,6 @@ function bind(){
     else if(a==="replydm"){if(state.currentConversation?.last_status)compose(state.currentConversation.last_status,"direct")}
     else if(a==="profileReplies"){if(state.profileAccount)openProfile(state.profileAccount.id,"replies");else profileView("replies")}
     else if(a==="profilePosts"){if(state.profileAccount)openProfile(state.profileAccount.id,"posts");else profileView("posts")}
-    else if(a==="profilePinned"){if(state.profileAccount)openProfile(state.profileAccount.id,"pinned");else profileView("pinned")}
-    else if(a==="profileMedia"){if(state.profileAccount)openProfile(state.profileAccount.id,"media");else profileView("media")}
     else if(a==="profileEditOwn"){pushNavSnapshot();profileEditScreen()}
     else if(a==="profileMenu")openProfilePopup()
     else if(a==="editPrivateNote")editPrivateNote()
