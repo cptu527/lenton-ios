@@ -919,49 +919,99 @@ async function searchDmAccounts(q){
   }
 }
 async function newDmScreen(){
-  const selected=new Map((state.dmDraftRecipients||[]).filter(Boolean).map(a=>[String(a.id),a]));
-  $("#app").innerHTML=standaloneShell("새 DM",`
-    <div class="dm-new">
-      <div class="dm-recipient-search">
-        <input id="dmRecipientSearch" class="field" autocomplete="off" autocapitalize="none" placeholder="DM을 보낼 사람 검색">
-        <button class="primary" id="dmRecipientSearchBtn">검색</button>
+  state.currentConversation=null;
+  state.dmDraftRecipients=[];
+  const selected=new Map();
+  let following=[],shown=[],searchTimer=null,searchSeq=0;
+
+  $("#app").innerHTML=standaloneShell("새 메시지",`
+    <div class="dm-new dm-new-lenton">
+      <div class="dm-recipient-search lenton-dm-search">
+        <input id="dmRecipientSearch" class="field" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="사용자 검색">
       </div>
-      <div id="dmSelectedRecipients" class="dm-selected"></div>
-      <div id="dmRecipientResults" class="dm-results"><div class="center">사용자 이름이나 @아이디를 검색하세요.</div></div>
-      <button class="primary dm-start" id="dmStartCompose" disabled>선택한 사람에게 DM 보내기</button>
+      <div id="dmSelectedRecipients" class="dm-selected dm-selected-lenton"></div>
+      <div class="dm-list-heading" id="dmListHeading">팔로잉</div>
+      <div id="dmRecipientResults" class="dm-results dm-results-lenton"><div class="center">팔로잉 목록을 불러오는 중…</div></div>
+      <div class="dm-next-dock"><button class="primary dm-start dm-next" id="dmStartCompose" disabled>다음</button></div>
     </div>`);
   bind();
-  const drawSelected=()=>{
-    const box=$("#dmSelectedRecipients"),btn=$("#dmStartCompose");if(!box||!btn)return;
-    const a=[...selected.values()];
-    box.innerHTML=a.map(x=>`<button class="dm-selected-chip" data-dm-remove="${esc(x.id)}"><img src="${esc(x.avatar_static||x.avatar||"")}" alt=""><span>@${esc(x.acct||x.username||"")}</span> ×</button>`).join("");
-    btn.disabled=!a.length;btn.hidden=!a.length;
-    box.querySelectorAll("[data-dm-remove]").forEach(b=>b.onclick=()=>{selected.delete(String(b.dataset.dmRemove));drawSelected()});
+
+  const updateNext=()=>{
+    const btn=$("#dmStartCompose");if(!btn)return;
+    btn.disabled=selected.size===0;
   };
-  const run=async()=>{
-    const q=$("#dmRecipientSearch")?.value||"",box=$("#dmRecipientResults");if(!box)return;
-    if(!q.trim()){box.innerHTML='<div class="center">검색어를 입력하세요.</div>';return}
-    box.innerHTML='<div class="center">검색 중…</div>';
-    const found=(await searchDmAccounts(q)).filter(a=>a?.id&&a.id!==state.me?.id);
-    box.innerHTML=found.length?found.map(a=>`<button class="dm-person-row" data-dm-add="${esc(a.id)}">
-      <img class="avatar" src="${esc(a.avatar_static||a.avatar||"")}" alt="">
-      <span class="grow"><b>${renderEmojiText(a.display_name||a.username,a.emojis||[])}</b><small>@${esc(a.acct||"")}</small></span>
-      <span>${selected.has(String(a.id))?"선택됨":"＋"}</span>
-    </button>`).join(""):'<div class="center">검색 결과가 없어요.</div>';
-    box.querySelectorAll("[data-dm-add]").forEach(b=>b.onclick=()=>{
-      const a=found.find(x=>String(x.id)===String(b.dataset.dmAdd));if(!a)return;
-      const key=String(a.id);if(selected.has(key))selected.delete(key);else selected.set(key,a);
-      drawSelected();run();
+  const drawSelected=()=>{
+    const box=$("#dmSelectedRecipients");if(!box)return;
+    const values=[...selected.values()];
+    box.innerHTML=values.length?values.map(x=>`
+      <button class="dm-selected-chip" data-dm-remove="${esc(x.id)}" aria-label="${esc(x.display_name||x.username||x.acct||"선택한 사용자")} 선택 해제">
+        <img src="${esc(x.avatar_static||x.avatar||"")}" alt="">
+        <span>${renderEmojiText(x.display_name||x.username||x.acct||"",x.emojis||[])}</span>
+        <b>×</b>
+      </button>`).join(""):"";
+    box.classList.toggle("has-selection",values.length>0);
+    box.querySelectorAll("[data-dm-remove]").forEach(b=>b.onclick=()=>{
+      selected.delete(String(b.dataset.dmRemove));
+      drawSelected();renderRows(shown);updateNext();
+    });
+    updateNext();
+  };
+  const renderRows=items=>{
+    const box=$("#dmRecipientResults");if(!box)return;
+    shown=(items||[]).filter(a=>a?.id&&String(a.id)!==String(state.me?.id||""));
+    box.innerHTML=shown.length?shown.map(a=>{
+      const key=String(a.id),isSelected=selected.has(key);
+      return `<button class="dm-person-row lenton-dm-person ${isSelected?"selected":""}" data-dm-toggle="${esc(a.id)}" aria-pressed="${isSelected?"true":"false"}">
+        <img class="dm-person-avatar" src="${esc(a.avatar_static||a.avatar||"")}" alt="">
+        <span class="dm-person-copy"><b>${renderEmojiText(a.display_name||a.username,a.emojis||[])}</b><small>@${esc(a.acct||a.username||"")}</small></span>
+        <span class="dm-person-plus" aria-hidden="true">${isSelected?"✓":"＋"}</span>
+      </button>`;
+    }).join(""):'<div class="center dm-empty-results">표시할 사용자가 없어요.</div>';
+    box.querySelectorAll("[data-dm-toggle]").forEach(b=>b.onclick=()=>{
+      const a=shown.find(x=>String(x.id)===String(b.dataset.dmToggle));if(!a)return;
+      const key=String(a.id);
+      if(selected.has(key))selected.delete(key);else selected.set(key,a);
+      drawSelected();renderRows(shown);
     });
   };
-  $("#dmRecipientSearchBtn").onclick=run;
-  $("#dmRecipientSearch").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();run()}});
+  const showFollowing=()=>{
+    const heading=$("#dmListHeading");if(heading)heading.textContent="팔로잉";
+    renderRows(following);
+  };
+  const runSearch=async()=>{
+    const input=$("#dmRecipientSearch"),q=String(input?.value||"").trim(),heading=$("#dmListHeading"),box=$("#dmRecipientResults");
+    if(!q){showFollowing();return}
+    const seq=++searchSeq;
+    if(heading)heading.textContent="검색 결과";
+    if(box)box.innerHTML='<div class="center">검색 중…</div>';
+    const found=(await searchDmAccounts(q)).filter(a=>a?.id&&String(a.id)!==String(state.me?.id||""));
+    if(seq!==searchSeq)return;
+    renderRows(found);
+  };
+
+  $("#dmRecipientSearch")?.addEventListener("input",()=>{
+    clearTimeout(searchTimer);
+    const q=String($("#dmRecipientSearch")?.value||"").trim();
+    if(!q){searchSeq++;showFollowing();return}
+    searchTimer=setTimeout(runSearch,260);
+  });
+  $("#dmRecipientSearch")?.addEventListener("keydown",e=>{
+    if(e.key==="Enter"){e.preventDefault();clearTimeout(searchTimer);runSearch()}
+  });
   $("#dmStartCompose").onclick=()=>{
     const recipients=[...selected.values()];if(!recipients.length)return;
     state.dmDraftRecipients=recipients;
     compose(null,"direct",recipients);
   };
-  drawSelected();
+
+  updateNext();
+  try{
+    if(!state.me)state.me=await api("/api/v1/accounts/verify_credentials");
+    following=await api("/api/v1/accounts/"+encodeURIComponent(state.me.id)+"/following",{query:{limit:"80"}});
+    showFollowing();
+  }catch(e){
+    const box=$("#dmRecipientResults");if(box)box.innerHTML='<div class="center">'+esc(e.message)+'</div>';
+  }
 }
 function dmDayKey(st){
   const d=new Date(st?.created_at||0);
