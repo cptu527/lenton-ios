@@ -518,8 +518,9 @@ function refreshNotificationBadgeDom(){
     badge.textContent=txt;
   });
   try{
+    const total=totalAccountUnread();
     if("setAppBadge"in navigator){
-      if(state.notificationUnread>0)navigator.setAppBadge(state.notificationUnread).catch(()=>{});
+      if(total>0)navigator.setAppBadge(total).catch(()=>{});
       else navigator.clearAppBadge?.().catch(()=>{});
     }
   }catch{}
@@ -937,7 +938,9 @@ async function serverNotificationReadId(){
 async function markNotificationsRead(latestId){
   const id=String(latestId||"");if(!id)return;
   setLocalNotificationReadId(id);
-  state.notificationUnread=0;state.notificationUnreadOverflow=false;refreshNotificationBadgeDom();
+  state.notificationUnread=0;state.notificationUnreadOverflow=false;
+  await setSharedAccountUnread(currentAccountKey(),0);
+  refreshNotificationBadgeDom();
   try{await api("/api/v1/markers",{method:"POST",form:{"notifications[last_read_id]":id}})}catch{}
 }
 let notificationUnreadReady=false;
@@ -951,7 +954,7 @@ function notificationPreviewPayload(n){
     n?.type==="favourite"?"내 게시물을 좋아합니다.":
     n?.type==="reblog"?"내 게시물을 부스트했습니다.":"새 알림이 도착했어요."
   );
-  return {title,body,notificationId:String(n?.id||"")};
+  return {title,body,icon:a.avatar_static||a.avatar||"",notificationId:String(n?.id||"")};
 }
 async function refreshUnreadNotificationCount({bootstrap=true}={}){
   if(!state.session||!state.me)return 0;
@@ -964,7 +967,9 @@ async function refreshUnreadNotificationCount({bootstrap=true}={}){
     if(!marker)marker=localNotificationReadId();
     if(!marker&&bootstrap){
       if(newest)setLocalNotificationReadId(newest);
-      state.notificationUnread=0;state.notificationUnreadOverflow=false;refreshNotificationBadgeDom();
+      state.notificationUnread=0;state.notificationUnreadOverflow=false;
+      await setSharedAccountUnread(currentAccountKey(),0);
+      refreshNotificationBadgeDom();
       notificationUnreadReady=true;
       return 0;
     }
@@ -977,6 +982,7 @@ async function refreshUnreadNotificationCount({bootstrap=true}={}){
     }else count=visible.length;
     state.notificationUnread=count;
     state.notificationUnreadOverflow=!!marker&&!found&&visible.length>=80;
+    await setSharedAccountUnread(currentAccountKey(),count);
     refreshNotificationBadgeDom();
     if(notificationUnreadReady&&count>previous&&document.visibilityState==="visible"&&state.view!=="notifications"&&visible[0]){
       showForegroundPushBanner(notificationPreviewPayload(visible[0]));
@@ -990,8 +996,8 @@ function showForegroundPushBanner(payload={}){
   if(document.visibilityState!=="visible"||state.view==="notifications")return;
   closeForegroundPushBanner();
   const b=document.createElement("button");b.type="button";b.className="foreground-push-banner";
-  const title=String(payload.title||"새 알림"),body=String(payload.body||"새 알림이 도착했어요.");
-  b.innerHTML='<span class="foreground-push-icon">'+lentonIcon("notifications")+'</span><span class="foreground-push-copy"><b>'+esc(title)+'</b><small>'+esc(body)+'</small></span>';
+  const title=String(payload.title||"새 알림"),body=String(payload.body||"새 알림이 도착했어요."),icon=String(payload.icon||"");
+  b.innerHTML='<span class="foreground-push-icon">'+(icon?'<img src="'+esc(icon)+'" alt="">':lentonIcon("notifications"))+'</span><span class="foreground-push-copy"><b>'+esc(title)+'</b><small>'+esc(body)+'</small></span>';
   b.onclick=async()=>{
     closeForegroundPushBanner();
     const id=String(payload.notificationId||"");
