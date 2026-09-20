@@ -25,7 +25,7 @@ async function writeMeta(meta){
 async function classifyPush(data,acc){
   const type=String(data?.notification_type||data?.notification?.type||"");
   const notificationId=String(data?.notification_id||data?.id||"");
-  const token=String(data?.access_token||"");
+  const token=String(data?.access_token||acc?.accessToken||"");
   const host=String(acc?.host||"");
   let detail=null;
   if(notificationId&&token&&host){
@@ -82,7 +82,10 @@ self.addEventListener("push",event=>{
       data:{url:target,accountSlot:slot,notificationId,accountKey:acc?.key||"",icon:senderIcon,kind},
       silent:false
     };
-    await self.registration.showNotification(title,options);
+    await Promise.all([
+      self.registration.showNotification(title,options),
+      caches.open("lenton-meta").then(c=>c.put("./__lastpush",new Response(String(Date.now()))))
+    ]);
     const clients=await self.clients.matchAll({type:"window",includeUncontrolled:true});
     await Promise.all(clients.map(c=>c.postMessage({
       type:"push",title,body,icon:senderIcon,notificationId,accountSlot:slot,accountKey:acc?.key||"",totalUnread:total,kind

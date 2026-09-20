@@ -2378,7 +2378,7 @@ img{display:block}
 .thread-node::after{
   content:"";
   position:absolute;
-  left:38px;
+  left:calc(var(--android-status-pad-left,8px) + (var(--android-avatar,46px) / 2) - 1px);
   width:2px;
   background:var(--thread);
   z-index:2;
@@ -2386,10 +2386,10 @@ img{display:block}
 }
 .thread-node.thread-connect-top::before{
   top:0;
-  height:18px;
+  height:calc(var(--android-status-pad-top,16px) + (var(--android-avatar,46px) / 2));
 }
 .thread-node.thread-connect-bottom::after{
-  top:58px;
+  top:calc(var(--android-status-pad-top,16px) + (var(--android-avatar,46px) / 2));
   bottom:-1px;
 }
 .thread-node .status{
@@ -2401,8 +2401,12 @@ img{display:block}
   position:relative;
   z-index:3;
 }
+.thread-node.thread-current{
+  border-left:0!important;
+  box-shadow:inset 3px 0 color-mix(in srgb,var(--accent) 78%,transparent);
+}
 .thread-node.thread-current .status{
-  border-left:2px solid color-mix(in srgb,var(--accent) 68%,transparent);
+  border-left:0!important;
 }
 .thread-node .actions button[data-action="reply"] .count:not(:empty){
   display:inline-block;
@@ -2519,7 +2523,12 @@ img{display:block}
 .compose-modal #parts{
   flex:1 1 auto;
   min-height:0;
-  overflow:auto;
+  overflow-x:hidden;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior-y:contain;
+  touch-action:pan-y;
+  scroll-behavior:auto;
 }
 .compose-modal .compose-visibility-row{
   flex:0 0 52px;

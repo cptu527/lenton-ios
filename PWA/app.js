@@ -162,6 +162,10 @@ function applyAndroidSpecMetrics(){
   const scaled=x=>Math.round(Number(x)*scale*100)/100;
   const sp=ui.statusPadding||[16,10,14,8];
   root.style.setProperty("--android-status-padding",sp.map(x=>String(scaled(x))+"px").join(" "));
+  root.style.setProperty("--android-status-pad-top",String(scaled(sp[0]))+"px");
+  root.style.setProperty("--android-status-pad-right",String(scaled(sp[1]))+"px");
+  root.style.setProperty("--android-status-pad-bottom",String(scaled(sp[2]))+"px");
+  root.style.setProperty("--android-status-pad-left",String(scaled(sp[3]))+"px");
   const dp=ui.drawerPadding||[24,24,24,20];
   root.style.setProperty("--android-drawer-padding",dp.map(x=>String(scaled(x))+"px").join(" "));
   root.style.setProperty("--android-drawer-pad-top",String(scaled(dp[0]))+"px");
@@ -284,7 +288,9 @@ async function syncSavedAccountsToPushMeta(){
     const legacyTotal=Math.max(0,Number(prev.unread)||0);
     next.accounts[String(slot)]={
       key:x.key,id:x.id,host:x.host,acct:x.acct,display_name:x.display_name,avatar:x.avatar,
+      accessToken:String(x.session?.token||""),
       tokenHash:await tokenFingerprint(x.session?.token||""),
+      pushEnabled:pushEnabledForAccount(x),
       notificationUnread:prevNotification,
       dmUnread:prevDm,
       unread:prevNotification+prevDm || legacyTotal
@@ -507,7 +513,7 @@ function shell(title,body,opts={}){
   const view=opts.view||state.view;
   let right="";
   if(view==="home"){
-    right=`<button class="top-icon search" data-view="search" aria-label="검색">${lentonIcon("search")}</button><button class="top-icon" data-action="topmenu" aria-label="더보기">${lentonIcon("more")}</button>`;
+    right="";
   }else if(view==="search"){
     right=`<button class="top-icon" data-action="searchMenu" aria-label="검색 메뉴">${lentonIcon("more")}</button>`;
   }else if(view==="settings"){
@@ -750,24 +756,14 @@ async function loadLentonHome(chronological){
   collected.sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
   return collected.slice(0,80);
 }
-async function loadLentonHomePair({maxScans=1}={}){
-  const followingPromise=loadAllFollowing();
-  const homePromise=api("/api/v1/timelines/home",{query:{limit:"40"}});
-  const publicPromise=api("/api/v1/timelines/public",{query:{limit:"40"}});
-  const [following,firstHome,firstPub]=await Promise.all([followingPromise,homePromise,publicPromise]);
-  const allowed=new Set((following||[]).map(x=>String(x.id)));if(state.me?.id)allowed.add(String(state.me.id));
-  const homeData=mergeChronological(firstHome||[],firstPub||[],allowed);
+async function loadLentonHomePair({maxScans=1,initialHome=null}={}){
+  const firstHome=Array.isArray(initialHome)?initialHome:await api("/api/v1/timelines/home",{query:{limit:"40"}});
+  const homeData=(firstHome||[]).filter(nonDirect);
   const collected=[],seen=new Set(),target=ANDROID?.timeline?.public?.targetInitialItems||30,scanLimit=Math.max(1,Number(maxScans)||1);
-  let home=firstHome||[],pub=firstPub||[],homeCursor=home[home.length-1]?.id||"",homeDone=false;
+  let home=firstHome||[],homeCursor=home[home.length-1]?.id||"",homeDone=false;
   const addPage=()=>{
     for(const raw of home){
       if(!lentonPublicStatus(raw))continue;
-      const id=statusId(raw);if(id&&seen.has(id))continue;if(id)seen.add(id);
-      collected.push(raw);if(collected.length>=target)return;
-    }
-    for(const raw of pub){
-      if(!lentonPublicStatus(raw))continue;
-      const author=String(raw?.account?.id||"");if(!allowed.has(author))continue;
       const id=statusId(raw);if(id&&seen.has(id))continue;if(id)seen.add(id);
       collected.push(raw);if(collected.length>=target)return;
     }
@@ -778,7 +774,7 @@ async function loadLentonHomePair({maxScans=1}={}){
       const query={limit:"40"};if(homeCursor)query.max_id=homeCursor;
       const rawHome=await api("/api/v1/timelines/home",{query});
       const next=rawHome?.[rawHome.length-1]?.id||"";
-      home=rawHome||[];pub=[];
+      home=rawHome||[];
       if(!home.length||!next||next===homeCursor)homeDone=true;else homeCursor=next;
     }
     addPage();
@@ -788,19 +784,19 @@ async function loadLentonHomePair({maxScans=1}={}){
 }
 
 function homeSnapshotRead(){
-  const snap=store.get(scopedKey("home_snapshot_v2"),null);
+  const snap=store.get(scopedKey("home_snapshot_v3"),null);
   if(!snap?.at||Date.now()-Number(snap.at)>15*60*1000)return null;
   const data=snap.data;
   return data&&Array.isArray(data.home)&&Array.isArray(data.public)?data:null;
 }
 function homeSnapshotWrite(data){
-  try{if(data&&Array.isArray(data.home)&&Array.isArray(data.public))store.set(scopedKey("home_snapshot_v2"),{at:Date.now(),data})}catch{}
+  try{if(data&&Array.isArray(data.home)&&Array.isArray(data.public))store.set(scopedKey("home_snapshot_v3"),{at:Date.now(),data})}catch{}
 }
 async function loadHomeQuickPair(){
   const home=await api("/api/v1/timelines/home",{query:{limit:"40"}});
   const clean=(home||[]).filter(nonDirect);
   const pub=clean.filter(lentonPublicStatus).slice(0,ANDROID?.timeline?.public?.targetInitialItems||30);
-  return {home:clean,public:pub};
+  return {data:{home:clean,public:pub},rawHome:home||[]};
 }
 function renderHomePagerData(data,{preserveScroll=false}={}){
   if(!data)return;
@@ -882,22 +878,29 @@ async function homeView({silent=false}={}){
 
     // First paint only needs the Mastodon home endpoint; do not block it on
     // the complete following list or public-timeline filtering.
+    let quickRawHome=null;
     if(!cached){
       try{
         const quick=await loadHomeQuickPair();
+        quickRawHome=quick.rawHome;
         if(state.view==="home"&&!state.listId){
-          renderHomePagerData(quick);
-          homeSnapshotWrite(quick);
+          renderHomePagerData(quick.data);
+          homeSnapshotWrite(quick.data);
         }
       }catch{}
     }
 
-    // Refresh the complete pair after the screen is already usable.
-    const fresh=await loadLentonHomePair({maxScans:1});
-    await listsPromise;
-    state.homePagerData=fresh;
-    homeSnapshotWrite(fresh);
-    if(state.view==="home"&&!state.listId)renderHomePagerData(fresh,{preserveScroll:!!cached});
+    // The screen is usable now. Fill public from a few additional HOME pages in
+    // the background; never wait for the full following list or public endpoint.
+    const scanLimit=Math.min(3,Math.max(1,Number(ANDROID?.timeline?.public?.maxHomeScans||3)));
+    Promise.all([
+      loadLentonHomePair({maxScans:scanLimit,initialHome:quickRawHome}),
+      listsPromise
+    ]).then(([fresh])=>{
+      state.homePagerData=fresh;
+      homeSnapshotWrite(fresh);
+      if(state.view==="home"&&!state.listId)renderHomePagerData(fresh,{preserveScroll:true});
+    }).catch(()=>{});
   }catch(e){
     if(!state.homePagerData?.home?.length)renderMainStable("홈",'<div class="center">타임라인을 불러오지 못했어요.<br><br>'+esc(e.message)+'<br><br><button class="primary" data-action="reload">다시 시도</button></div>',{view:"home",fab:true});
   }finally{
@@ -1010,6 +1013,14 @@ function pushAlertPrefsForAccount(entry){
   const saved=store.get("lenton_push_alerts_"+String(entry?.key||""),{})||{};
   return {dm:true,mention:true,status:true,interactions:true,follow:true,...saved};
 }
+function pushEnabledStorageKey(entry){return "lenton_push_enabled_"+String(entry?.key||"")}
+function pushEnabledForAccount(entry){
+  if(!entry?.key)return true;
+  return store.get(pushEnabledStorageKey(entry),true)!==false;
+}
+function setPushEnabledForAccount(entry,on){
+  if(entry?.key)store.set(pushEnabledStorageKey(entry),!!on);
+}
 function pushAlertFormForAccount(entry){return pushAlertForm(pushAlertPrefsForAccount(entry))}
 async function apiWithSession(session,path,{method="GET",form=null,query=null}={}){
   if(!session?.host||!session?.token)throw new Error("계정 세션이 없습니다.");
@@ -1030,8 +1041,9 @@ async function accountPushRegistration(entry){
   const slot=Number(entry?.pushSlot);if(!Number.isInteger(slot)||slot<0)throw new Error("알림 슬롯이 없습니다.");
   return navigator.serviceWorker.register("./push/account-sw.js",{scope:"./push/a"+slot+"/",updateViaCache:"none"});
 }
-async function registerPushForAccount(entry){
+async function registerPushForAccount(entry,{force=false}={}){
   if(!entry?.session)return false;
+  if(!force&&!pushEnabledForAccount(entry))return false;
   const inst=await apiWithSession(entry.session,"/api/v2/instance");
   const vapid=inst?.configuration?.vapid?.public_key||entry.session?.vapid_key;
   if(!vapid)throw new Error((entry.display_name||entry.acct||"계정")+" 서버의 VAPID 키를 찾지 못했습니다.");
@@ -1060,15 +1072,17 @@ async function ensureAllAccountPushSubscriptions({quiet=true}={}){
   if(Notification.permission!=="granted")return false;
   await syncSavedAccountsToPushMeta();
   const list=savedAccounts();
-  let ok=0,failed=0;
+  let ok=0,failed=0,enabled=0;
   for(const entry of list){
+    if(!pushEnabledForAccount(entry))continue;
+    enabled++;
     try{await registerPushForAccount(entry);ok++}catch{failed++}
   }
   const root=await navigator.serviceWorker.getRegistration("./").catch(()=>null);
   const legacy=await root?.pushManager?.getSubscription?.().catch(()=>null);
   if(legacy)await legacy.unsubscribe().catch(()=>{});
-  if(!quiet)toast(failed?("알림 "+ok+"개 계정 연결, "+failed+"개 실패"):("저장된 "+ok+"개 계정의 빠른 알림을 연결했어요."));
-  return ok>0;
+  if(!quiet)toast(failed?("알림 "+ok+"개 계정 연결, "+failed+"개 실패"):(enabled?("저장된 "+ok+"개 계정의 빠른 알림을 연결했어요."):"켜진 푸시 알림 계정이 없어요."));
+  return ok>0||enabled===0;
 }
 async function cleanupAccountPush(entry){
   try{await apiWithSession(entry.session,"/api/v1/push/subscription",{method:"DELETE"})}catch{}
@@ -1082,7 +1096,8 @@ async function syncPushPreferences({quiet=false}={}){
   try{
     if(!("serviceWorker"in navigator)||!("PushManager"in window)||Notification.permission!=="granted")return false;
     const key=currentAccountKey(),entry=savedAccounts().find(x=>x.key===key);
-    if(entry)await registerPushForAccount(entry);
+    if(!entry||!pushEnabledForAccount(entry))return false;
+    await registerPushForAccount(entry);
     await api("/api/v1/push/subscription",{method:"PUT",form:pushAlertForm()});
     if(!quiet)toast("알림 종류를 저장했어요.");
     return true;
@@ -2080,8 +2095,20 @@ async function decideFollowRequest(id,accept){
 async function pushDiagnostics(){
   const supported="serviceWorker"in navigator&&"PushManager"in window&&"Notification"in window;
   let regd=false,last="-";
-  try{if(supported){const reg=await navigator.serviceWorker.ready;regd=!!(await reg.pushManager.getSubscription())}}
-  catch{}
+  try{
+    if(supported){
+      const current=currentAccountKey(),entry=savedAccounts().find(x=>x.key===current);
+      const slot=Number(entry?.pushSlot);
+      if(Number.isInteger(slot)&&slot>=0){
+        const reg=await navigator.serviceWorker.getRegistration("./push/a"+slot+"/");
+        regd=!!(await reg?.pushManager?.getSubscription?.());
+      }
+      if(!regd){
+        const legacy=await navigator.serviceWorker.getRegistration("./");
+        regd=!!(await legacy?.pushManager?.getSubscription?.());
+      }
+    }
+  }catch{}
   try{const c=await caches.open("lenton-meta"),r=await c.match("./__lastpush");if(r)last=new Date(Number(await r.text())).toLocaleString("ko-KR")}catch{}
   return {supported,regd,last};
 }
@@ -2417,7 +2444,9 @@ async function settingsView(){
   let build=null;try{const r=await fetch("./build.json?ts="+Date.now(),{cache:"no-store"});if(r.ok)build=await r.json()}catch{}
   state.buildInfo=build;
   const permissionText=notif==="granted"?"허용됨":notif==="denied"?"차단됨":notif==="default"?"아직 묻지 않음":"지원 안 됨";
-  const pushState=d.regd?"켜짐":"꺼짐";
+  const currentPushEntry=savedAccounts().find(x=>x.key===currentAccountKey());
+  const pushMasterOn=!!currentPushEntry&&pushEnabledForAccount(currentPushEntry)&&d.regd;
+  const pushState=pushMasterOn?"켜짐":"꺼짐";
   const body=`<div class="settings iphone-settings">
     ${!standalone()?'<div class="install-card"><b>홈 화면에 설치하기</b><p>iPhone/iPad에서 백그라운드 알림을 받으려면 Safari 공유 → 홈 화면에 추가가 필요합니다.</p></div>':""}
 
@@ -2437,6 +2466,7 @@ async function settingsView(){
 
     <div class="section settings-group"><h3>알림</h3>
       <div class="setting-intro"><b>휴대폰 알림</b><p>홈 화면에 설치한 렌톤이 닫혀 있어도 받을 알림을 선택합니다.</p></div>
+      <label class="notification-setting-row push-master-row"><span><b>푸시 알림 받기</b><small>현재 계정의 백그라운드 푸시 알림을 켜거나 끕니다.</small></span><input id="pushMasterToggle" type="checkbox" class="lenton-switch" ${pushMasterOn?"checked":""}></label>
       ${[
         ["dm","DM","나에게 비공개 직접 메시지가 왔을 때"],
         ["mention","멘션과 답글","내 아이디가 언급되거나 내 게시물에 답글이 달릴 때"],
@@ -2446,10 +2476,10 @@ async function settingsView(){
       ].map(x=>`<label class="notification-setting-row"><span><b>${x[1]}</b><small>${x[2]}</small></span><input type="checkbox" class="lenton-switch" data-push-pref="${x[0]}" ${pushPrefs[x[0]]?"checked":""}></label>`).join("")}
       <div class="setting-note">DM과 멘션은 Mastodon 서버 종류에 따라 하나의 ‘멘션’ 푸시로 함께 전달될 수 있습니다.</div>
       <div class="push-summary">
-        <div><span>현재 알림 상태</span><b class="${d.regd?"ok":"bad"}">${pushState}</b></div>
+        <div><span>현재 알림 상태</span><b class="${pushMasterOn?"ok":"bad"}">${pushState}</b></div>
         <div><span>iPhone 알림 권한</span><b>${esc(permissionText)}</b></div>
       </div>
-      <div class="setting-row"><button class="primary settings-push-button" data-action="enablepush">${d.regd?"알림 다시 등록":"휴대폰 알림 켜기"}</button></div>
+      ${pushMasterOn?'<div class="setting-row"><button class="primary settings-push-button" data-action="enablepush">알림 연결 다시 등록</button></div>':""}
       ${state.pushError?`<div class="notice bad">${esc(state.pushError)}</div>`:""}
       <details class="push-details"><summary>알림 연결 상태 자세히 보기</summary>
         <div class="kv"><span>홈 화면 웹앱</span><b>${standalone()?"예":"아니오"}</b></div>
@@ -2674,8 +2704,16 @@ async function uploadComposerFile(file){
   catch{return await apiMultipart("/api/v1/media",fd)}
 }
 function composeToolMarkup(ct={},replyMode=false){
-  const sourceOrder=replyMode?["photo","camera","cw","emoji","plus"]:(Array.isArray(ct.toolOrder)&&ct.toolOrder.length?ct.toolOrder:["photo","camera","gif","poll","cw","emoji","plus"]);
-  const order=[...sourceOrder.filter(x=>x!=="plus"),"plus"];
+  const configured=replyMode?["photo","camera","cw","emoji","plus"]:(Array.isArray(ct.toolOrder)&&ct.toolOrder.length?[...ct.toolOrder]:["photo","camera","emoji","poll","cw","plus"]);
+  if(!configured.includes("emoji")){
+    const gifIndex=configured.indexOf("gif");
+    if(gifIndex>=0)configured.splice(gifIndex,1,"emoji");
+    else{
+      const cameraIndex=configured.indexOf("camera");
+      configured.splice(cameraIndex>=0?cameraIndex+1:Math.min(2,configured.length),0,"emoji");
+    }
+  }
+  const order=[...configured.filter((x,i)=>x!=="plus"&&configured.indexOf(x)===i),"plus"];
   const enabled={
     photo:ct.hasPhoto!==false,camera:ct.hasCamera!==false,gif:ct.hasGif!==false,
     poll:ct.hasPoll!==false,cw:ct.cw!==""&&ct.cw!==false,plus:ct.hasThread!==false
@@ -2696,37 +2734,52 @@ function attachComposerViewportDock(m){
   window.__lentonComposeViewportCleanup?.();
   const vv=window.visualViewport,dock=m?.querySelector(".compose-bottom-dock");
   if(!dock)return ()=>{};
-  let raf=0;
-  const update=()=>{
+  let raf=0,lastKeyboardOffset=0,pendingEnsureVisible=false;
+  const update=(ensureVisible=false)=>{
+    if(ensureVisible)pendingEnsureVisible=true;
     cancelAnimationFrame(raf);
     raf=requestAnimationFrame(()=>{
       if(!m.isConnected)return;
+      const shouldEnsure=pendingEnsureVisible;pendingEnsureVisible=false;
       const viewport=window.visualViewport;
+      const currentWidth=Math.round(viewport?.width||window.innerWidth||0);
+      if(window.__lentonComposeLayoutWidth!==currentWidth){
+        window.__lentonComposeLayoutWidth=currentWidth;
+        window.__lentonComposeLayoutHeight=Math.max(window.innerHeight||0,document.documentElement.clientHeight||0,viewport?.height||0);
+      }
       const baseHeight=Math.max(Number(window.__lentonComposeLayoutHeight)||0,window.innerHeight||0,document.documentElement.clientHeight||0);
       const keyboardOffset=viewport
         ? Math.max(0,Math.round(baseHeight-viewport.height-viewport.offsetTop))
         : 0;
+      const keyboardOpened=lastKeyboardOffset<=80&&keyboardOffset>80;
+      lastKeyboardOffset=keyboardOffset;
       m.style.setProperty("--compose-keyboard-offset",keyboardOffset+"px");
       m.classList.toggle("keyboard-open",keyboardOffset>80);
       const focused=m.querySelector("textarea:focus,input:focus");
-      if(focused&&keyboardOffset>80){
+      if((shouldEnsure||keyboardOpened)&&focused&&keyboardOffset>80){
         const rect=focused.getBoundingClientRect();
         const dockTop=dock.getBoundingClientRect().top;
-        if(rect.bottom>dockTop-12)focused.scrollIntoView({block:"center",behavior:"instant"});
+        if(rect.bottom>dockTop-12||rect.top<0)focused.scrollIntoView({block:"center",behavior:"auto"});
       }
     });
   };
-  window.addEventListener("resize",update,{passive:true});
-  vv?.addEventListener("resize",update,{passive:true});
-  vv?.addEventListener("scroll",update,{passive:true});
-  m.addEventListener("focusin",()=>setTimeout(update,40));
-  m.addEventListener("focusout",()=>setTimeout(update,80));
-  update();
+  const onResize=()=>update(false);
+  const onViewportScroll=()=>update(false);
+  const onFocusIn=()=>setTimeout(()=>update(true),40);
+  const onFocusOut=()=>setTimeout(()=>update(false),80);
+  window.addEventListener("resize",onResize,{passive:true});
+  vv?.addEventListener("resize",onResize,{passive:true});
+  vv?.addEventListener("scroll",onViewportScroll,{passive:true});
+  m.addEventListener("focusin",onFocusIn);
+  m.addEventListener("focusout",onFocusOut);
+  update(true);
   const cleanup=()=>{
     cancelAnimationFrame(raf);
-    window.removeEventListener("resize",update);
-    vv?.removeEventListener("resize",update);
-    vv?.removeEventListener("scroll",update);
+    window.removeEventListener("resize",onResize);
+    vv?.removeEventListener("resize",onResize);
+    vv?.removeEventListener("scroll",onViewportScroll);
+    m.removeEventListener("focusin",onFocusIn);
+    m.removeEventListener("focusout",onFocusOut);
     if(window.__lentonComposeViewportCleanup===cleanup)window.__lentonComposeViewportCleanup=null;
   };
   window.__lentonComposeViewportCleanup=cleanup;
@@ -2735,6 +2788,7 @@ function attachComposerViewportDock(m){
 function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyContext=[]){
   let historyPushed=false;
   window.__lentonComposeLayoutHeight=Math.max(window.innerHeight||0,document.documentElement.clientHeight||0,window.visualViewport?.height||0);
+  window.__lentonComposeLayoutWidth=Math.round(window.visualViewport?.width||window.innerWidth||0);
   let parts=[{text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[],poll:null}];
   let visibility=composeDefaultVisibility(reply,forcedVisibility),activePart=0,uploading=false;
   const recips=[];
@@ -2774,13 +2828,14 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
     const m=document.createElement("div");m.className="modal compose-modal"+(reply?" reply-compose":"");
     const ct=ANDROID?.renderer?.compose||{};
     const visOptions=[["public","공개"],["unlisted","조용히 공개"],["private","팔로워만"],["direct","DM"]];
+    const showThreadLabels=!reply&&visibility!=="direct"&&parts.length>1;
     m.innerHTML=`<div class="sheet compose-sheet">
       <div class="sheet-head"><button class="iconbtn" id="closeCompose">×</button><h2>${reply?(ct.replyTitle||"답글"):(visibility==="direct"?"새 DM":(ct.newTitle||"새 게시물"))}</h2><button class="primary" id="sendCompose">${reply?(ct.replyButton||"답글"):(visibility==="direct"?"보내기":(ct.postButton||"게시"))}</button></div>
       ${reply?replyContextRows()+`<button type="button" class="compose-reply-summary" id="replyRecipientPicker">${esc(replySummaryText())}</button>`:""}
       ${!reply&&visibility==="direct"&&recips.length?`<div class="compose-direct-recipient">${esc(directRecipientText())}</div>`:""}
       ${!reply&&visibility!=="direct"&&recips.length?`<div class="recips">${recips.map((r,i)=>`<button data-r="${i}" class="${r.on?"":"off"}">${r.avatar?`<img src="${esc(r.avatar)}" alt="">`:""}<span>@${esc(r.acct)}</span></button>`).join("")}</div>`:""}
       <div id="parts">${parts.map((p,i)=>`<div class="part ${i===activePart?"active":""}" data-p="${i}">
-        ${i>0?`<div class="part-remove-row">${(!reply&&visibility!=="direct")?`<b>게시물 ${i+1}</b>`:""}<button type="button" data-remove-part="${i}" aria-label="추가 게시물 삭제">×</button></div>`:((!reply&&visibility!=="direct")?`<div class="part-head"><b>게시물 1</b></div>`:"")}
+        ${i>0?`<div class="part-remove-row">${showThreadLabels?`<b>게시물 ${i+1}</b>`:""}<button type="button" data-remove-part="${i}" aria-label="추가 게시물 삭제">×</button></div>`:(showThreadLabels?`<div class="part-head"><b>게시물 1</b></div>`:"")}
         <div class="part-body"><img class="avatar" src="${esc(state.me?.avatar_static||state.me?.avatar||"")}" alt=""><div class="part-fields">
           ${p.cw?`<input type="text" data-sp="${i}" placeholder="내용 경고" value="${esc(p.spoiler)}">`:""}
           <textarea data-t="${i}" placeholder="${reply?"답글을 입력하세요":(visibility==="direct"?"메시지를 입력하세요":"무슨 일이 일어나고 있나요?")}">${esc(p.text)}</textarea>
@@ -2810,7 +2865,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
     attachComposerViewportDock(m);
     if(!historyPushed){history.pushState({...history.state,lentonCompose:true},"",location.href);historyPushed=true}
     window.__lentonComposeGuard=confirmClose;
-    window.__lentonComposeClose=()=>{window.__lentonComposeViewportCleanup?.();document.querySelector(".compose-modal")?.remove();historyPushed=false;window.__lentonComposeLayoutHeight=0;window.__lentonComposeGuard=null;window.__lentonComposeClose=null};
+    window.__lentonComposeClose=()=>{window.__lentonComposeViewportCleanup?.();document.querySelector(".compose-modal")?.remove();historyPushed=false;window.__lentonComposeLayoutHeight=0;window.__lentonComposeLayoutWidth=0;window.__lentonComposeGuard=null;window.__lentonComposeClose=null};
     const ta=m.querySelector(`[data-t="${activePart}"]`);
     if(refocus)requestAnimationFrame(()=>ta?.focus());
     m.querySelectorAll("[data-t]").forEach(x=>{
@@ -2913,18 +2968,35 @@ async function replyById(id,forced=null){
   }catch(e){toast(e.message)}
 }
 
-async function enablePush(){
+async function setCurrentPushEnabled(on,{reconnect=false}={}){
   state.pushError="";
   try{
-    if(!standalone() && /iPad|iPhone|iPod/.test(navigator.userAgent)) throw new Error("iPhone/iPad에서는 먼저 Safari 공유 → 홈 화면에 추가로 설치해주세요.");
-    if(!("serviceWorker"in navigator)||!("PushManager"in window)||!("Notification"in window)) throw new Error("이 브라우저는 Web Push를 지원하지 않습니다.");
-    const perm=await Notification.requestPermission();if(perm!=="granted")throw new Error("알림 권한이 허용되지 않았습니다.");
     await saveCurrentAccount();
-    const ok=await ensureAllAccountPushSubscriptions({quiet:false});
-    if(!ok)throw new Error("푸시 알림 연결에 실패했습니다.");
+    const entry=savedAccounts().find(x=>x.key===currentAccountKey());
+    if(!entry)throw new Error("현재 계정 정보를 찾지 못했습니다.");
+    if(on){
+      if(!standalone() && /iPad|iPhone|iPod/.test(navigator.userAgent)) throw new Error("iPhone/iPad에서는 먼저 Safari 공유 → 홈 화면에 추가로 설치해주세요.");
+      if(!("serviceWorker"in navigator)||!("PushManager"in window)||!("Notification"in window)) throw new Error("이 브라우저는 Web Push를 지원하지 않습니다.");
+      const perm=await Notification.requestPermission();if(perm!=="granted")throw new Error("알림 권한이 허용되지 않았습니다.");
+      setPushEnabledForAccount(entry,true);
+      try{await registerPushForAccount(entry,{force:true})}
+      catch(err){setPushEnabledForAccount(entry,false);throw err}
+      await syncSavedAccountsToPushMeta();
+      toast(reconnect?"푸시 알림을 다시 연결했어요.":"푸시 알림을 켰어요.");
+    }else{
+      setPushEnabledForAccount(entry,false);
+      await cleanupAccountPush(entry);
+      await syncSavedAccountsToPushMeta();
+      toast("푸시 알림을 껐어요.");
+    }
     settingsView();
-  }catch(e){state.pushError=e.message;toast("알림 설정 실패");settingsView()}
+  }catch(e){
+    state.pushError=e.message;
+    toast("알림 설정 실패: "+e.message);
+    settingsView();
+  }
 }
+async function enablePush(){return setCurrentPushEnabled(true,{reconnect:true})}
 function urlBase64ToUint8Array(s){const p="=".repeat((4-s.length%4)%4),b=(s+p).replace(/-/g,"+").replace(/_/g,"/"),raw=atob(b),a=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)a[i]=raw.charCodeAt(i);return a}
 
 
@@ -3345,6 +3417,7 @@ function bind(){
   $("#accentSel")?.addEventListener("input",e=>applyAccent(e.target.value));
   document.querySelectorAll("[data-accent-preset]").forEach(b=>b.onclick=()=>{applyAccent(b.dataset.accentPreset);const input=$("#accentSel");if(input)input.value=b.dataset.accentPreset});
   $("#uiScaleRange")?.addEventListener("input",e=>{state.uiScale=Math.max(.8,Math.min(1.2,Number(e.target.value||100)/100));store.set("lenton_ui_scale",state.uiScale);const label=$("#uiScaleValue");if(label)label.textContent=Math.round(state.uiScale*100)+"%";applyAndroidSpecMetrics()});
+  $("#pushMasterToggle")?.addEventListener("change",async e=>{const on=e.currentTarget.checked;e.currentTarget.disabled=true;await setCurrentPushEnabled(on)});
   document.querySelectorAll("[data-push-pref]").forEach(x=>x.onchange=async()=>{const p=pushAlertPrefs();p[x.dataset.pushPref]=x.checked;savePushAlertPrefs(p);const ok=await syncPushPreferences({quiet:true});toast(ok?"알림 설정을 저장했어요.":"알림 종류를 저장했어요. 알림을 켜면 적용됩니다.")});
   const appRoot=document.querySelector("#app>.app");
   if(appRoot){
