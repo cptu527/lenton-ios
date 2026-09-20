@@ -290,6 +290,7 @@ async function syncSavedAccountsToPushMeta(){
       key:x.key,id:x.id,host:x.host,acct:x.acct,display_name:x.display_name,avatar:x.avatar,
       accessToken:String(x.session?.token||""),
       tokenHash:await tokenFingerprint(x.session?.token||""),
+      pushEnabled:pushEnabledForAccount(x),
       notificationUnread:prevNotification,
       dmUnread:prevDm,
       unread:prevNotification+prevDm || legacyTotal
@@ -1017,6 +1018,14 @@ function pushAlertPrefsForAccount(entry){
   const saved=store.get("lenton_push_alerts_"+String(entry?.key||""),{})||{};
   return {dm:true,mention:true,status:true,interactions:true,follow:true,...saved};
 }
+function pushEnabledStorageKey(entry){return "lenton_push_enabled_"+String(entry?.key||"")}
+function pushEnabledForAccount(entry){
+  if(!entry?.key)return true;
+  return store.get(pushEnabledStorageKey(entry),true)!==false;
+}
+function setPushEnabledForAccount(entry,on){
+  if(entry?.key)store.set(pushEnabledStorageKey(entry),!!on);
+}
 function pushAlertFormForAccount(entry){return pushAlertForm(pushAlertPrefsForAccount(entry))}
 async function apiWithSession(session,path,{method="GET",form=null,query=null}={}){
   if(!session?.host||!session?.token)throw new Error("계정 세션이 없습니다.");
@@ -1037,8 +1046,9 @@ async function accountPushRegistration(entry){
   const slot=Number(entry?.pushSlot);if(!Number.isInteger(slot)||slot<0)throw new Error("알림 슬롯이 없습니다.");
   return navigator.serviceWorker.register("./push/account-sw.js",{scope:"./push/a"+slot+"/",updateViaCache:"none"});
 }
-async function registerPushForAccount(entry){
+async function registerPushForAccount(entry,{force=false}={}){
   if(!entry?.session)return false;
+  if(!force&&!pushEnabledForAccount(entry))return false;
   const inst=await apiWithSession(entry.session,"/api/v2/instance");
   const vapid=inst?.configuration?.vapid?.public_key||entry.session?.vapid_key;
   if(!vapid)throw new Error((entry.display_name||entry.acct||"계정")+" 서버의 VAPID 키를 찾지 못했습니다.");
@@ -1067,15 +1077,17 @@ async function ensureAllAccountPushSubscriptions({quiet=true}={}){
   if(Notification.permission!=="granted")return false;
   await syncSavedAccountsToPushMeta();
   const list=savedAccounts();
-  let ok=0,failed=0;
+  let ok=0,failed=0,enabled=0;
   for(const entry of list){
+    if(!pushEnabledForAccount(entry))continue;
+    enabled++;
     try{await registerPushForAccount(entry);ok++}catch{failed++}
   }
   const root=await navigator.serviceWorker.getRegistration("./").catch(()=>null);
   const legacy=await root?.pushManager?.getSubscription?.().catch(()=>null);
   if(legacy)await legacy.unsubscribe().catch(()=>{});
-  if(!quiet)toast(failed?("알림 "+ok+"개 계정 연결, "+failed+"개 실패"):("저장된 "+ok+"개 계정의 빠른 알림을 연결했어요."));
-  return ok>0;
+  if(!quiet)toast(failed?("알림 "+ok+"개 계정 연결, "+failed+"개 실패"):(enabled?("저장된 "+ok+"개 계정의 빠른 알림을 연결했어요."):"켜진 푸시 알림 계정이 없어요."));
+  return ok>0||enabled===0;
 }
 async function cleanupAccountPush(entry){
   try{await apiWithSession(entry.session,"/api/v1/push/subscription",{method:"DELETE"})}catch{}
@@ -1089,7 +1101,8 @@ async function syncPushPreferences({quiet=false}={}){
   try{
     if(!("serviceWorker"in navigator)||!("PushManager"in window)||Notification.permission!=="granted")return false;
     const key=currentAccountKey(),entry=savedAccounts().find(x=>x.key===key);
-    if(entry)await registerPushForAccount(entry);
+    if(!entry||!pushEnabledForAccount(entry))return false;
+    await registerPushForAccount(entry);
     await api("/api/v1/push/subscription",{method:"PUT",form:pushAlertForm()});
     if(!quiet)toast("알림 종류를 저장했어요.");
     return true;
@@ -2436,7 +2449,9 @@ async function settingsView(){
   let build=null;try{const r=await fetch("./build.json?ts="+Date.now(),{cache:"no-store"});if(r.ok)build=await r.json()}catch{}
   state.buildInfo=build;
   const permissionText=notif==="granted"?"허용됨":notif==="denied"?"차단됨":notif==="default"?"아직 묻지 않음":"지원 안 됨";
-  const pushState=d.regd?"켜짐":"꺼짐";
+  const currentPushEntry=savedAccounts().find(x=>x.key===currentAccountKey());
+  const pushMasterOn=!!currentPushEntry&&pushEnabledForAccount(currentPushEntry)&&d.regd;
+  const pushState=pushMasterOn?"켜짐":"꺼짐";
   const body=`<div class="settings iphone-settings">
     ${!standalone()?'<div class="install-card"><b>홈 화면에 설치하기</b><p>iPhone/iPad에서 백그라운드 알림을 받으려면 Safari 공유 → 홈 화면에 추가가 필요합니다.</p></div>':""}
 
@@ -2456,6 +2471,7 @@ async function settingsView(){
 
     <div class="section settings-group"><h3>알림</h3>
       <div class="setting-intro"><b>휴대폰 알림</b><p>홈 화면에 설치한 렌톤이 닫혀 있어도 받을 알림을 선택합니다.</p></div>
+      <label class="notification-setting-row push-master-row"><span><b>푸시 알림 받기</b><small>현재 계정의 백그라운드 푸시 알림을 켜거나 끕니다.</small></span><input id="pushMasterToggle" type="checkbox" class="lenton-switch" ${pushMasterOn?"checked":""}></label>
       ${[
         ["dm","DM","나에게 비공개 직접 메시지가 왔을 때"],
         ["mention","멘션과 답글","내 아이디가 언급되거나 내 게시물에 답글이 달릴 때"],
@@ -2465,10 +2481,10 @@ async function settingsView(){
       ].map(x=>`<label class="notification-setting-row"><span><b>${x[1]}</b><small>${x[2]}</small></span><input type="checkbox" class="lenton-switch" data-push-pref="${x[0]}" ${pushPrefs[x[0]]?"checked":""}></label>`).join("")}
       <div class="setting-note">DM과 멘션은 Mastodon 서버 종류에 따라 하나의 ‘멘션’ 푸시로 함께 전달될 수 있습니다.</div>
       <div class="push-summary">
-        <div><span>현재 알림 상태</span><b class="${d.regd?"ok":"bad"}">${pushState}</b></div>
+        <div><span>현재 알림 상태</span><b class="${pushMasterOn?"ok":"bad"}">${pushState}</b></div>
         <div><span>iPhone 알림 권한</span><b>${esc(permissionText)}</b></div>
       </div>
-      <div class="setting-row"><button class="primary settings-push-button" data-action="enablepush">${d.regd?"알림 다시 등록":"휴대폰 알림 켜기"}</button></div>
+      ${pushMasterOn?'<div class="setting-row"><button class="primary settings-push-button" data-action="enablepush">알림 연결 다시 등록</button></div>':""}
       ${state.pushError?`<div class="notice bad">${esc(state.pushError)}</div>`:""}
       <details class="push-details"><summary>알림 연결 상태 자세히 보기</summary>
         <div class="kv"><span>홈 화면 웹앱</span><b>${standalone()?"예":"아니오"}</b></div>
@@ -2957,18 +2973,35 @@ async function replyById(id,forced=null){
   }catch(e){toast(e.message)}
 }
 
-async function enablePush(){
+async function setCurrentPushEnabled(on,{reconnect=false}={}){
   state.pushError="";
   try{
-    if(!standalone() && /iPad|iPhone|iPod/.test(navigator.userAgent)) throw new Error("iPhone/iPad에서는 먼저 Safari 공유 → 홈 화면에 추가로 설치해주세요.");
-    if(!("serviceWorker"in navigator)||!("PushManager"in window)||!("Notification"in window)) throw new Error("이 브라우저는 Web Push를 지원하지 않습니다.");
-    const perm=await Notification.requestPermission();if(perm!=="granted")throw new Error("알림 권한이 허용되지 않았습니다.");
     await saveCurrentAccount();
-    const ok=await ensureAllAccountPushSubscriptions({quiet:false});
-    if(!ok)throw new Error("푸시 알림 연결에 실패했습니다.");
+    const entry=savedAccounts().find(x=>x.key===currentAccountKey());
+    if(!entry)throw new Error("현재 계정 정보를 찾지 못했습니다.");
+    if(on){
+      if(!standalone() && /iPad|iPhone|iPod/.test(navigator.userAgent)) throw new Error("iPhone/iPad에서는 먼저 Safari 공유 → 홈 화면에 추가로 설치해주세요.");
+      if(!("serviceWorker"in navigator)||!("PushManager"in window)||!("Notification"in window)) throw new Error("이 브라우저는 Web Push를 지원하지 않습니다.");
+      const perm=await Notification.requestPermission();if(perm!=="granted")throw new Error("알림 권한이 허용되지 않았습니다.");
+      setPushEnabledForAccount(entry,true);
+      try{await registerPushForAccount(entry,{force:true})}
+      catch(err){setPushEnabledForAccount(entry,false);throw err}
+      await syncSavedAccountsToPushMeta();
+      toast(reconnect?"푸시 알림을 다시 연결했어요.":"푸시 알림을 켰어요.");
+    }else{
+      setPushEnabledForAccount(entry,false);
+      await cleanupAccountPush(entry);
+      await syncSavedAccountsToPushMeta();
+      toast("푸시 알림을 껐어요.");
+    }
     settingsView();
-  }catch(e){state.pushError=e.message;toast("알림 설정 실패");settingsView()}
+  }catch(e){
+    state.pushError=e.message;
+    toast("알림 설정 실패: "+e.message);
+    settingsView();
+  }
 }
+async function enablePush(){return setCurrentPushEnabled(true,{reconnect:true})}
 function urlBase64ToUint8Array(s){const p="=".repeat((4-s.length%4)%4),b=(s+p).replace(/-/g,"+").replace(/_/g,"/"),raw=atob(b),a=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)a[i]=raw.charCodeAt(i);return a}
 
 
@@ -3389,6 +3422,7 @@ function bind(){
   $("#accentSel")?.addEventListener("input",e=>applyAccent(e.target.value));
   document.querySelectorAll("[data-accent-preset]").forEach(b=>b.onclick=()=>{applyAccent(b.dataset.accentPreset);const input=$("#accentSel");if(input)input.value=b.dataset.accentPreset});
   $("#uiScaleRange")?.addEventListener("input",e=>{state.uiScale=Math.max(.8,Math.min(1.2,Number(e.target.value||100)/100));store.set("lenton_ui_scale",state.uiScale);const label=$("#uiScaleValue");if(label)label.textContent=Math.round(state.uiScale*100)+"%";applyAndroidSpecMetrics()});
+  $("#pushMasterToggle")?.addEventListener("change",async e=>{const on=e.currentTarget.checked;e.currentTarget.disabled=true;await setCurrentPushEnabled(on)});
   document.querySelectorAll("[data-push-pref]").forEach(x=>x.onchange=async()=>{const p=pushAlertPrefs();p[x.dataset.pushPref]=x.checked;savePushAlertPrefs(p);const ok=await syncPushPreferences({quiet:true});toast(ok?"알림 설정을 저장했어요.":"알림 종류를 저장했어요. 알림을 켜면 적용됩니다.")});
   const appRoot=document.querySelector("#app>.app");
   if(appRoot){
