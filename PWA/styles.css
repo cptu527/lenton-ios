@@ -4202,17 +4202,15 @@ img{display:block}
   padding-right:26px!important;
   color:var(--accent)!important;
 }
-.compose-modal .compose-visibility-row::after{
-  content:"";
-  position:absolute;
-  left:auto;
-  right:calc(100% - 116px);
-  top:50%;
-  width:7px;
-  height:7px;
+.compose-visibility-chevron{
+  flex:0 0 8px;
+  width:8px;
+  height:8px;
+  margin-left:-18px;
+  margin-right:10px;
   border-right:2px solid var(--accent);
   border-bottom:2px solid var(--accent);
-  transform:translateY(-65%) rotate(45deg);
+  transform:translateY(-2px) rotate(45deg);
   pointer-events:none;
 }
 .compose-modal .compose-visibility-row select option{
