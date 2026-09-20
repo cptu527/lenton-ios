@@ -2723,7 +2723,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
         </div></div>
       </div>`).join("")}</div>
       <div class="compose-bottom-dock">
-        <div class="compose-meta-row compose-visibility-row"><select id="composeVisibility" class="compose-visibility" aria-label="공개 범위">${visOptions.map(x=>`<option value="${x[0]}" ${visibility===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select></div>
+        <div class="compose-meta-row compose-visibility-row"><select id="composeVisibility" class="compose-visibility" aria-label="공개 범위">${visOptions.map(x=>`<option value="${x[0]}" ${visibility===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select><span class="compose-visibility-chevron" aria-hidden="true"></span></div>
         <div class="compose-tools android-compose-tools">
           ${composeToolMarkup(ct,!!reply)}
           <input id="composeFile" type="file" accept="image/*,video/*" multiple hidden>
