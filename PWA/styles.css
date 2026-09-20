@@ -3478,3 +3478,159 @@ img{display:block}
 .compose-modal.keyboard-open .compose-bottom-dock .emoji-picker{
   bottom:112px;
 }
+
+
+/* 2026-09-20 following list + back navigation parity */
+.standalone-top .back{
+  display:grid;
+  place-items:center;
+}
+.standalone-top .back .lenton-icon{
+  width:30px;
+  height:30px;
+}
+
+.profile-count-grid>div,
+.profile-count-grid>button{
+  min-width:0;
+  min-height:48px;
+}
+.profile-count-grid .profile-count-static,
+.profile-count-grid .profile-count-link{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:3px;
+}
+.profile-count-grid .profile-count-link{
+  border:0;
+  padding:0;
+  background:transparent;
+  color:var(--fg);
+  font:inherit;
+}
+.profile-count-grid .profile-count-link:active{
+  background:var(--surface);
+}
+.profile-count-grid .profile-count-link b,
+.profile-count-grid .profile-count-static b{
+  font-size:17px;
+  color:var(--fg);
+}
+.profile-count-grid .profile-count-link span,
+.profile-count-grid .profile-count-static span{
+  font-size:13px;
+  color:var(--sub);
+}
+
+.following-list{
+  background:var(--bg);
+}
+.following-list-row{
+  min-height:92px;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto 116px;
+  align-items:center;
+  gap:10px;
+  padding:10px 20px 10px 18px;
+  border-bottom:1px solid var(--line);
+  background:var(--bg);
+}
+.following-list-person{
+  min-width:0;
+  display:flex;
+  align-items:center;
+  gap:14px;
+  border:0;
+  padding:0;
+  background:transparent;
+  color:var(--fg);
+  text-align:left;
+}
+.following-list-person img{
+  width:58px;
+  height:58px;
+  flex:0 0 58px;
+  border-radius:50%;
+  object-fit:cover;
+  background:var(--surface);
+}
+.following-list-person>span{
+  min-width:0;
+  flex:1;
+}
+.following-list-person b{
+  display:block;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:17px;
+  line-height:1.35;
+  font-weight:700;
+}
+.following-list-person small{
+  display:block;
+  margin-top:5px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:var(--sub);
+  font-size:13.5px;
+  line-height:1.3;
+}
+.following-mutual-badge,
+.following-mutual-placeholder{
+  width:58px;
+  flex:0 0 58px;
+}
+.following-mutual-badge{
+  min-height:42px;
+  display:grid;
+  place-items:center;
+  border-radius:14px;
+  background:color-mix(in srgb,var(--accent) 8%,var(--bg));
+  color:var(--accent);
+  font-size:13px;
+  font-weight:800;
+}
+.following-state-button{
+  min-width:116px;
+  height:54px;
+  border:1px solid var(--line);
+  border-radius:27px;
+  padding:0 18px;
+  background:var(--bg);
+  color:var(--fg);
+  font-size:15px;
+  font-weight:750;
+}
+.following-state-button:not(.on){
+  border-color:var(--accent);
+  background:var(--accent);
+  color:#fff;
+}
+.following-state-button:disabled{
+  opacity:.5;
+}
+
+@media (max-width:560px){
+  .following-list-row{
+    grid-template-columns:minmax(0,1fr) auto 92px;
+    gap:7px;
+    padding-left:14px;
+    padding-right:12px;
+  }
+  .following-list-person img{
+    width:52px;height:52px;flex-basis:52px;
+  }
+  .following-mutual-badge,
+  .following-mutual-placeholder{
+    width:48px;flex-basis:48px;
+  }
+  .following-state-button{
+    min-width:92px;
+    height:48px;
+    padding:0 12px;
+  }
+}

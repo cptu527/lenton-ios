@@ -89,7 +89,7 @@ async function openMentionProfile(acct,href=""){
       a=(r?.accounts||[]).find(x=>String(x.acct||"").toLowerCase()===key.toLowerCase())||(r?.accounts||[])[0];
     }
     if(!a?.id)throw new Error("계정을 찾지 못했어요.");
-    pushNavSnapshot();await openProfile(a.id);
+    pushNavSnapshot();await openProfile(a.id,"posts",true);
   }catch(e){toast("프로필을 열지 못했어요: "+e.message)}
 }
 function renderRichText(html=""){
@@ -388,6 +388,7 @@ function androidNavItems(){
 }
 function lentonIcon(name,cls=""){
   const c='class="lenton-icon '+esc(cls)+'" viewBox="0 0 24 24" aria-hidden="true"';
+  if(name==="back")return `<svg ${c}><path d="M15.5 4.5 8 12l7.5 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   if(name==="home")return `<svg ${c}><path d="M3.5 10.5 12 3.5l8.5 7V21h-5.7v-6.2H9.2V21H3.5Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>`;
   if(name==="search")return `<svg ${c}><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="m15.5 15.5 5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
   if(name==="notifications")return `<svg ${c}><path d="M5 16h14c-1.5-1.7-2-3.5-2-7a5 5 0 0 0-10 0c0 3.5-.5 5.3-2 7Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9.5 19a2.8 2.8 0 0 0 5 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
@@ -729,14 +730,22 @@ function pushNavSnapshot(){
   if(last&&last.html===snap.html&&last.scrollY===snap.scrollY)return;
   state.navStack.push(snap);if(state.navStack.length>30)state.navStack.shift();
 }
+function clearGestureBindingMarks(root=document){
+  const marks=["interactiveSwipe","homeSwipe","lentonSwipe","edgeDrawerSwipe","closeSwipe","profileSwipe","backSwipe","pullRefresh"];
+  root.querySelectorAll?.("[data-interactive-swipe],[data-home-swipe],[data-lenton-swipe],[data-edge-drawer-swipe],[data-close-swipe],[data-profile-swipe],[data-back-swipe],[data-pull-refresh]").forEach(el=>{
+    for(const k of marks)if(k in el.dataset)delete el.dataset[k];
+  });
+}
 function goBackScreen(){
   const snap=state.navStack.pop();
   if(snap){
     state.view=snap.view;state.homeMode=snap.homeMode;state.listId=snap.listId;
     state.profileAccount=snap.profileAccount;state.profileRelationship=snap.profileRelationship;
     state.profileReplies=snap.profileReplies;state.profileMode=snap.profileMode||"posts";state.currentConversation=snap.currentConversation;
-    $("#app").innerHTML=snap.html;bind();
-    requestAnimationFrame(()=>window.scrollTo(0,snap.scrollY||0));
+    $("#app").innerHTML=snap.html;
+    clearGestureBindingMarks($("#app"));
+    bind();
+    requestAnimationFrame(()=>{window.scrollTo(0,snap.scrollY||0);attachLentonGestures()});
     return;
   }
   state.profileAccount=null;state.profileRelationship=null;state.currentConversation=null;
@@ -1059,7 +1068,7 @@ function accentTextColor(){
   return ((r*299+g*587+b*114)/1000)>=160?"#000":"#fff";
 }
 function standaloneShell(title,body,right=""){
-  return `<div class="standalone-page"><header class="standalone-top"><button class="back" data-action="backScreen" aria-label="뒤로가기">‹</button><h1>${esc(title)}</h1>${right}</header><main class="main">${body}</main></div>`;
+  return `<div class="standalone-page"><header class="standalone-top"><button class="back" data-action="backScreen" aria-label="뒤로가기">${lentonIcon("back")}</button><h1>${esc(title)}</h1>${right}</header><main class="main">${body}</main></div>`;
 }
 function normalizeProfileMode(mode){return ["posts","replies","pinned","media"].includes(mode)?mode:"posts"}
 function profileQuery(mode){
@@ -1147,8 +1156,52 @@ function profileMarkup(a,opts={}){
       (mutual?'<div class="profile-mutual">나를 팔로우합니다</div>':"")+
       '<div class="profile-handle">@'+esc(a.acct)+'</div></div>'+controls+'</div>'+
     '<div class="profile-bio">'+renderRichText(a.note||"")+'</div>'+privateNote+(fields?'<div class="profile-fields">'+fields+'</div>':"")+
-    '<div class="profile-count-grid"><div><b>'+Number(a.statuses_count||0).toLocaleString()+'</b><span>게시물</span></div><div><b>'+Number(a.following_count||0).toLocaleString()+'</b><span>팔로잉</span></div><div><b>'+Number(a.followers_count||0).toLocaleString()+'</b><span>팔로워</span></div></div></div>'+
+    '<div class="profile-count-grid"><div class="profile-count-static"><b>'+Number(a.statuses_count||0).toLocaleString()+'</b><span>게시물</span></div><button type="button" class="profile-count-link" data-connections-kind="following" data-connections-account="'+esc(a.id||"")+'"><b>'+Number(a.following_count||0).toLocaleString()+'</b><span>팔로잉</span></button><button type="button" class="profile-count-link" data-connections-kind="followers" data-connections-account="'+esc(a.id||"")+'"><b>'+Number(a.followers_count||0).toLocaleString()+'</b><span>팔로워</span></button></div></div>'+
     '<div class="profile-tabs-4" data-profile-tabs>'+tabs.map((x,i)=>'<button data-profile-mode="'+x[0]+'" data-action="'+x[2]+'" class="'+(mode===x[0]?"active":"")+'">'+x[1]+'</button>').join("")+'<span class="profile-tab-indicator" aria-hidden="true"></span></div>';
+
+}
+function fullAccountHandle(a){
+  const acct=String(a?.acct||a?.username||"");
+  return "@"+acct+(acct&&acct.includes("@")?"":("@"+(state.session?.host||"")));
+}
+async function profileConnectionsScreen(accountId,kind="following"){
+  const isFollowers=kind==="followers",title=isFollowers?"팔로워":"팔로잉";
+  $("#app").innerHTML=standaloneShell(title,'<div class="center">불러오는 중…</div>');bind();
+  try{
+    const items=await api("/api/v1/accounts/"+encodeURIComponent(accountId)+"/"+(isFollowers?"followers":"following"),{query:{limit:"80"}});
+    const ids=(items||[]).map(a=>a.id).filter(Boolean);
+    let rels=[];
+    if(ids.length){
+      const q=new URLSearchParams();ids.forEach(id=>q.append("id[]",id));
+      rels=await api("/api/v1/accounts/relationships",{query:q}).catch(()=>[]);
+    }
+    const relMap=new Map((rels||[]).map(r=>[String(r.id),r]));
+    const rows=(items||[]).map(a=>{
+      const rel=relMap.get(String(a.id))||{};
+      const mutual=!!(rel.following&&rel.followed_by);
+      const following=!!rel.following;
+      return '<div class="following-list-row">'+
+        '<button type="button" class="following-list-person" data-profile="'+esc(a.id||"")+'">'+
+          '<img src="'+esc(a.avatar_static||a.avatar||"")+'" alt="">'+
+          '<span><b>'+renderEmojiText(a.display_name||a.username||"",a.emojis||[])+'</b><small>'+esc(fullAccountHandle(a))+'</small></span>'+
+        '</button>'+
+        (mutual?'<span class="following-mutual-badge">맞팔</span>':'<span class="following-mutual-placeholder"></span>')+
+        '<button type="button" class="following-state-button '+(following?"on":"")+'" data-connection-follow="'+esc(a.id||"")+'" data-current-following="'+(following?"1":"0")+'" data-connections-account="'+esc(accountId)+'" data-connections-kind="'+esc(kind)+'">'+(following?"팔로잉":"팔로우")+'</button>'+
+      '</div>';
+    }).join("");
+    $("#app").innerHTML=standaloneShell(title,'<div class="following-list">'+(rows||'<div class="center">'+title+' 목록이 없어요.</div>')+'</div>');bind();
+  }catch(e){
+    $("#app").innerHTML=standaloneShell(title,'<div class="center">'+esc(e.message)+'</div>');bind();
+  }
+}
+async function toggleConnectionFollow(button){
+  const id=button?.dataset.connectionFollow;if(!id)return;
+  const was=button.dataset.currentFollowing==="1";
+  button.disabled=true;
+  try{
+    await api("/api/v1/accounts/"+encodeURIComponent(id)+"/"+(was?"unfollow":"follow"),{method:"POST",form:{}});
+    await profileConnectionsScreen(button.dataset.connectionsAccount,button.dataset.connectionsKind||"following");
+  }catch(e){button.disabled=false;toast(e.message)}
 }
 async function profileView(mode=state.profileMode||"posts"){
   if(typeof mode==="boolean")mode=mode?"replies":"posts";
@@ -1166,9 +1219,20 @@ async function profileView(mode=state.profileMode||"posts"){
     requestAnimationFrame(()=>syncProfilePagerUi(mode,false));
   }catch(e){$("#app").innerHTML=shell("프로필",'<div class="center">'+esc(e.message)+'</div>');bind()}
 }
-async function openProfile(id,mode=state.profileMode||"posts"){
+async function openProfile(id,mode=state.profileMode||"posts",standalone=false){
   if(!id)return;if(typeof mode==="boolean")mode=mode?"replies":"posts";mode=normalizeProfileMode(mode);
-  if(state.me?.id&&String(id)===String(state.me.id)){rememberScroll();state.view="profile";state.profileAccount=null;state.profileRelationship=null;state.profileMode=mode;return profileView(mode)}
+  if(state.me?.id&&String(id)===String(state.me.id)){
+    rememberScroll();state.profileAccount=null;state.profileRelationship=null;state.profileMode=mode;
+    if(!standalone){state.view="profile";return profileView(mode)}
+    $("#app").innerHTML=standaloneShell("프로필",'<div class="center">불러오는 중…</div>');bind();
+    try{
+      const a=state.me,modes=profileModes(),entries=await Promise.all(modes.map(async m=>[m,await api("/api/v1/accounts/"+a.id+"/statuses",{query:profileQuery(m)})]));
+      const data=Object.fromEntries(entries.map(([m,items])=>[m,(items||[]).filter(raw=>(raw?.reblog||raw)?.visibility!=="direct")]));state.profilePagerData=data;
+      $("#app").innerHTML=standaloneShell("프로필",profileMarkup(a,{own:true,mode})+buildProfilePager(mode,data));bind();
+      requestAnimationFrame(()=>syncProfilePagerUi(mode,false));
+    }catch(e){$("#app").innerHTML=standaloneShell("프로필",'<div class="center">'+esc(e.message)+'</div>');bind()}
+    return;
+  }
   rememberScroll();state.returnView=state.view;state.profileMode=mode;state.profileReplies=mode==="replies";
   $("#app").innerHTML=standaloneShell("프로필",'<div class="center">불러오는 중…</div>');bind();
   try{
@@ -2662,7 +2726,9 @@ function attachLentonGestures(){
 }
 
 function bind(){
-  document.querySelectorAll("[data-profile]").forEach(b=>b.onclick=e=>{e.stopPropagation();pushNavSnapshot();openProfile(b.dataset.profile)});
+  document.querySelectorAll("[data-profile]").forEach(b=>b.onclick=e=>{e.stopPropagation();pushNavSnapshot();openProfile(b.dataset.profile,"posts",true)});
+  document.querySelectorAll("[data-connections-kind]").forEach(b=>b.onclick=e=>{e.stopPropagation();pushNavSnapshot();profileConnectionsScreen(b.dataset.connectionsAccount,b.dataset.connectionsKind)});
+  document.querySelectorAll("[data-connection-follow]").forEach(b=>b.onclick=e=>{e.stopPropagation();toggleConnectionFollow(b)});
   document.querySelectorAll("[data-mention-acct]").forEach(b=>b.onclick=e=>{e.preventDefault();e.stopPropagation();openMentionProfile(b.dataset.mentionAcct,b.dataset.mentionHref||"")});
   document.querySelectorAll("[data-open-list]").forEach(b=>b.onclick=()=>{state.view="home";state.listId=b.dataset.openList;render()});
   document.querySelectorAll("[data-list-manage]").forEach(b=>b.onclick=()=>{pushNavSnapshot();listManageScreen(b.dataset.listManage)});
