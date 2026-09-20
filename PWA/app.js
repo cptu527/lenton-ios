@@ -3263,7 +3263,7 @@ async function registerSW(){
       }
       const sameAccount=!e.data?.accountKey||e.data.accountKey===current;
       if(state.view==="notifications"&&sameAccount&&e.data?.kind!=="dm")notificationsView(false);
-      else if(state.view==="dm"&&sameAccount&&e.data?.kind==="dm")dmView();
+      else if(state.view==="dm"&&document.querySelector("#app>.app.lenton-view-dm")&&sameAccount&&e.data?.kind==="dm")dmView();
       else{
         refreshNotificationBadgeDom();
         showForegroundPushBanner(e.data);
