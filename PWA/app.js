@@ -840,12 +840,10 @@ function updatePublicTimelinePage(items,{preserveScroll=true}={}){
     if(y!==null)window.scrollTo(0,y);
   });
 }
-async function loadPublicFollowingAccounts(){
-  if(!state.me)state.me=await api("/api/v1/accounts/verify_credentials");
-  const key=scopedKey("public_following_80_v1"),cached=store.get(key,null);
-  if(cached?.at&&Date.now()-Number(cached.at)<300000&&Array.isArray(cached.items))return cached.items;
-  const rows=await api(`/api/v1/accounts/${state.me.id}/following`,{query:{limit:"80"}});
-  const items=Array.isArray(rows)?rows.slice(0,80):[];
+async function loadPublicFollowingAccounts({fresh=false}={}){
+  const key=scopedKey("public_following_all_v2"),cached=store.get(key,null);
+  if(!fresh&&cached?.at&&Date.now()-Number(cached.at)<300000&&Array.isArray(cached.items))return cached.items;
+  const items=await loadAllFollowing({fresh});
   store.set(key,{at:Date.now(),items});
   return items;
 }
@@ -854,23 +852,32 @@ async function ensurePublicTimelineFilled(){
   state.publicFillPromise=(async()=>{
     const cfg=ANDROID?.timeline?.public||{},target=Math.max(10,Number(cfg.targetInitialItems)||30);
     const base=state.homePagerData||{home:[],public:[]};
-    if(state.publicFilledAt&&Date.now()-state.publicFilledAt<60000&&(base.public||[]).length>=target)return base.public;
 
-    // Android v0.18 public tab: followed accounts only. Home can be sparse, so
-    // fetch up to 80 followed accounts and supplement from each account's own
-    // status timeline (limit 8), then apply the same public/non-reply/non-boost filter.
-    const following=await loadPublicFollowingAccounts();
+    // Public must always start from CURRENT home data, not a stale snapshot.
+    // This catches newly-posted followed-account originals immediately.
+    const freshHomePromise=api("/api/v1/timelines/home",{query:{limit:"40"}}).catch(()=>[]);
+    const followingPromise=loadPublicFollowingAccounts();
+    const [freshHome,following]=await Promise.all([freshHomePromise,followingPromise]);
     const allowed=new Set((following||[]).map(x=>String(x?.id||"")).filter(Boolean));
     const eligible=raw=>allowed.has(String(raw?.account?.id||""))&&lentonPublicStatus(raw);
 
     let collected=mergeNewestTimeline(
-      (base.public||[]).filter(eligible),
-      (base.home||[]).filter(eligible),
+      (Array.isArray(freshHome)?freshHome:[]).filter(eligible),
+      mergeNewestTimeline((base.public||[]).filter(eligible),(base.home||[]).filter(eligible),80),
       80
     );
+    // Keep home cache current too; switching back to chronological should see
+    // the same newest statuses without another full request.
+    if(Array.isArray(freshHome)&&freshHome.length){
+      base.home=mergeNewestTimeline(freshHome.filter(nonDirect),base.home||[],80);
+      state.homePagerData=base;
+    }
     updatePublicTimelinePage(collected);
 
-    const maxAccounts=Math.min(80,following.length),batchSize=8;
+    // If the fresh home page already filled the target, stop here. Otherwise
+    // supplement from every followed account, progressively.
+    if(collected.length>=target){state.publicFilledAt=Date.now();return collected}
+    const maxAccounts=following.length,batchSize=10;
     for(let i=0;i<maxAccounts;i+=batchSize){
       const batch=following.slice(i,i+batchSize);
       const pages=await Promise.all(batch.map(ac=>{
@@ -947,9 +954,13 @@ function syncHomePagerUi(mode,animate=true){
 }
 function setHomePagerMode(mode,animate=true){
   if(!homeModes().includes(mode))mode="home";
+  const wasPublic=state.homeMode==="public";
   state.homeMode=mode;state.listId=null;state.timelineItems=state.homePagerData?.[mode]||[];
   syncHomePagerUi(mode,animate);
-  if(mode==="public")setTimeout(()=>ensurePublicTimelineFilled().catch(()=>{}),0);
+  if(mode==="public"){
+    if(wasPublic)state.publicFilledAt=0;
+    setTimeout(()=>ensurePublicTimelineFilled().catch(()=>{}),0);
+  }
 }
 async function homeView({silent=false,forceFresh=false}={}){
   state.busy=true;
@@ -1015,7 +1026,7 @@ async function loadMoreHome(){
       const following=await loadPublicFollowingAccounts(),allowed=new Set(following.map(x=>String(x?.id||"")).filter(Boolean));
       const eligible=raw=>allowed.has(String(raw?.account?.id||""))&&lentonPublicStatus(raw);
       const batchSize=8;
-      for(let i=0;i<Math.min(80,following.length)&&more.length<40;i+=batchSize){
+      for(let i=0;i<following.length&&more.length<40;i+=batchSize){
         const batch=following.slice(i,i+batchSize);
         const pages=await Promise.all(batch.map(ac=>{
           const id=String(ac?.id||"");if(!id)return Promise.resolve([]);
