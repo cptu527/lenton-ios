@@ -2112,6 +2112,45 @@ function composeToolMarkup(ct={},replyMode=false){
   enabled.emoji=true;
   return order.filter(x=>enabled[x]&&html[x]).map(x=>html[x]).join("");
 }
+function attachComposerViewportDock(m){
+  window.__lentonComposeViewportCleanup?.();
+  const vv=window.visualViewport,dock=m?.querySelector(".compose-bottom-dock");
+  if(!dock)return ()=>{};
+  let raf=0;
+  const update=()=>{
+    cancelAnimationFrame(raf);
+    raf=requestAnimationFrame(()=>{
+      if(!m.isConnected)return;
+      const viewport=window.visualViewport;
+      const keyboardOffset=viewport
+        ? Math.max(0,Math.round(window.innerHeight-viewport.height-viewport.offsetTop))
+        : 0;
+      m.style.setProperty("--compose-keyboard-offset",keyboardOffset+"px");
+      m.classList.toggle("keyboard-open",keyboardOffset>80);
+      const focused=m.querySelector("textarea:focus,input:focus");
+      if(focused&&keyboardOffset>80){
+        const rect=focused.getBoundingClientRect();
+        const dockTop=dock.getBoundingClientRect().top;
+        if(rect.bottom>dockTop-12)focused.scrollIntoView({block:"center",behavior:"instant"});
+      }
+    });
+  };
+  window.addEventListener("resize",update,{passive:true});
+  vv?.addEventListener("resize",update,{passive:true});
+  vv?.addEventListener("scroll",update,{passive:true});
+  m.addEventListener("focusin",()=>setTimeout(update,40));
+  m.addEventListener("focusout",()=>setTimeout(update,80));
+  update();
+  const cleanup=()=>{
+    cancelAnimationFrame(raf);
+    window.removeEventListener("resize",update);
+    vv?.removeEventListener("resize",update);
+    vv?.removeEventListener("scroll",update);
+    if(window.__lentonComposeViewportCleanup===cleanup)window.__lentonComposeViewportCleanup=null;
+  };
+  window.__lentonComposeViewportCleanup=cleanup;
+  return cleanup;
+}
 function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyContext=[]){
   let historyPushed=false;
   let parts=[{text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[],poll:null}];
@@ -2143,6 +2182,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
     draw(false);
   };
   const draw=(refocus=true)=>{
+    window.__lentonComposeViewportCleanup?.();
     let old=$(".modal");if(old)old.remove();
     const m=document.createElement("div");m.className="modal compose-modal"+(reply?" reply-compose":"");
     const ct=ANDROID?.renderer?.compose||{};
@@ -2167,19 +2207,22 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
           ${p.media.length?`<div class="compose-media">${p.media.map((x,j)=>`<div class="compose-media-item"><img src="${esc(x.preview_url||x.url||"")}" alt=""><button data-remove-media="${i}:${j}">×</button></div>`).join("")}</div>`:""}
         </div></div>
       </div>`).join("")}</div>
-      <div class="compose-meta-row compose-visibility-row"><select id="composeVisibility" class="compose-visibility" aria-label="공개 범위">${visOptions.map(x=>`<option value="${x[0]}" ${visibility===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select></div>
-      <div class="compose-tools android-compose-tools">
-        ${composeToolMarkup(ct,!!reply)}
-        <input id="composeFile" type="file" accept="image/*,video/*" multiple hidden>
-        <input id="composeCameraFile" type="file" accept="image/*" capture="environment" hidden>
-        <input id="composeGifFile" type="file" accept="image/gif" hidden>
+      <div class="compose-bottom-dock">
+        <div class="compose-meta-row compose-visibility-row"><select id="composeVisibility" class="compose-visibility" aria-label="공개 범위">${visOptions.map(x=>`<option value="${x[0]}" ${visibility===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select></div>
+        <div class="compose-tools android-compose-tools">
+          ${composeToolMarkup(ct,!!reply)}
+          <input id="composeFile" type="file" accept="image/*,video/*" multiple hidden>
+          <input id="composeCameraFile" type="file" accept="image/*" capture="environment" hidden>
+          <input id="composeGifFile" type="file" accept="image/gif" hidden>
+        </div>
+        <div id="emojiPicker" class="emoji-picker" hidden></div>
       </div>
-      <div id="emojiPicker" class="emoji-picker" hidden></div>
     </div>`;
     document.body.append(m);
+    attachComposerViewportDock(m);
     if(!historyPushed){history.pushState({...history.state,lentonCompose:true},"",location.href);historyPushed=true}
     window.__lentonComposeGuard=confirmClose;
-    window.__lentonComposeClose=()=>{document.querySelector(".compose-modal")?.remove();historyPushed=false;window.__lentonComposeGuard=null;window.__lentonComposeClose=null};
+    window.__lentonComposeClose=()=>{window.__lentonComposeViewportCleanup?.();document.querySelector(".compose-modal")?.remove();historyPushed=false;window.__lentonComposeGuard=null;window.__lentonComposeClose=null};
     const ta=m.querySelector(`[data-t="${activePart}"]`);
     if(refocus)requestAnimationFrame(()=>ta?.focus());
     m.querySelectorAll("[data-t]").forEach(x=>{

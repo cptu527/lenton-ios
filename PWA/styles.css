@@ -3432,3 +3432,49 @@ img{display:block}
 .android-notify-card.notify-passive .android-notify-glyph{
   opacity:.72;
 }
+
+
+/* 2026-09-20 composer keyboard dock */
+.compose-modal{
+  --compose-keyboard-offset:0px;
+}
+.compose-modal .compose-sheet{
+  padding-bottom:calc(120px + env(safe-area-inset-bottom));
+  overscroll-behavior:contain;
+}
+.compose-bottom-dock{
+  position:fixed;
+  left:0;
+  right:0;
+  bottom:var(--compose-keyboard-offset,0px);
+  z-index:8;
+  width:100%;
+  background:var(--bg);
+  border-top:1px solid var(--line);
+  box-shadow:0 -3px 12px rgba(0,0,0,.035);
+  transition:bottom 70ms linear;
+}
+.compose-bottom-dock .compose-visibility-row{
+  min-height:54px;
+  padding:8px 18px 6px;
+  border-bottom:1px solid var(--line);
+  background:var(--bg);
+}
+.compose-bottom-dock .android-compose-tools{
+  min-height:58px;
+  border-top:0;
+  background:var(--bg);
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.compose-modal.keyboard-open .compose-bottom-dock .android-compose-tools{
+  padding-bottom:0;
+}
+.compose-modal.keyboard-open .compose-sheet{
+  padding-bottom:120px;
+}
+.compose-bottom-dock .emoji-picker{
+  bottom:calc(112px + env(safe-area-inset-bottom));
+}
+.compose-modal.keyboard-open .compose-bottom-dock .emoji-picker{
+  bottom:112px;
+}
