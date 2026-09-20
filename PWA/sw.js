@@ -67,10 +67,11 @@ async function rootPushBadge(data){
   let kind="notification",detail=null;
   const type=String(data?.notification_type||data?.notification?.type||"");
   const notificationId=String(data?.notification_id||data?.id||"");
-  if(match?.host&&notificationId&&data?.access_token){
+  const accessToken=String(data?.access_token||match?.accessToken||"");
+  if(match?.host&&notificationId&&accessToken){
     try{
       const r=await fetch("https://"+match.host+"/api/v1/notifications/"+encodeURIComponent(notificationId),{
-        headers:{Accept:"application/json",Authorization:"Bearer "+String(data.access_token)},cache:"no-store"
+        headers:{Accept:"application/json",Authorization:"Bearer "+accessToken},cache:"no-store"
       });
       if(r.ok)detail=await r.json();
     }catch{}

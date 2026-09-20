@@ -284,6 +284,7 @@ async function syncSavedAccountsToPushMeta(){
     const legacyTotal=Math.max(0,Number(prev.unread)||0);
     next.accounts[String(slot)]={
       key:x.key,id:x.id,host:x.host,acct:x.acct,display_name:x.display_name,avatar:x.avatar,
+      accessToken:String(x.session?.token||""),
       tokenHash:await tokenFingerprint(x.session?.token||""),
       notificationUnread:prevNotification,
       dmUnread:prevDm,
@@ -750,9 +751,9 @@ async function loadLentonHome(chronological){
   collected.sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
   return collected.slice(0,80);
 }
-async function loadLentonHomePair({maxScans=1}={}){
+async function loadLentonHomePair({maxScans=1,initialHome=null}={}){
   const followingPromise=loadAllFollowing();
-  const homePromise=api("/api/v1/timelines/home",{query:{limit:"40"}});
+  const homePromise=Array.isArray(initialHome)?Promise.resolve(initialHome):api("/api/v1/timelines/home",{query:{limit:"40"}});
   const publicPromise=api("/api/v1/timelines/public",{query:{limit:"40"}});
   const [following,firstHome,firstPub]=await Promise.all([followingPromise,homePromise,publicPromise]);
   const allowed=new Set((following||[]).map(x=>String(x.id)));if(state.me?.id)allowed.add(String(state.me.id));
@@ -800,7 +801,7 @@ async function loadHomeQuickPair(){
   const home=await api("/api/v1/timelines/home",{query:{limit:"40"}});
   const clean=(home||[]).filter(nonDirect);
   const pub=clean.filter(lentonPublicStatus).slice(0,ANDROID?.timeline?.public?.targetInitialItems||30);
-  return {home:clean,public:pub};
+  return {data:{home:clean,public:pub},rawHome:home||[]};
 }
 function renderHomePagerData(data,{preserveScroll=false}={}){
   if(!data)return;
@@ -882,18 +883,20 @@ async function homeView({silent=false}={}){
 
     // First paint only needs the Mastodon home endpoint; do not block it on
     // the complete following list or public-timeline filtering.
+    let quickRawHome=null;
     if(!cached){
       try{
         const quick=await loadHomeQuickPair();
+        quickRawHome=quick.rawHome;
         if(state.view==="home"&&!state.listId){
-          renderHomePagerData(quick);
-          homeSnapshotWrite(quick);
+          renderHomePagerData(quick.data);
+          homeSnapshotWrite(quick.data);
         }
       }catch{}
     }
 
     // Refresh the complete pair after the screen is already usable.
-    const fresh=await loadLentonHomePair({maxScans:1});
+    const fresh=await loadLentonHomePair({maxScans:1,initialHome:quickRawHome});
     await listsPromise;
     state.homePagerData=fresh;
     homeSnapshotWrite(fresh);
@@ -2702,6 +2705,11 @@ function attachComposerViewportDock(m){
     raf=requestAnimationFrame(()=>{
       if(!m.isConnected)return;
       const viewport=window.visualViewport;
+      const currentWidth=Math.round(viewport?.width||window.innerWidth||0);
+      if(window.__lentonComposeLayoutWidth!==currentWidth){
+        window.__lentonComposeLayoutWidth=currentWidth;
+        window.__lentonComposeLayoutHeight=Math.max(window.innerHeight||0,document.documentElement.clientHeight||0,viewport?.height||0);
+      }
       const baseHeight=Math.max(Number(window.__lentonComposeLayoutHeight)||0,window.innerHeight||0,document.documentElement.clientHeight||0);
       const keyboardOffset=viewport
         ? Math.max(0,Math.round(baseHeight-viewport.height-viewport.offsetTop))
@@ -2735,6 +2743,7 @@ function attachComposerViewportDock(m){
 function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyContext=[]){
   let historyPushed=false;
   window.__lentonComposeLayoutHeight=Math.max(window.innerHeight||0,document.documentElement.clientHeight||0,window.visualViewport?.height||0);
+  window.__lentonComposeLayoutWidth=Math.round(window.visualViewport?.width||window.innerWidth||0);
   let parts=[{text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[],poll:null}];
   let visibility=composeDefaultVisibility(reply,forcedVisibility),activePart=0,uploading=false;
   const recips=[];
@@ -2810,7 +2819,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
     attachComposerViewportDock(m);
     if(!historyPushed){history.pushState({...history.state,lentonCompose:true},"",location.href);historyPushed=true}
     window.__lentonComposeGuard=confirmClose;
-    window.__lentonComposeClose=()=>{window.__lentonComposeViewportCleanup?.();document.querySelector(".compose-modal")?.remove();historyPushed=false;window.__lentonComposeLayoutHeight=0;window.__lentonComposeGuard=null;window.__lentonComposeClose=null};
+    window.__lentonComposeClose=()=>{window.__lentonComposeViewportCleanup?.();document.querySelector(".compose-modal")?.remove();historyPushed=false;window.__lentonComposeLayoutHeight=0;window.__lentonComposeLayoutWidth=0;window.__lentonComposeGuard=null;window.__lentonComposeClose=null};
     const ta=m.querySelector(`[data-t="${activePart}"]`);
     if(refocus)requestAnimationFrame(()=>ta?.focus());
     m.querySelectorAll("[data-t]").forEach(x=>{

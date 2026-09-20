@@ -25,7 +25,7 @@ async function writeMeta(meta){
 async function classifyPush(data,acc){
   const type=String(data?.notification_type||data?.notification?.type||"");
   const notificationId=String(data?.notification_id||data?.id||"");
-  const token=String(data?.access_token||"");
+  const token=String(data?.access_token||acc?.accessToken||"");
   const host=String(acc?.host||"");
   let detail=null;
   if(notificationId&&token&&host){
