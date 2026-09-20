@@ -2287,6 +2287,11 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
     const first=selected[0],name=first.display_name||first.username||first.acct||"상대";
     return selected.length>1?name+" 외 "+(selected.length-1)+"명에게 보내는 답글":name+"에게 보내는 답글";
   };
+  const directRecipientText=()=>{
+    const selected=recips.filter(x=>x.on);if(!selected.length)return "받는 사람";
+    const first=selected[0],name=first.display_name||first.username||first.acct||"상대";
+    return selected.length>1?"받는 사람 "+name+" 외 "+(selected.length-1)+"명":"받는 사람 "+name;
+  };
   const confirmClose=()=>!dirty()||confirm("작성 중인 내용을 버릴까요?");
   const hydrateRecipients=async()=>{
     for(let i=0;i<recips.length;i++){
@@ -2304,12 +2309,13 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
     m.innerHTML=`<div class="sheet compose-sheet">
       <div class="sheet-head"><button class="iconbtn" id="closeCompose">×</button><h2>${reply?(ct.replyTitle||"답글"):(visibility==="direct"?"새 DM":(ct.newTitle||"새 게시물"))}</h2><button class="primary" id="sendCompose">${reply?(ct.replyButton||"답글"):(visibility==="direct"?"보내기":(ct.postButton||"게시"))}</button></div>
       ${reply?replyContextRows()+`<button type="button" class="compose-reply-summary" id="replyRecipientPicker">${esc(replySummaryText())}</button>`:""}
-      ${!reply&&recips.length?`<div class="recips">${recips.map((r,i)=>`<button data-r="${i}" class="${r.on?"":"off"}">${r.avatar?`<img src="${esc(r.avatar)}" alt="">`:""}<span>@${esc(r.acct)}</span></button>`).join("")}</div>`:""}
+      ${!reply&&visibility==="direct"&&recips.length?`<div class="compose-direct-recipient">${esc(directRecipientText())}</div>`:""}
+      ${!reply&&visibility!=="direct"&&recips.length?`<div class="recips">${recips.map((r,i)=>`<button data-r="${i}" class="${r.on?"":"off"}">${r.avatar?`<img src="${esc(r.avatar)}" alt="">`:""}<span>@${esc(r.acct)}</span></button>`).join("")}</div>`:""}
       <div id="parts">${parts.map((p,i)=>`<div class="part ${i===activePart?"active":""}" data-p="${i}">
-        <div class="part-head"><b>게시물 ${i+1}</b></div>
+        ${(!reply&&visibility!=="direct")?`<div class="part-head"><b>게시물 ${i+1}</b></div>`:""}
         <div class="part-body"><img class="avatar" src="${esc(state.me?.avatar_static||state.me?.avatar||"")}" alt=""><div class="part-fields">
           ${p.cw?`<input type="text" data-sp="${i}" placeholder="내용 경고" value="${esc(p.spoiler)}">`:""}
-          <textarea data-t="${i}" placeholder="${reply?"답글을 입력하세요":"무슨 일이 일어나고 있나요?"}">${esc(p.text)}</textarea>
+          <textarea data-t="${i}" placeholder="${reply?"답글을 입력하세요":(visibility==="direct"?"메시지를 입력하세요":"무슨 일이 일어나고 있나요?")}">${esc(p.text)}</textarea>
           ${p.poll?`<div class="compose-poll" data-poll-box="${i}">
             ${p.poll.options.map((o,j)=>`<div class="compose-poll-option"><input data-poll-option="${i}:${j}" value="${esc(o)}" placeholder="선택지 ${j+1}">${p.poll.options.length>2?`<button type="button" data-poll-remove="${i}:${j}">×</button>`:""}</div>`).join("")}
             <div class="compose-poll-settings">
