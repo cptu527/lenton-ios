@@ -1714,7 +1714,7 @@ async function editPrivateNote(){
   const shade=dialogBox("비밀 메모","상대방에게는 보이지 않습니다. 비워서 저장하면 메모가 삭제됩니다.",`<textarea id="privateNoteInput" placeholder="나만 볼 수 있는 메모">${esc(rel.note||"")}</textarea><div class="android-dialog-actions"><button data-cancel>취소</button><button data-save>저장</button></div>`);
   shade.querySelector("[data-cancel]").onclick=()=>shade.remove();
   requestAnimationFrame(()=>$("#privateNoteInput",shade)?.focus());
-  shade.querySelector("[data-save]").onclick=async()=>{const btn=shade.querySelector("[data-save]"),value=$("#privateNoteInput",shade).value.trim();btn.disabled=true;try{const r=await api(`/api/v1/accounts/${a.id}/note`,{method:"POST",form:{comment:value}});state.profileRelationship={...rel,...r,note:r?.note??value};shade.remove();toast(value?"비밀 메모를 저장했어요.":"비밀 메모를 삭제했어요.");openProfile(a.id,state.profileMode||"posts")}catch(e){btn.disabled=false;toast(e.message)}};
+  shade.querySelector("[data-save]").onclick=async()=>{const btn=shade.querySelector("[data-save]"),value=$("#privateNoteInput",shade).value.trim();btn.disabled=true;try{const r=await api(`/api/v1/accounts/${a.id}/note`,{method:"POST",form:{comment:value}});const next=r?.note??value;state.profileRelationship={...rel,...r,note:next};const noteEl=document.querySelector(".private-note-card .note");if(noteEl)noteEl.textContent=String(next||"").trim()||"메모를 추가하려면 탭하세요.";shade.classList.add("closing");setTimeout(()=>shade.remove(),130);toast(value?"비밀 메모를 저장했어요.":"비밀 메모를 삭제했어요.")}catch(e){btn.disabled=false;toast(e.message)}};
 }
 async function toggleProfileRelation(endpoint){
   const a=state.profileAccount;if(!a)return;
@@ -1729,10 +1729,17 @@ async function toggleFollowProfile(){
 async function toggleProfileNotify(){
   const a=state.profileAccount,rel=state.profileRelationship||{};if(!a)return;
   if(!rel.following){toast("먼저 팔로우해 주세요.");return}
+  const btn=document.querySelector(".profile-bell[data-action='profileNotify']");
+  const next=!rel.notifying;
+  if(btn){btn.disabled=true;btn.classList.toggle("on",next)}
   try{
-    const r=await api(`/api/v1/accounts/${a.id}/follow`,{method:"POST",form:{notify:rel.notifying?"false":"true"}});
-    state.profileRelationship={...rel,...r};openProfile(a.id,state.profileMode||"posts");
-  }catch(e){toast(e.message)}
+    const r=await api(`/api/v1/accounts/${a.id}/follow`,{method:"POST",form:{notify:next?"true":"false"}});
+    state.profileRelationship={...rel,...r,notifying:r?.notifying??next};
+    if(btn){btn.classList.toggle("on",!!state.profileRelationship.notifying);btn.disabled=false}
+  }catch(e){
+    if(btn){btn.classList.toggle("on",!!rel.notifying);btn.disabled=false}
+    toast(e.message)
+  }
 }
 async function reportProfile(){
   const a=state.profileAccount;if(!a)return;
