@@ -1073,6 +1073,11 @@ function showForegroundPushBanner(payload={}){
   b.innerHTML='<span class="foreground-push-icon">'+(icon?'<img src="'+esc(icon)+'" alt="">':lentonIcon("notifications"))+'</span><span class="foreground-push-copy"><b>'+esc(title)+'</b><small>'+esc(body)+'</small></span>';
   b.onclick=async()=>{
     closeForegroundPushBanner();
+    const pushedKey=String(payload.accountKey||"");
+    if(pushedKey&&pushedKey!==currentAccountKey()){
+      const i=savedAccounts().findIndex(x=>x.key===pushedKey);
+      if(i>=0)await switchSavedAccount(i);
+    }
     const id=String(payload.notificationId||"");
     if(id)await openNotificationDeepLink(id);
     else{rememberScroll();state.view="notifications";await notificationsView(false)}
@@ -3164,14 +3169,16 @@ async function applyAutomaticUpdate(){
 async function registerSW(){
   if("serviceWorker"in navigator){
     const reg=await navigator.serviceWorker.register("./sw.js",{scope:"./",updateViaCache:"none"});
-    navigator.serviceWorker.addEventListener("message",e=>{
+    navigator.serviceWorker.addEventListener("message",async e=>{
       if(e.data?.type!=="push")return;
-      if(state.view==="notifications")notificationsView(false);
+      await syncSavedAccountsToPushMeta();
+      const current=currentAccountKey();
+      if(e.data?.accountKey&&e.data.accountKey===current)state.notificationUnread=accountUnreadFor({key:current});
+      if(state.view==="notifications"&&(!e.data?.accountKey||e.data.accountKey===current))notificationsView(false);
       else{
-        state.notificationUnread=Math.max(1,(Number(state.notificationUnread)||0)+1);
         refreshNotificationBadgeDom();
         showForegroundPushBanner(e.data);
-        setTimeout(()=>refreshUnreadNotificationCount({bootstrap:false}),120);
+        if(!e.data?.accountKey||e.data.accountKey===current)setTimeout(()=>refreshUnreadNotificationCount({bootstrap:false}),120);
       }
     });
     navigator.serviceWorker.addEventListener("controllerchange",()=>{
@@ -3206,10 +3213,17 @@ window.addEventListener("beforeunload",e=>{
 });
 (async()=>{
   try{await registerSW();await finishOAuth()}catch(e){toast(e.message)}
-  if(state.session){try{state.me=await api("/api/v1/accounts/verify_credentials");await loadCustomEmojis();saveCurrentAccount()}catch{store.del("lenton_session");state.session=null}}
-  const q=new URLSearchParams(location.search),notificationId=q.get("notification_id"),deep=q.get("view");if(["home","notifications","dm","profile","settings"].includes(deep))state.view=deep;
-  render();
+  const q=new URLSearchParams(location.search),notificationId=q.get("notification_id"),accountSlot=q.get("account_slot"),deep=q.get("view");
+  if(accountSlot!==null){
+    const entry=savedAccounts().find(x=>String(x.pushSlot)===String(accountSlot));
+    if(entry?.session){state.session=entry.session;store.set("lenton_session",state.session);resetAccountState()}
+  }
+  if(state.session){try{state.me=await api("/api/v1/accounts/verify_credentials");await loadCustomEmojis();await saveCurrentAccount()}catch{store.del("lenton_session");state.session=null}}
+  await syncSavedAccountsToPushMeta();
+  if(["home","notifications","dm","profile","settings"].includes(deep))state.view=deep;
+  render();refreshNotificationBadgeDom();
   if(state.session)setTimeout(()=>refreshUnreadNotificationCount(),80);
+  if(Notification.permission==="granted")setTimeout(()=>ensureAllAccountPushSubscriptions({quiet:true}),450);
   if(notificationId&&state.session)setTimeout(()=>openNotificationDeepLink(notificationId),0);
   applyAutomaticUpdate();
 })();
