@@ -162,6 +162,10 @@ function applyAndroidSpecMetrics(){
   const scaled=x=>Math.round(Number(x)*scale*100)/100;
   const sp=ui.statusPadding||[16,10,14,8];
   root.style.setProperty("--android-status-padding",sp.map(x=>String(scaled(x))+"px").join(" "));
+  root.style.setProperty("--android-status-pad-top",String(scaled(sp[0]))+"px");
+  root.style.setProperty("--android-status-pad-right",String(scaled(sp[1]))+"px");
+  root.style.setProperty("--android-status-pad-bottom",String(scaled(sp[2]))+"px");
+  root.style.setProperty("--android-status-pad-left",String(scaled(sp[3]))+"px");
   const dp=ui.drawerPadding||[24,24,24,20];
   root.style.setProperty("--android-drawer-padding",dp.map(x=>String(scaled(x))+"px").join(" "));
   root.style.setProperty("--android-drawer-pad-top",String(scaled(dp[0]))+"px");
@@ -2689,8 +2693,16 @@ async function uploadComposerFile(file){
   catch{return await apiMultipart("/api/v1/media",fd)}
 }
 function composeToolMarkup(ct={},replyMode=false){
-  const sourceOrder=replyMode?["photo","camera","cw","emoji","plus"]:(Array.isArray(ct.toolOrder)&&ct.toolOrder.length?ct.toolOrder:["photo","camera","gif","poll","cw","emoji","plus"]);
-  const order=[...sourceOrder.filter(x=>x!=="plus"),"plus"];
+  const configured=replyMode?["photo","camera","cw","emoji","plus"]:(Array.isArray(ct.toolOrder)&&ct.toolOrder.length?[...ct.toolOrder]:["photo","camera","emoji","poll","cw","plus"]);
+  if(!configured.includes("emoji")){
+    const gifIndex=configured.indexOf("gif");
+    if(gifIndex>=0)configured.splice(gifIndex,1,"emoji");
+    else{
+      const cameraIndex=configured.indexOf("camera");
+      configured.splice(cameraIndex>=0?cameraIndex+1:Math.min(2,configured.length),0,"emoji");
+    }
+  }
+  const order=[...configured.filter((x,i)=>x!=="plus"&&configured.indexOf(x)===i),"plus"];
   const enabled={
     photo:ct.hasPhoto!==false,camera:ct.hasCamera!==false,gif:ct.hasGif!==false,
     poll:ct.hasPoll!==false,cw:ct.cw!==""&&ct.cw!==false,plus:ct.hasThread!==false
@@ -2711,11 +2723,13 @@ function attachComposerViewportDock(m){
   window.__lentonComposeViewportCleanup?.();
   const vv=window.visualViewport,dock=m?.querySelector(".compose-bottom-dock");
   if(!dock)return ()=>{};
-  let raf=0;
-  const update=()=>{
+  let raf=0,lastKeyboardOffset=0,pendingEnsureVisible=false;
+  const update=(ensureVisible=false)=>{
+    if(ensureVisible)pendingEnsureVisible=true;
     cancelAnimationFrame(raf);
     raf=requestAnimationFrame(()=>{
       if(!m.isConnected)return;
+      const shouldEnsure=pendingEnsureVisible;pendingEnsureVisible=false;
       const viewport=window.visualViewport;
       const currentWidth=Math.round(viewport?.width||window.innerWidth||0);
       if(window.__lentonComposeLayoutWidth!==currentWidth){
@@ -2726,27 +2740,35 @@ function attachComposerViewportDock(m){
       const keyboardOffset=viewport
         ? Math.max(0,Math.round(baseHeight-viewport.height-viewport.offsetTop))
         : 0;
+      const keyboardOpened=lastKeyboardOffset<=80&&keyboardOffset>80;
+      lastKeyboardOffset=keyboardOffset;
       m.style.setProperty("--compose-keyboard-offset",keyboardOffset+"px");
       m.classList.toggle("keyboard-open",keyboardOffset>80);
       const focused=m.querySelector("textarea:focus,input:focus");
-      if(focused&&keyboardOffset>80){
+      if((shouldEnsure||keyboardOpened)&&focused&&keyboardOffset>80){
         const rect=focused.getBoundingClientRect();
         const dockTop=dock.getBoundingClientRect().top;
-        if(rect.bottom>dockTop-12)focused.scrollIntoView({block:"center",behavior:"instant"});
+        if(rect.bottom>dockTop-12||rect.top<0)focused.scrollIntoView({block:"center",behavior:"auto"});
       }
     });
   };
-  window.addEventListener("resize",update,{passive:true});
-  vv?.addEventListener("resize",update,{passive:true});
-  vv?.addEventListener("scroll",update,{passive:true});
-  m.addEventListener("focusin",()=>setTimeout(update,40));
-  m.addEventListener("focusout",()=>setTimeout(update,80));
-  update();
+  const onResize=()=>update(false);
+  const onViewportScroll=()=>update(false);
+  const onFocusIn=()=>setTimeout(()=>update(true),40);
+  const onFocusOut=()=>setTimeout(()=>update(false),80);
+  window.addEventListener("resize",onResize,{passive:true});
+  vv?.addEventListener("resize",onResize,{passive:true});
+  vv?.addEventListener("scroll",onViewportScroll,{passive:true});
+  m.addEventListener("focusin",onFocusIn);
+  m.addEventListener("focusout",onFocusOut);
+  update(true);
   const cleanup=()=>{
     cancelAnimationFrame(raf);
-    window.removeEventListener("resize",update);
-    vv?.removeEventListener("resize",update);
-    vv?.removeEventListener("scroll",update);
+    window.removeEventListener("resize",onResize);
+    vv?.removeEventListener("resize",onResize);
+    vv?.removeEventListener("scroll",onViewportScroll);
+    m.removeEventListener("focusin",onFocusIn);
+    m.removeEventListener("focusout",onFocusOut);
     if(window.__lentonComposeViewportCleanup===cleanup)window.__lentonComposeViewportCleanup=null;
   };
   window.__lentonComposeViewportCleanup=cleanup;
@@ -2795,13 +2817,14 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
     const m=document.createElement("div");m.className="modal compose-modal"+(reply?" reply-compose":"");
     const ct=ANDROID?.renderer?.compose||{};
     const visOptions=[["public","공개"],["unlisted","조용히 공개"],["private","팔로워만"],["direct","DM"]];
+    const showThreadLabels=!reply&&visibility!=="direct"&&parts.length>1;
     m.innerHTML=`<div class="sheet compose-sheet">
       <div class="sheet-head"><button class="iconbtn" id="closeCompose">×</button><h2>${reply?(ct.replyTitle||"답글"):(visibility==="direct"?"새 DM":(ct.newTitle||"새 게시물"))}</h2><button class="primary" id="sendCompose">${reply?(ct.replyButton||"답글"):(visibility==="direct"?"보내기":(ct.postButton||"게시"))}</button></div>
       ${reply?replyContextRows()+`<button type="button" class="compose-reply-summary" id="replyRecipientPicker">${esc(replySummaryText())}</button>`:""}
       ${!reply&&visibility==="direct"&&recips.length?`<div class="compose-direct-recipient">${esc(directRecipientText())}</div>`:""}
       ${!reply&&visibility!=="direct"&&recips.length?`<div class="recips">${recips.map((r,i)=>`<button data-r="${i}" class="${r.on?"":"off"}">${r.avatar?`<img src="${esc(r.avatar)}" alt="">`:""}<span>@${esc(r.acct)}</span></button>`).join("")}</div>`:""}
       <div id="parts">${parts.map((p,i)=>`<div class="part ${i===activePart?"active":""}" data-p="${i}">
-        ${i>0?`<div class="part-remove-row">${(!reply&&visibility!=="direct")?`<b>게시물 ${i+1}</b>`:""}<button type="button" data-remove-part="${i}" aria-label="추가 게시물 삭제">×</button></div>`:((!reply&&visibility!=="direct")?`<div class="part-head"><b>게시물 1</b></div>`:"")}
+        ${i>0?`<div class="part-remove-row">${showThreadLabels?`<b>게시물 ${i+1}</b>`:""}<button type="button" data-remove-part="${i}" aria-label="추가 게시물 삭제">×</button></div>`:(showThreadLabels?`<div class="part-head"><b>게시물 1</b></div>`:"")}
         <div class="part-body"><img class="avatar" src="${esc(state.me?.avatar_static||state.me?.avatar||"")}" alt=""><div class="part-fields">
           ${p.cw?`<input type="text" data-sp="${i}" placeholder="내용 경고" value="${esc(p.spoiler)}">`:""}
           <textarea data-t="${i}" placeholder="${reply?"답글을 입력하세요":(visibility==="direct"?"메시지를 입력하세요":"무슨 일이 일어나고 있나요?")}">${esc(p.text)}</textarea>
