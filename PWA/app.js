@@ -2083,8 +2083,20 @@ async function decideFollowRequest(id,accept){
 async function pushDiagnostics(){
   const supported="serviceWorker"in navigator&&"PushManager"in window&&"Notification"in window;
   let regd=false,last="-";
-  try{if(supported){const reg=await navigator.serviceWorker.ready;regd=!!(await reg.pushManager.getSubscription())}}
-  catch{}
+  try{
+    if(supported){
+      const current=currentAccountKey(),entry=savedAccounts().find(x=>x.key===current);
+      const slot=Number(entry?.pushSlot);
+      if(Number.isInteger(slot)&&slot>=0){
+        const reg=await navigator.serviceWorker.getRegistration("./push/a"+slot+"/");
+        regd=!!(await reg?.pushManager?.getSubscription?.());
+      }
+      if(!regd){
+        const legacy=await navigator.serviceWorker.getRegistration("./");
+        regd=!!(await legacy?.pushManager?.getSubscription?.());
+      }
+    }
+  }catch{}
   try{const c=await caches.open("lenton-meta"),r=await c.match("./__lastpush");if(r)last=new Date(Number(await r.text())).toLocaleString("ko-KR")}catch{}
   return {supported,regd,last};
 }

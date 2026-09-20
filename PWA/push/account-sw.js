@@ -82,7 +82,10 @@ self.addEventListener("push",event=>{
       data:{url:target,accountSlot:slot,notificationId,accountKey:acc?.key||"",icon:senderIcon,kind},
       silent:false
     };
-    await self.registration.showNotification(title,options);
+    await Promise.all([
+      self.registration.showNotification(title,options),
+      caches.open("lenton-meta").then(c=>c.put("./__lastpush",new Response(String(Date.now()))))
+    ]);
     const clients=await self.clients.matchAll({type:"window",includeUncontrolled:true});
     await Promise.all(clients.map(c=>c.postMessage({
       type:"push",title,body,icon:senderIcon,notificationId,accountSlot:slot,accountKey:acc?.key||"",totalUnread:total,kind
