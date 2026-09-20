@@ -15,7 +15,7 @@ const state = {
   me:null, view:"home", homeMode:"home", listId:null, lists:[], busy:false,
   theme:store.get("lenton_theme","system"), accent:store.get("lenton_accent",ANDROID?.theme?.accent||"#1d9bf0"),
   uiScale:Math.max(.8,Math.min(1.2,Number(store.get("lenton_ui_scale",1))||1)),
-  pushError:"", toast:"", notificationUnread:0, notificationUnreadOverflow:false, currentConversation:null, profileReplies:false, profileMode:"posts", profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, profilePagerData:{}, homePagerData:{}, navStack:[], dmDraftRecipients:[], updateAvailable:null, buildInfo:null
+  pushError:"", toast:"", notificationUnread:0, notificationUnreadOverflow:false, accountUnread:{}, currentConversation:null, profileReplies:false, profileMode:"posts", profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, profilePagerData:{}, homePagerData:{}, navStack:[], dmDraftRecipients:[], updateAvailable:null, buildInfo:null
 };
 
 function accountScope(){
@@ -243,20 +243,82 @@ async function finishOAuth(){
 }
 
 function savedAccounts(){return store.get("lenton_accounts",[])||[]}
-function saveCurrentAccount(){
+const PUSH_META_CACHE="lenton-push-meta-v2",PUSH_META_KEY="./__account_push_state";
+function currentAccountKey(){return state.session&&state.me?state.session.host+"|"+state.me.id:""}
+function allocatePushSlot(list,key){
+  const existing=list.find(x=>x.key===key);
+  if(Number.isInteger(existing?.pushSlot)&&existing.pushSlot>=0)return existing.pushSlot;
+  const used=new Set(list.map(x=>Number(x.pushSlot)).filter(Number.isInteger));
+  for(let i=0;i<16;i++)if(!used.has(i))return i;
+  return Math.max(0,list.length);
+}
+async function readPushMeta(){
+  try{
+    const cache=await caches.open(PUSH_META_CACHE),res=await cache.match(PUSH_META_KEY);
+    if(!res)return {accounts:{}};
+    const parsed=await res.json();
+    return parsed&&typeof parsed==="object"?{...parsed,accounts:parsed.accounts||{}}:{accounts:{}};
+  }catch{return {accounts:{}}}
+}
+async function writePushMeta(meta){
+  try{
+    const cache=await caches.open(PUSH_META_CACHE);
+    await cache.put(PUSH_META_KEY,new Response(JSON.stringify(meta||{accounts:{}}),{headers:{"Content-Type":"application/json"}}));
+  }catch{}
+}
+async function tokenFingerprint(token){
+  try{
+    const buf=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(String(token||"")));
+    return [...new Uint8Array(buf)].map(x=>x.toString(16).padStart(2,"0")).join("");
+  }catch{return ""}
+}
+async function syncSavedAccountsToPushMeta(){
+  const list=savedAccounts(),meta=await readPushMeta(),next={...meta,accounts:{...meta.accounts}};
+  const keep=new Set();
+  for(const x of list){
+    const slot=Number.isInteger(x.pushSlot)?x.pushSlot:allocatePushSlot(list,x.key);
+    keep.add(String(slot));
+    const prev=next.accounts[String(slot)]||{};
+    next.accounts[String(slot)]={
+      key:x.key,id:x.id,host:x.host,acct:x.acct,display_name:x.display_name,avatar:x.avatar,
+      tokenHash:await tokenFingerprint(x.session?.token||""),unread:Math.max(0,Number(prev.unread)||0)
+    };
+  }
+  for(const slot of Object.keys(next.accounts))if(!keep.has(String(slot)))delete next.accounts[slot];
+  await writePushMeta(next);
+  state.accountUnread={};
+  for(const a of Object.values(next.accounts||{}))if(a?.key)state.accountUnread[a.key]=Math.max(0,Number(a.unread)||0);
+  return next;
+}
+async function setSharedAccountUnread(key,count){
+  if(!key)return;
+  const meta=await readPushMeta();
+  const a=Object.values(meta.accounts||{}).find(x=>x?.key===key);
+  if(a)a.unread=Math.max(0,Number(count)||0);
+  await writePushMeta(meta);
+  state.accountUnread={};
+  for(const x of Object.values(meta.accounts||{}))if(x?.key)state.accountUnread[x.key]=Math.max(0,Number(x.unread)||0);
+}
+function totalAccountUnread(){
+  const vals=Object.values(state.accountUnread||{}).map(Number).filter(Number.isFinite);
+  return vals.length?vals.reduce((a,b)=>a+Math.max(0,b),0):Math.max(0,Number(state.notificationUnread)||0);
+}
+function accountUnreadFor(entry){return Math.max(0,Number(state.accountUnread?.[entry?.key])||0)}
+async function saveCurrentAccount(){
   if(!state.session||!state.me)return;
-  const list=savedAccounts(),key=state.session.host+"|"+state.me.id;
-  const entry={key,id:state.me.id,host:state.session.host,acct:state.me.acct,display_name:state.me.display_name||state.me.username,avatar:state.me.avatar_static||state.me.avatar||"",session:state.session};
-  const i=list.findIndex(x=>x.key===key);if(i>=0)list[i]=entry;else list.push(entry);
+  const list=savedAccounts(),key=state.session.host+"|"+state.me.id,i=list.findIndex(x=>x.key===key),old=i>=0?list[i]:null;
+  const entry={...(old||{}),key,id:state.me.id,host:state.session.host,acct:state.me.acct,display_name:state.me.display_name||state.me.username,avatar:state.me.avatar_static||state.me.avatar||"",session:state.session,pushSlot:Number.isInteger(old?.pushSlot)?old.pushSlot:allocatePushSlot(list,key)};
+  if(i>=0)list[i]=entry;else list.push(entry);
   store.set("lenton_accounts",list);
+  await syncSavedAccountsToPushMeta();
 }
 function resetAccountState(){
-  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];
+  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];state.notificationUnread=0;state.notificationUnreadOverflow=false;
 }
 async function switchSavedAccount(index){
   const list=savedAccounts(),entry=list[index];if(!entry?.session)return;
   rememberScroll();state.session=entry.session;store.set("lenton_session",state.session);resetAccountState();
-  try{state.me=await api("/api/v1/accounts/verify_credentials");state.customEmojis=null;await loadCustomEmojis();saveCurrentAccount();state.view="home";render();toast("계정을 전환했어요.")}
+  try{state.me=await api("/api/v1/accounts/verify_credentials");state.customEmojis=null;await loadCustomEmojis();await saveCurrentAccount();state.notificationUnread=accountUnreadFor(entry);state.view="home";render();refreshNotificationBadgeDom();setTimeout(()=>refreshUnreadNotificationCount(),80);toast("계정을 전환했어요.")}
   catch(e){toast("계정 전환 실패: "+e.message)}
 }
 function savedAccountFullHandle(x){
@@ -264,12 +326,13 @@ function savedAccountFullHandle(x){
   return "@"+acct+(acct.includes("@")?"":("@"+String(x?.host||"")));
 }
 function closeAccountSwitcher(){document.querySelector(".account-switcher-shade")?.remove()}
-function openAccountSwitcher(){
+async function openAccountSwitcher(){
   closeAccountSwitcher();
+  await syncSavedAccountsToPushMeta();
   const list=savedAccounts(),current=state.session?.host+"|"+(state.me?.id||""),shade=document.createElement("div");
   shade.className="account-switcher-shade";
   shade.innerHTML='<section class="account-switcher-sheet"><header><h2>계정</h2><button type="button" data-account-sheet-close aria-label="닫기">×</button></header>'+
-    '<div class="account-switcher-list">'+list.map((x,i)=>'<button type="button" class="account-switcher-row" data-account-sheet-switch="'+i+'"><img src="'+esc(x.avatar||"")+'" alt=""><span><b>'+esc(x.display_name||x.acct||"계정")+'</b><small>'+esc(savedAccountFullHandle(x))+'</small></span><em>'+(x.key===current?"✓":"")+'</em></button>').join("")+'</div>'+
+    '<div class="account-switcher-list">'+list.map((x,i)=>{const unread=accountUnreadFor(x);return '<button type="button" class="account-switcher-row" data-account-sheet-switch="'+i+'"><img src="'+esc(x.avatar||"")+'" alt=""><span><b>'+esc(x.display_name||x.acct||"계정")+'</b><small>'+esc(savedAccountFullHandle(x))+'</small></span><em>'+(unread>0?'<i class="account-unread-badge">'+esc(unread>99?"99+":String(unread))+'</i>':(x.key===current?'<i class="account-current-check">✓</i>':""))+'</em></button>'}).join("")+'</div>'+
     '<button type="button" class="account-existing-add" data-existing-account-add>기존 계정 추가</button></section>';
   document.body.append(shade);
   shade.onclick=e=>{if(e.target===shade)closeAccountSwitcher()};
@@ -361,7 +424,7 @@ async function saveProfileEdit(){
   }
   try{
     state.me=await apiMultipart("/api/v1/accounts/update_credentials",fd,{method:"PATCH"});
-    saveCurrentAccount();toast("프로필을 저장했어요.");
+    await saveCurrentAccount();toast("프로필을 저장했어요.");
     state.view="profile";state.profileMode="posts";render();
   }catch(e){toast(e.message);if(btn){btn.disabled=false;btn.textContent="저장"}}
 }
@@ -455,8 +518,9 @@ function refreshNotificationBadgeDom(){
     badge.textContent=txt;
   });
   try{
+    const total=totalAccountUnread();
     if("setAppBadge"in navigator){
-      if(state.notificationUnread>0)navigator.setAppBadge(state.notificationUnread).catch(()=>{});
+      if(total>0)navigator.setAppBadge(total).catch(()=>{});
       else navigator.clearAppBadge?.().catch(()=>{});
     }
   }catch{}
@@ -819,11 +883,84 @@ function pushAlertForm(prefs=pushAlertPrefs()){
     "data[policy]":"all"
   };
 }
+
+function pushAlertPrefsForAccount(entry){
+  const saved=store.get("lenton_push_alerts_"+String(entry?.key||""),{})||{};
+  return {dm:true,mention:true,status:true,interactions:true,follow:true,...saved};
+}
+function pushAlertFormForAccount(entry){return pushAlertForm(pushAlertPrefsForAccount(entry))}
+async function apiWithSession(session,path,{method="GET",form=null,query=null}={}){
+  if(!session?.host||!session?.token)throw new Error("계정 세션이 없습니다.");
+  let url="https://"+session.host+path;
+  if(query){const q=new URLSearchParams(query);url+="?"+q}
+  const headers={Accept:"application/json",Authorization:"Bearer "+session.token},opts={method,headers};
+  if(form){headers["Content-Type"]="application/x-www-form-urlencoded;charset=UTF-8";opts.body=form instanceof URLSearchParams?form:new URLSearchParams(form)}
+  const res=await fetch(url,opts),txt=await res.text();let data=null;try{data=txt?JSON.parse(txt):null}catch{data=txt}
+  if(!res.ok)throw new Error((data&&data.error)||("HTTP "+res.status));
+  return data;
+}
+function arrayBufferEqual(a,b){
+  if(!a||!b)return false;const x=new Uint8Array(a),y=new Uint8Array(b);if(x.length!==y.length)return false;
+  for(let i=0;i<x.length;i++)if(x[i]!==y[i])return false;
+  return true;
+}
+async function accountPushRegistration(entry){
+  const slot=Number(entry?.pushSlot);if(!Number.isInteger(slot)||slot<0)throw new Error("알림 슬롯이 없습니다.");
+  return navigator.serviceWorker.register("./push/account-sw.js",{scope:"./push/a"+slot+"/",updateViaCache:"none"});
+}
+async function registerPushForAccount(entry){
+  if(!entry?.session)return false;
+  const inst=await apiWithSession(entry.session,"/api/v2/instance");
+  const vapid=inst?.configuration?.vapid?.public_key||entry.session?.vapid_key;
+  if(!vapid)throw new Error((entry.display_name||entry.acct||"계정")+" 서버의 VAPID 키를 찾지 못했습니다.");
+  const reg=await accountPushRegistration(entry);
+  await reg.update().catch(()=>{});
+  const wanted=urlBase64ToUint8Array(vapid),old=await reg.pushManager.getSubscription();
+  let sub=old;
+  if(old&&!arrayBufferEqual(old.options?.applicationServerKey,wanted.buffer)){await old.unsubscribe().catch(()=>{});sub=null}
+  if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:wanted});
+  const j=sub.toJSON(),form={
+    "subscription[endpoint]":j.endpoint,
+    "subscription[keys][p256dh]":j.keys.p256dh,
+    "subscription[keys][auth]":j.keys.auth,
+    "subscription[standard]":"true",
+    ...pushAlertFormForAccount(entry)
+  };
+  try{await apiWithSession(entry.session,"/api/v1/push/subscription",{method:"POST",form})}
+  catch(firstError){
+    const legacy={...form};delete legacy["subscription[standard]"];
+    try{await apiWithSession(entry.session,"/api/v1/push/subscription",{method:"POST",form:legacy})}catch{throw firstError}
+  }
+  return true;
+}
+async function ensureAllAccountPushSubscriptions({quiet=true}={}){
+  if(!("serviceWorker"in navigator)||!("PushManager"in window)||!("Notification"in window))return false;
+  if(Notification.permission!=="granted")return false;
+  await syncSavedAccountsToPushMeta();
+  const list=savedAccounts();
+  let ok=0,failed=0;
+  for(const entry of list){
+    try{await registerPushForAccount(entry);ok++}catch{failed++}
+  }
+  const root=await navigator.serviceWorker.getRegistration("./").catch(()=>null);
+  const legacy=await root?.pushManager?.getSubscription?.().catch(()=>null);
+  if(legacy)await legacy.unsubscribe().catch(()=>{});
+  if(!quiet)toast(failed?("알림 "+ok+"개 계정 연결, "+failed+"개 실패"):("저장된 "+ok+"개 계정의 빠른 알림을 연결했어요."));
+  return ok>0;
+}
+async function cleanupAccountPush(entry){
+  try{await apiWithSession(entry.session,"/api/v1/push/subscription",{method:"DELETE"})}catch{}
+  try{
+    const reg=await navigator.serviceWorker.getRegistration("./push/a"+Number(entry.pushSlot)+"/");
+    const sub=await reg?.pushManager?.getSubscription?.();await sub?.unsubscribe?.();await reg?.unregister?.();
+  }catch{}
+}
+
 async function syncPushPreferences({quiet=false}={}){
   try{
-    if(!("serviceWorker"in navigator)||!("PushManager"in window))return false;
-    const reg=await navigator.serviceWorker.ready,sub=await reg.pushManager.getSubscription();
-    if(!sub)return false;
+    if(!("serviceWorker"in navigator)||!("PushManager"in window)||Notification.permission!=="granted")return false;
+    const key=currentAccountKey(),entry=savedAccounts().find(x=>x.key===key);
+    if(entry)await registerPushForAccount(entry);
     await api("/api/v1/push/subscription",{method:"PUT",form:pushAlertForm()});
     if(!quiet)toast("알림 종류를 저장했어요.");
     return true;
@@ -874,7 +1011,9 @@ async function serverNotificationReadId(){
 async function markNotificationsRead(latestId){
   const id=String(latestId||"");if(!id)return;
   setLocalNotificationReadId(id);
-  state.notificationUnread=0;state.notificationUnreadOverflow=false;refreshNotificationBadgeDom();
+  state.notificationUnread=0;state.notificationUnreadOverflow=false;
+  await setSharedAccountUnread(currentAccountKey(),0);
+  refreshNotificationBadgeDom();
   try{await api("/api/v1/markers",{method:"POST",form:{"notifications[last_read_id]":id}})}catch{}
 }
 let notificationUnreadReady=false;
@@ -888,7 +1027,7 @@ function notificationPreviewPayload(n){
     n?.type==="favourite"?"내 게시물을 좋아합니다.":
     n?.type==="reblog"?"내 게시물을 부스트했습니다.":"새 알림이 도착했어요."
   );
-  return {title,body,notificationId:String(n?.id||"")};
+  return {title,body,icon:a.avatar_static||a.avatar||"",notificationId:String(n?.id||"")};
 }
 async function refreshUnreadNotificationCount({bootstrap=true}={}){
   if(!state.session||!state.me)return 0;
@@ -901,7 +1040,9 @@ async function refreshUnreadNotificationCount({bootstrap=true}={}){
     if(!marker)marker=localNotificationReadId();
     if(!marker&&bootstrap){
       if(newest)setLocalNotificationReadId(newest);
-      state.notificationUnread=0;state.notificationUnreadOverflow=false;refreshNotificationBadgeDom();
+      state.notificationUnread=0;state.notificationUnreadOverflow=false;
+      await setSharedAccountUnread(currentAccountKey(),0);
+      refreshNotificationBadgeDom();
       notificationUnreadReady=true;
       return 0;
     }
@@ -914,6 +1055,7 @@ async function refreshUnreadNotificationCount({bootstrap=true}={}){
     }else count=visible.length;
     state.notificationUnread=count;
     state.notificationUnreadOverflow=!!marker&&!found&&visible.length>=80;
+    await setSharedAccountUnread(currentAccountKey(),count);
     refreshNotificationBadgeDom();
     if(notificationUnreadReady&&count>previous&&document.visibilityState==="visible"&&state.view!=="notifications"&&visible[0]){
       showForegroundPushBanner(notificationPreviewPayload(visible[0]));
@@ -927,10 +1069,15 @@ function showForegroundPushBanner(payload={}){
   if(document.visibilityState!=="visible"||state.view==="notifications")return;
   closeForegroundPushBanner();
   const b=document.createElement("button");b.type="button";b.className="foreground-push-banner";
-  const title=String(payload.title||"새 알림"),body=String(payload.body||"새 알림이 도착했어요.");
-  b.innerHTML='<span class="foreground-push-icon">'+lentonIcon("notifications")+'</span><span class="foreground-push-copy"><b>'+esc(title)+'</b><small>'+esc(body)+'</small></span>';
+  const title=String(payload.title||"새 알림"),body=String(payload.body||"새 알림이 도착했어요."),icon=String(payload.icon||"");
+  b.innerHTML='<span class="foreground-push-icon">'+(icon?'<img src="'+esc(icon)+'" alt="">':lentonIcon("notifications"))+'</span><span class="foreground-push-copy"><b>'+esc(title)+'</b><small>'+esc(body)+'</small></span>';
   b.onclick=async()=>{
     closeForegroundPushBanner();
+    const pushedKey=String(payload.accountKey||"");
+    if(pushedKey&&pushedKey!==currentAccountKey()){
+      const i=savedAccounts().findIndex(x=>x.key===pushedKey);
+      if(i>=0)await switchSavedAccount(i);
+    }
     const id=String(payload.notificationId||"");
     if(id)await openNotificationDeepLink(id);
     else{rememberScroll();state.view="notifications";await notificationsView(false)}
@@ -1739,20 +1886,22 @@ async function pushDiagnostics(){
   return {supported,regd,last};
 }
 
-function accountManagerScreen(){
+async function accountManagerScreen(){
+  await syncSavedAccountsToPushMeta();
   const list=savedAccounts(),current=state.session?.host+"|"+(state.me?.id||"");
   const rows=list.map((x,i)=>`<div class="account-manage-row">
-    <button class="account-main" data-account-switch="${i}"><img class="avatar" src="${esc(x.avatar||"")}" alt=""><span class="grow"><b>${esc(x.display_name||x.acct||"계정")}</b><small>@${esc(x.acct||"")} · ${esc(x.host||"")}</small></span>${x.key===current?"<em>사용 중</em>":""}</button>
+    <button class="account-main" data-account-switch="${i}"><img class="avatar" src="${esc(x.avatar||"")}" alt=""><span class="grow"><b>${esc(x.display_name||x.acct||"계정")}</b><small>@${esc(x.acct||"")} · ${esc(x.host||"")}</small></span>${accountUnreadFor(x)>0?'<i class="account-unread-badge">'+esc(accountUnreadFor(x)>99?"99+":String(accountUnreadFor(x)))+'</i>':(x.key===current?"<em>사용 중</em>":"")}</button>
     <button class="danger-text" data-account-remove="${i}" ${x.key===current?"disabled":""}>제거</button>
   </div>`).join("");
   $("#app").innerHTML=standaloneShell("계정 관리",`<div class="settings"><div class="section"><h3>계정</h3>${rows||'<div class="center">저장된 계정이 없어요.</div>'}<div class="setting-row"><button class="primary" data-action="addAccount">＋ 계정 추가</button></div></div></div>`);
   bind();
 }
-function removeSavedAccount(index){
+async function removeSavedAccount(index){
   const list=savedAccounts();if(index<0||index>=list.length)return;
   const target=list[index],current=state.session?.host+"|"+(state.me?.id||"");if(target.key===current){toast("현재 사용 중인 계정은 먼저 다른 계정으로 전환해 주세요.");return}
   if(!confirm("이 계정을 이 기기에서 제거할까요?"))return;
-  list.splice(index,1);store.set("lenton_accounts",list);accountManagerScreen();
+  await cleanupAccountPush(target);
+  list.splice(index,1);store.set("lenton_accounts",list);await syncSavedAccountsToPushMeta();refreshNotificationBadgeDom();accountManagerScreen();
 }
 function inquiryScreen(initialType=""){
   state.inquiryFiles=state.inquiryFiles||[];
@@ -1878,14 +2027,14 @@ function composeDefaultVisibility(reply,forced){
 }
 async function refreshCredentialAccount(){
   state.me=await api("/api/v1/accounts/verify_credentials");
-  saveCurrentAccount();
+  await saveCurrentAccount();
   return state.me;
 }
 async function updateAccountCredential(key,value,{quiet=false}={}){
   try{
     const form=new URLSearchParams();form.append(key,String(value));
     state.me=await api("/api/v1/accounts/update_credentials",{method:"PATCH",form});
-    saveCurrentAccount();
+    await saveCurrentAccount();
     if(!quiet)toast("계정 설정을 저장했어요.");
     return true;
   }catch(e){
@@ -2081,7 +2230,7 @@ async function settingsView(){
         </div>
       </div>
       <div class="setting-row ui-size-row">
-        <div class="setting-titleline"><div><b>UI 크기</b><small>글자·아이콘·버튼 크기를 함께 조절합니다.</small></div><strong id="uiScaleValue">${Math.round(state.uiScale*100)}%</strong></div>
+        <div class="setting-titleline"><div><b>UI 크기</b><small>글자·아이콘·버튼·타임라인 간격을 함께 조절합니다.</small></div><strong id="uiScaleValue">${Math.round(state.uiScale*100)}%</strong></div>
         <div class="ui-scale-control"><span>가</span><input id="uiScaleRange" type="range" min="80" max="120" step="5" value="${Math.round(state.uiScale*100)}"><span class="large">가</span></div>
       </div>
     </div>
@@ -2546,32 +2695,11 @@ async function enablePush(){
   try{
     if(!standalone() && /iPad|iPhone|iPod/.test(navigator.userAgent)) throw new Error("iPhone/iPad에서는 먼저 Safari 공유 → 홈 화면에 추가로 설치해주세요.");
     if(!("serviceWorker"in navigator)||!("PushManager"in window)||!("Notification"in window)) throw new Error("이 브라우저는 Web Push를 지원하지 않습니다.");
-    const perm=await Notification.requestPermission(); if(perm!=="granted") throw new Error("알림 권한이 허용되지 않았습니다.");
-    const inst=await api("/api/v2/instance");
-    const key=inst?.configuration?.vapid?.public_key||state.session.vapid_key;
-    if(!key) throw new Error("이 Mastodon 서버에서 VAPID 공개키를 찾지 못했습니다.");
-    const reg=await navigator.serviceWorker.ready;
-    const old=await reg.pushManager.getSubscription(); if(old) await old.unsubscribe();
-    const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlBase64ToUint8Array(key)});
-    const j=sub.toJSON(), form={
-      "subscription[endpoint]":j.endpoint,
-      "subscription[keys][p256dh]":j.keys.p256dh,
-      "subscription[keys][auth]":j.keys.auth,
-      "subscription[standard]":"true",
-      ...pushAlertForm()
-    };
-    try {
-      await api("/api/v1/push/subscription",{method:"POST",form});
-    } catch (firstError) {
-      const legacy={...form};
-      delete legacy["subscription[standard]"];
-      try {
-        await api("/api/v1/push/subscription",{method:"POST",form:legacy});
-      } catch {
-        throw firstError;
-      }
-    }
-    toast("빠른 알림을 켰어요.");settingsView();
+    const perm=await Notification.requestPermission();if(perm!=="granted")throw new Error("알림 권한이 허용되지 않았습니다.");
+    await saveCurrentAccount();
+    const ok=await ensureAllAccountPushSubscriptions({quiet:false});
+    if(!ok)throw new Error("푸시 알림 연결에 실패했습니다.");
+    settingsView();
   }catch(e){state.pushError=e.message;toast("알림 설정 실패");settingsView()}
 }
 function urlBase64ToUint8Array(s){const p="=".repeat((4-s.length%4)%4),b=(s+p).replace(/-/g,"+").replace(/_/g,"/"),raw=atob(b),a=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)a[i]=raw.charCodeAt(i);return a}
@@ -3041,14 +3169,16 @@ async function applyAutomaticUpdate(){
 async function registerSW(){
   if("serviceWorker"in navigator){
     const reg=await navigator.serviceWorker.register("./sw.js",{scope:"./",updateViaCache:"none"});
-    navigator.serviceWorker.addEventListener("message",e=>{
+    navigator.serviceWorker.addEventListener("message",async e=>{
       if(e.data?.type!=="push")return;
-      if(state.view==="notifications")notificationsView(false);
+      await syncSavedAccountsToPushMeta();
+      const current=currentAccountKey();
+      if(e.data?.accountKey&&e.data.accountKey===current)state.notificationUnread=accountUnreadFor({key:current});
+      if(state.view==="notifications"&&(!e.data?.accountKey||e.data.accountKey===current))notificationsView(false);
       else{
-        state.notificationUnread=Math.max(1,(Number(state.notificationUnread)||0)+1);
         refreshNotificationBadgeDom();
         showForegroundPushBanner(e.data);
-        setTimeout(()=>refreshUnreadNotificationCount({bootstrap:false}),120);
+        if(!e.data?.accountKey||e.data.accountKey===current)setTimeout(()=>refreshUnreadNotificationCount({bootstrap:false}),120);
       }
     });
     navigator.serviceWorker.addEventListener("controllerchange",()=>{
@@ -3083,10 +3213,17 @@ window.addEventListener("beforeunload",e=>{
 });
 (async()=>{
   try{await registerSW();await finishOAuth()}catch(e){toast(e.message)}
-  if(state.session){try{state.me=await api("/api/v1/accounts/verify_credentials");await loadCustomEmojis();saveCurrentAccount()}catch{store.del("lenton_session");state.session=null}}
-  const q=new URLSearchParams(location.search),notificationId=q.get("notification_id"),deep=q.get("view");if(["home","notifications","dm","profile","settings"].includes(deep))state.view=deep;
-  render();
+  const q=new URLSearchParams(location.search),notificationId=q.get("notification_id"),accountSlot=q.get("account_slot"),deep=q.get("view");
+  if(accountSlot!==null){
+    const entry=savedAccounts().find(x=>String(x.pushSlot)===String(accountSlot));
+    if(entry?.session){state.session=entry.session;store.set("lenton_session",state.session);resetAccountState()}
+  }
+  if(state.session){try{state.me=await api("/api/v1/accounts/verify_credentials");await loadCustomEmojis();await saveCurrentAccount()}catch{store.del("lenton_session");state.session=null}}
+  await syncSavedAccountsToPushMeta();
+  if(["home","notifications","dm","profile","settings"].includes(deep))state.view=deep;
+  render();refreshNotificationBadgeDom();
   if(state.session)setTimeout(()=>refreshUnreadNotificationCount(),80);
+  if(("Notification"in window)&&Notification.permission==="granted")setTimeout(()=>ensureAllAccountPushSubscriptions({quiet:true}),450);
   if(notificationId&&state.session)setTimeout(()=>openNotificationDeepLink(notificationId),0);
   applyAutomaticUpdate();
 })();
