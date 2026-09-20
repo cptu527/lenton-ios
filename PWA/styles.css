@@ -3985,3 +3985,73 @@ img{display:block}
   border-radius:50%;
   object-fit:cover;
 }
+
+
+/* 2026-09-20 compact home timeline density */
+.lenton-view-home .lenton-status{
+  padding:
+    calc(8px * var(--lenton-ui-scale,1))
+    calc(12px * var(--lenton-ui-scale,1))
+    calc(4px * var(--lenton-ui-scale,1));
+}
+.lenton-view-home .lenton-status .status-head{
+  gap:calc(9px * var(--lenton-ui-scale,1));
+}
+.lenton-view-home .lenton-status .avatar{
+  width:calc(44px * var(--lenton-ui-scale,1));
+  height:calc(44px * var(--lenton-ui-scale,1));
+  flex-basis:calc(44px * var(--lenton-ui-scale,1));
+}
+.lenton-view-home .lenton-status-top{
+  gap:calc(5px * var(--lenton-ui-scale,1));
+  min-height:calc(24px * var(--lenton-ui-scale,1));
+}
+.lenton-view-home .lenton-status .author-line{
+  height:calc(24px * var(--lenton-ui-scale,1));
+}
+.lenton-view-home .lenton-status .name,
+.lenton-view-home .lenton-status .acctline{
+  font-size:calc(14px * var(--lenton-ui-scale,1));
+}
+.lenton-view-home .lenton-status .status-more{
+  width:calc(30px * var(--lenton-ui-scale,1));
+  height:calc(30px * var(--lenton-ui-scale,1));
+}
+.lenton-view-home .lenton-status .status-more .lenton-icon{
+  width:calc(21px * var(--lenton-ui-scale,1));
+  height:calc(21px * var(--lenton-ui-scale,1));
+}
+.lenton-view-home .lenton-status .content{
+  padding:0 0 calc(3px * var(--lenton-ui-scale,1));
+  font-size:calc(15px * var(--lenton-ui-scale,1));
+  line-height:1.38;
+}
+.lenton-view-home .lenton-status .boosted{
+  min-height:0;
+  padding:0 0 calc(3px * var(--lenton-ui-scale,1)) calc(53px * var(--lenton-ui-scale,1));
+  font-size:calc(11px * var(--lenton-ui-scale,1));
+}
+.lenton-view-home .lenton-status .media{
+  margin:calc(5px * var(--lenton-ui-scale,1)) 0 calc(3px * var(--lenton-ui-scale,1));
+}
+.lenton-view-home .lenton-actions{
+  height:calc(36px * var(--lenton-ui-scale,1));
+  margin-top:calc(2px * var(--lenton-ui-scale,1));
+}
+.lenton-view-home .lenton-actions button{
+  height:calc(34px * var(--lenton-ui-scale,1));
+  min-height:0;
+  font-size:calc(20px * var(--lenton-ui-scale,1));
+}
+.lenton-view-home .lenton-actions .lenton-icon{
+  width:calc(21px * var(--lenton-ui-scale,1));
+  height:calc(21px * var(--lenton-ui-scale,1));
+}
+.lenton-view-home .lenton-actions .count{
+  margin-left:calc(2px * var(--lenton-ui-scale,1));
+  font-size:calc(11px * var(--lenton-ui-scale,1));
+}
+.lenton-view-home .lenton-status .cw{
+  margin:calc(2px * var(--lenton-ui-scale,1)) 0 calc(4px * var(--lenton-ui-scale,1));
+  padding:calc(6px * var(--lenton-ui-scale,1)) calc(8px * var(--lenton-ui-scale,1));
+}
