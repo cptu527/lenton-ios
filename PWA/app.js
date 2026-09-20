@@ -2230,7 +2230,7 @@ async function settingsView(){
         </div>
       </div>
       <div class="setting-row ui-size-row">
-        <div class="setting-titleline"><div><b>UI 크기</b><small>글자·아이콘·버튼 크기를 함께 조절합니다.</small></div><strong id="uiScaleValue">${Math.round(state.uiScale*100)}%</strong></div>
+        <div class="setting-titleline"><div><b>UI 크기</b><small>글자·아이콘·버튼·타임라인 간격을 함께 조절합니다.</small></div><strong id="uiScaleValue">${Math.round(state.uiScale*100)}%</strong></div>
         <div class="ui-scale-control"><span>가</span><input id="uiScaleRange" type="range" min="80" max="120" step="5" value="${Math.round(state.uiScale*100)}"><span class="large">가</span></div>
       </div>
     </div>
