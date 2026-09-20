@@ -877,17 +877,32 @@ async function markNotificationsRead(latestId){
   state.notificationUnread=0;state.notificationUnreadOverflow=false;refreshNotificationBadgeDom();
   try{await api("/api/v1/markers",{method:"POST",form:{"notifications[last_read_id]":id}})}catch{}
 }
+let notificationUnreadReady=false;
+function notificationPreviewPayload(n){
+  const a=n?.account||{},st=n?.status||{},labels=ANDROID?.renderer?.notificationLabels||{};
+  const who=a.display_name||a.username||"렌톤";
+  const title=who+" · "+(labels[n?.type]||"새 알림");
+  const body=plain(st.content||"")||(
+    n?.type==="follow"?"새 팔로워가 생겼어요.":
+    n?.type==="follow_request"?"팔로우 요청이 왔어요.":
+    n?.type==="favourite"?"내 게시물을 좋아합니다.":
+    n?.type==="reblog"?"내 게시물을 부스트했습니다.":"새 알림이 도착했어요."
+  );
+  return {title,body,notificationId:String(n?.id||"")};
+}
 async function refreshUnreadNotificationCount({bootstrap=true}={}){
   if(!state.session||!state.me)return 0;
   try{
+    const previous=Math.max(0,Number(state.notificationUnread)||0);
     const items=await api("/api/v1/notifications",{query:{limit:"80"}});
-    const visible=(items||[]).filter(n=>notificationFilterPrefs()[n.type]!==false);
+    const filter=notificationFilterPrefs(),visible=(items||[]).filter(n=>filter[n.type]!==false);
     const newest=String((items||[])[0]?.id||"");
     let marker=await serverNotificationReadId();
     if(!marker)marker=localNotificationReadId();
     if(!marker&&bootstrap){
       if(newest)setLocalNotificationReadId(newest);
       state.notificationUnread=0;state.notificationUnreadOverflow=false;refreshNotificationBadgeDom();
+      notificationUnreadReady=true;
       return 0;
     }
     let count=0,found=!marker;
@@ -900,6 +915,10 @@ async function refreshUnreadNotificationCount({bootstrap=true}={}){
     state.notificationUnread=count;
     state.notificationUnreadOverflow=!!marker&&!found&&visible.length>=80;
     refreshNotificationBadgeDom();
+    if(notificationUnreadReady&&count>previous&&document.visibilityState==="visible"&&state.view!=="notifications"&&visible[0]){
+      showForegroundPushBanner(notificationPreviewPayload(visible[0]));
+    }
+    notificationUnreadReady=true;
     return count;
   }catch{return state.notificationUnread||0}
 }
