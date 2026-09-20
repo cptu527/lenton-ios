@@ -338,7 +338,7 @@ async function saveCurrentAccount(){
   await syncSavedAccountsToPushMeta();
 }
 function resetAccountState(){
-  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];state.notificationUnread=0;state.notificationUnreadOverflow=false;state.dmUnread=0;
+  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];state.searchResults=null;state.searchQuery="";state.searchMode="posts";state.notificationUnread=0;state.notificationUnreadOverflow=false;state.dmUnread=0;
 }
 async function switchSavedAccount(index){
   const list=savedAccounts(),entry=list[index];if(!entry?.session)return;
