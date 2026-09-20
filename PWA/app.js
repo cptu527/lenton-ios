@@ -15,7 +15,7 @@ const state = {
   me:null, view:"home", homeMode:"home", listId:null, lists:[], busy:false,
   theme:store.get("lenton_theme","system"), accent:store.get("lenton_accent",ANDROID?.theme?.accent||"#1d9bf0"),
   uiScale:Math.max(.8,Math.min(1.2,Number(store.get("lenton_ui_scale",1))||1)),
-  pushError:"", toast:"", notificationUnread:0, notificationUnreadOverflow:false, dmUnread:0, accountUnread:{}, accountNotificationUnread:{}, accountDmUnread:{}, currentConversation:null, profileReplies:false, profileMode:"posts", profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, profilePagerData:{}, homePagerData:{}, navStack:[], dmDraftRecipients:[], updateAvailable:null, buildInfo:null
+  pushError:"", toast:"", notificationUnread:0, notificationUnreadOverflow:false, dmUnread:0, accountUnread:{}, accountNotificationUnread:{}, accountDmUnread:{}, currentConversation:null, profileReplies:false, profileMode:"posts", profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, profilePagerData:{}, homePagerData:{}, navStack:[], dmDraftRecipients:[], searchResults:null, searchQuery:"", searchMode:"posts", updateAvailable:null, buildInfo:null
 };
 
 function accountScope(){
@@ -338,7 +338,7 @@ async function saveCurrentAccount(){
   await syncSavedAccountsToPushMeta();
 }
 function resetAccountState(){
-  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];state.notificationUnread=0;state.notificationUnreadOverflow=false;state.dmUnread=0;
+  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];state.searchResults=null;state.searchQuery="";state.searchMode="posts";state.notificationUnread=0;state.notificationUnreadOverflow=false;state.dmUnread=0;
 }
 async function switchSavedAccount(index){
   const list=savedAccounts(),entry=list[index];if(!entry?.session)return;
@@ -506,8 +506,10 @@ function shell(title,body,opts={}){
   const avatar=av? `<img src="${esc(av)}" alt="">` : '<span class="fallback">○</span>';
   const view=opts.view||state.view;
   let right="";
-  if(view==="home"||view==="search"){
+  if(view==="home"){
     right=`<button class="top-icon search" data-view="search" aria-label="검색">${lentonIcon("search")}</button><button class="top-icon" data-action="topmenu" aria-label="더보기">${lentonIcon("more")}</button>`;
+  }else if(view==="search"){
+    right=`<button class="top-icon" data-action="searchMenu" aria-label="검색 메뉴">${lentonIcon("more")}</button>`;
   }else if(view==="settings"){
     right=`<button class="top-icon" data-action="topmenu" aria-label="더보기">${lentonIcon("more")}</button>`;
   }else if(view==="notifications"){
@@ -629,6 +631,7 @@ function visibleReplyCount(raw,items=[]){
 }
 function statusCard(raw,opts={}){
   const st=raw.reblog||raw, boosted=!!raw.reblog, a=st.account||{};
+  const boostAllowed=st?.rebloggable!==false&&!["private","direct"].includes(String(st?.visibility||""));
   const boostLine=boosted?`<div class="boosted">↻ ${renderEmojiText(raw.account?.display_name||raw.account?.username||"",raw.account?.emojis||[])}님이 부스트</div>`:"";
   const pinnedLine=opts.pinned?'<div class="profile-pinned-label">📌 고정됨</div>':"";
   const replyCount=opts.replyCountOverride===undefined||opts.replyCountOverride===null?Number(st.replies_count||0):Number(opts.replyCountOverride||0);
@@ -647,7 +650,7 @@ function statusCard(raw,opts={}){
         ${mediaMarkup(st.media_attachments||[])}
         <div class="actions lenton-actions">
           <button data-action="reply" data-id="${st.id}" aria-label="답글">${lentonIcon("reply")} <span class="count">${replyCount>0?replyCount:""}</span></button>
-          <button class="boost ${st.reblogged?"on":""}" data-action="boost" data-id="${st.id}" aria-label="부스트">${lentonIcon("boost")} <span class="count">${st.reblogs_count||""}</span></button>
+          <button class="boost ${st.reblogged?"on":""} ${boostAllowed?"":"unavailable"}" data-action="boost" data-id="${st.id}" aria-label="${boostAllowed?"부스트":"부스트할 수 없는 게시물"}" ${boostAllowed?"":"disabled"}>${boostAllowed?lentonIcon("boost"):'<span class="boost-unavailable-mark">×</span>'} <span class="count">${boostAllowed?(st.reblogs_count||""):""}</span></button>
           <button class="fav ${st.favourited?"on":""}" data-action="fav" data-id="${st.id}" aria-label="좋아요">${lentonIcon(st.favourited?"heartFill":"heart")} <span class="count">${st.favourites_count||""}</span></button>
           <button class="bookmark ${st.bookmarked?"on":""}" data-action="bookmark" data-id="${st.id}" aria-label="북마크">${lentonIcon(st.bookmarked?"bookmarkFill":"bookmark")}</button>
         </div>
@@ -1651,12 +1654,16 @@ function openProfilePopup(){
 function dialogBox(title,message,bodyHtml){
   document.querySelector(".android-dialog-shade")?.remove();
   const shade=document.createElement("div");shade.className="android-dialog-shade";
-  shade.innerHTML=`<div class="android-dialog"><h3>${esc(title)}</h3>${message?`<p>${esc(message)}</p>`:""}${bodyHtml}</div>`;document.body.append(shade);return shade;
+  shade.innerHTML=`<div class="android-dialog"><h3>${esc(title)}</h3>${message?`<p>${esc(message)}</p>`:""}${bodyHtml}</div>`;
+  document.body.append(shade);
+  shade.addEventListener("click",e=>{if(e.target===shade)shade.remove()});
+  return shade;
 }
 async function editPrivateNote(){
   const a=state.profileAccount,rel=state.profileRelationship;if(!a||!rel)return;
   const shade=dialogBox("비밀 메모","상대방에게는 보이지 않습니다. 비워서 저장하면 메모가 삭제됩니다.",`<textarea id="privateNoteInput" placeholder="나만 볼 수 있는 메모">${esc(rel.note||"")}</textarea><div class="android-dialog-actions"><button data-cancel>취소</button><button data-save>저장</button></div>`);
   shade.querySelector("[data-cancel]").onclick=()=>shade.remove();
+  requestAnimationFrame(()=>$("#privateNoteInput",shade)?.focus());
   shade.querySelector("[data-save]").onclick=async()=>{const btn=shade.querySelector("[data-save]"),value=$("#privateNoteInput",shade).value.trim();btn.disabled=true;try{const r=await api(`/api/v1/accounts/${a.id}/note`,{method:"POST",form:{comment:value}});state.profileRelationship={...rel,...r,note:r?.note??value};shade.remove();toast(value?"비밀 메모를 저장했어요.":"비밀 메모를 삭제했어요.");openProfile(a.id,state.profileMode||"posts")}catch(e){btn.disabled=false;toast(e.message)}};
 }
 async function toggleProfileRelation(endpoint){
@@ -1695,18 +1702,70 @@ async function showProfileListManager(){
   }catch(e){toast(e.message)}
 }
 
+
+function searchTabsMarkup(){
+  const modes=[["posts","게시물"],["people","사람"],["media","미디어"]];
+  return '<div class="search-tabs">'+modes.map(([id,label])=>'<button type="button" data-search-mode="'+id+'" class="'+(state.searchMode===id?"active":"")+'">'+label+'</button>').join("")+'</div>';
+}
+function searchPeopleMarkup(items=[]){
+  return items.length?items.map(a=>'<button class="row search-person-row" data-profile="'+esc(a.id||"")+'"><img class="avatar search-person-avatar" src="'+esc(a.avatar_static||a.avatar||"")+'" alt=""><div class="grow"><b>'+renderEmojiText(a.display_name||a.username,a.emojis||[])+'</b><div class="muted">@'+esc(a.acct||"")+'</div><div class="search-person-note">'+esc(plain(a.note||""))+'</div></div></button>').join(""):'<div class="center">사람 검색 결과가 없어요.</div>';
+}
+function searchStatusesForMode(mode){
+  const statuses=Array.isArray(state.searchResults?.statuses)?state.searchResults.statuses:[];
+  if(mode==="media")return statuses.filter(x=>(x?.media_attachments||[]).length>0);
+  return statuses;
+}
+function renderSearchResults(){
+  const box=$("#searchResults");if(!box)return;
+  if(!state.searchResults){
+    box.className="center";
+    box.innerHTML="검색어를 입력해 주세요.";
+    return;
+  }
+  box.className="";
+  const mode=state.searchMode||"posts";
+  let body="";
+  if(mode==="people")body=searchPeopleMarkup(state.searchResults.accounts||[]);
+  else{
+    const statuses=searchStatusesForMode(mode);
+    body=statuses.length?statuses.map(statusCard).join(""):'<div class="center">'+(mode==="media"?"미디어가 포함된 게시물이 없어요.":"게시물 검색 결과가 없어요.")+'</div>';
+  }
+  box.innerHTML=searchTabsMarkup()+'<div class="search-tab-body">'+body+'</div>';
+  bind();
+}
+function setSearchMode(mode){
+  if(!["posts","people","media"].includes(mode))return;
+  state.searchMode=mode;renderSearchResults();
+}
+function closeSearchMenu(){document.querySelector(".android-popup-shade.search-popup")?.remove()}
+function openSearchMenu(){
+  closeSearchMenu();
+  const shade=document.createElement("div");shade.className="android-popup-shade search-popup";
+  const items=[["posts","게시물"],["people","사람"],["media","미디어"],["clear","검색 초기화"]];
+  shade.innerHTML='<div class="android-popup search-popup-menu">'+items.map(([id,label])=>'<button type="button" data-search-menu="'+id+'" class="'+(state.searchMode===id?"active":"")+'">'+esc(label)+'</button>').join("")+'</div>';
+  document.body.append(shade);
+  shade.onclick=e=>{if(e.target===shade)closeSearchMenu()};
+  shade.querySelectorAll("[data-search-menu]").forEach(b=>b.onclick=()=>{
+    const mode=b.dataset.searchMenu;
+    closeSearchMenu();
+    if(mode==="clear"){
+      state.searchResults=null;state.searchQuery="";state.searchMode="posts";searchView();
+    }else setSearchMode(mode);
+  });
+}
 async function searchView(){
-  $("#app").innerHTML=shell("검색",`<div class="search-box"><input id="searchInput" class="field" placeholder="사람, 게시물, 해시태그 검색"><button class="primary" data-action="runsearch">검색</button></div><div id="searchResults" class="center">검색어를 입력해 주세요.</div>`);bind();
+  const q=state.searchQuery||"";
+  $("#app").innerHTML=shell("검색",'<div class="search-box"><input id="searchInput" class="field" placeholder="사람, 게시물, 해시태그 검색" value="'+esc(q)+'"><button class="primary" data-action="runsearch">검색</button></div><div id="searchResults" class="'+(state.searchResults?"":"center")+'"></div>');
+  bind();renderSearchResults();
 }
 async function runSearch(){
   const q=$("#searchInput")?.value.trim(); if(!q)return;
   const box=$("#searchResults"); box.className="center"; box.textContent="검색 중…";
   try{
-    const r=await api("/api/v2/search",{query:{q,resolve:"true",limit:"20"}});
-    let html="";
-    if(r.accounts?.length){html+=`<div class="section-title">사람</div>`+r.accounts.map(a=>`<button class="row" data-profile="${esc(a.id||"")}"><img class="avatar" style="width:48px;height:48px" src="${esc(a.avatar_static||a.avatar||"")}" alt=""><div class="grow"><b>${renderEmojiText(a.display_name||a.username,a.emojis||[])}</b><div class="muted">@${esc(a.acct)}</div></div></button>`).join("")}
-    if(r.statuses?.length){html+=`<div class="section-title">게시물</div>`+r.statuses.map(statusCard).join("")}
-    box.className="";box.innerHTML=html||'<div class="center">검색 결과가 없어요.</div>';bind();
+    const r=await api("/api/v2/search",{query:{q,resolve:"true",limit:"40"}});
+    state.searchQuery=q;state.searchResults=r||{accounts:[],statuses:[],hashtags:[]};
+    if(!["posts","people","media"].includes(state.searchMode))state.searchMode="posts";
+    renderSearchResults();
   }catch(e){box.className="center";box.textContent=e.message}
 }
 
@@ -2410,6 +2469,7 @@ function updateActionButtons(id,kind,on,delta=0){
 }
 async function statusAction(id,kind){
   const btn=document.querySelector(`[data-action="${kind}"][data-id="${CSS.escape(String(id))}"]`);
+  if(kind==="boost"&&btn?.disabled)return;
   const wasOn=!!btn?.classList.contains("on");
   const next=!wasOn;
   updateActionButtons(id,kind,next,next?1:-1);
@@ -2663,7 +2723,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
         </div></div>
       </div>`).join("")}</div>
       <div class="compose-bottom-dock">
-        <div class="compose-meta-row compose-visibility-row"><select id="composeVisibility" class="compose-visibility" aria-label="공개 범위">${visOptions.map(x=>`<option value="${x[0]}" ${visibility===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select></div>
+        <div class="compose-meta-row compose-visibility-row"><select id="composeVisibility" class="compose-visibility" aria-label="공개 범위">${visOptions.map(x=>`<option value="${x[0]}" ${visibility===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select><span class="compose-visibility-chevron" aria-hidden="true"></span></div>
         <div class="compose-tools android-compose-tools">
           ${composeToolMarkup(ct,!!reply)}
           <input id="composeFile" type="file" accept="image/*,video/*" multiple hidden>
@@ -3143,6 +3203,7 @@ function bind(){
     else if(a==="share"){const u=b.dataset.url||"";try{if(navigator.share)await navigator.share({url:u});else{await navigator.clipboard.writeText(u);toast("링크를 복사했어요.")}}catch{}}
     else if(a==="topmenu")openDrawer()
     else if(a==="notificationMenu")openNotificationMenu()
+    else if(a==="searchMenu")openSearchMenu()
     else if(a==="statusmenu")openStatusMenu(b.dataset.id)
     else if(a==="newlist")newList()
     else if(a==="resetLayout")resetMainTabLayout()
@@ -3164,6 +3225,8 @@ function bind(){
     else if(a==="profileNotify")toggleProfileNotify()
     else if(a==="followProfile")toggleFollowProfile()
   });
+  document.querySelectorAll("[data-search-mode]").forEach(b=>b.onclick=()=>setSearchMode(b.dataset.searchMode));
+  document.querySelectorAll(".private-note-card[data-action='editPrivateNote']").forEach(b=>b.onclick=e=>{e.preventDefault();e.stopPropagation();editPrivateNote()});
   document.querySelectorAll("[data-account-choice]").forEach(b=>b.onclick=()=>applyAccountChoice(b.dataset.accountChoice,b.dataset.value||""));
     document.querySelectorAll("[data-home-mode]").forEach(b=>b.onclick=()=>{if(document.querySelector("[data-home-pager]"))setHomePagerMode(b.dataset.homeMode,true);else{state.homeMode=b.dataset.homeMode;state.listId=null;render()}});
   document.querySelectorAll("[data-list]").forEach(b=>b.onclick=()=>{state.listId=state.listId===b.dataset.list?null:b.dataset.list;render()});
