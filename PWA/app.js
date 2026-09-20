@@ -2315,6 +2315,8 @@ async function accountNotificationSettingsScreen(){
   const d=await pushDiagnostics(),push=pushAlertPrefs(),filter=notificationFilterPrefs();
   const notif=("Notification"in window)?Notification.permission:"unsupported";
   const permissionText=notif==="granted"?"허용됨":notif==="denied"?"차단됨":notif==="default"?"아직 묻지 않음":"지원 안 됨";
+  const currentPushEntry=savedAccounts().find(x=>x.key===currentAccountKey());
+  const pushMasterOn=!!currentPushEntry&&pushEnabledForAccount(currentPushEntry)&&d.regd;
   const pushRows=[
     ["dm","DM","비공개 직접 메시지가 왔을 때"],
     ["mention","멘션과 답글","내 아이디가 언급되거나 내 게시물에 답글이 달릴 때"],
@@ -2326,8 +2328,8 @@ async function accountNotificationSettingsScreen(){
     '<div class="section account-settings-group"><h3>휴대폰 알림</h3>'+
       pushRows.map(x=>'<label class="account-toggle-row"><span><b>'+esc(x[1])+'</b><small>'+esc(x[2])+'</small></span><input type="checkbox" class="lenton-switch" data-account-push="'+esc(x[0])+'" '+(push[x[0]]?"checked":"")+'></label>').join("")+
       '<div class="setting-note">DM과 멘션은 Mastodon 서버에 따라 같은 ‘멘션’ Push 유형으로 전달될 수 있습니다.</div>'+
-      '<div class="push-summary"><div><span>현재 알림 상태</span><b class="'+(d.regd?"ok":"bad")+'">'+(d.regd?"켜짐":"꺼짐")+'</b></div><div><span>알림 권한</span><b>'+esc(permissionText)+'</b></div></div>'+
-      '<div class="setting-row"><button class="primary settings-push-button" data-action="enablepush">'+(d.regd?"알림 다시 등록":"휴대폰 알림 켜기")+'</button></div>'+
+      '<div class="push-summary"><div><span>현재 알림 상태</span><b class="'+(pushMasterOn?"ok":"bad")+'">'+(pushMasterOn?"켜짐":"꺼짐")+'</b></div><div><span>알림 권한</span><b>'+esc(permissionText)+'</b></div></div>'+
+      '<div class="setting-row"><button class="'+(pushMasterOn?"danger":"primary")+' settings-push-button" data-action="'+(pushMasterOn?"disablepush":"enablepush")+'">'+(pushMasterOn?"알림 연결 끄기":"휴대폰 알림 켜기")+'</button></div>'+
     '</div>'+
     '<div class="section account-settings-group"><h3>알림 목록 필터</h3>'+
       '<div class="setting-intro"><b>알림 화면에 표시할 유형</b><p>체크를 끈 유형은 렌톤 알림 목록에서 숨깁니다.</p></div>'+
@@ -2466,7 +2468,6 @@ async function settingsView(){
 
     <div class="section settings-group"><h3>알림</h3>
       <div class="setting-intro"><b>휴대폰 알림</b><p>홈 화면에 설치한 렌톤이 닫혀 있어도 받을 알림을 선택합니다.</p></div>
-      <label class="notification-setting-row push-master-row"><span><b>푸시 알림 받기</b><small>현재 계정의 백그라운드 푸시 알림을 켜거나 끕니다.</small></span><input id="pushMasterToggle" type="checkbox" class="lenton-switch" ${pushMasterOn?"checked":""}></label>
       ${[
         ["dm","DM","나에게 비공개 직접 메시지가 왔을 때"],
         ["mention","멘션과 답글","내 아이디가 언급되거나 내 게시물에 답글이 달릴 때"],
@@ -2479,7 +2480,7 @@ async function settingsView(){
         <div><span>현재 알림 상태</span><b class="${pushMasterOn?"ok":"bad"}">${pushState}</b></div>
         <div><span>iPhone 알림 권한</span><b>${esc(permissionText)}</b></div>
       </div>
-      ${pushMasterOn?'<div class="setting-row"><button class="primary settings-push-button" data-action="enablepush">알림 연결 다시 등록</button></div>':""}
+      <div class="setting-row"><button class="${pushMasterOn?"danger":"primary"} settings-push-button" data-action="${pushMasterOn?"disablepush":"enablepush"}">${pushMasterOn?"알림 연결 끄기":"휴대폰 알림 켜기"}</button></div>
       ${state.pushError?`<div class="notice bad">${esc(state.pushError)}</div>`:""}
       <details class="push-details"><summary>알림 연결 상태 자세히 보기</summary>
         <div class="kv"><span>홈 화면 웹앱</span><b>${standalone()?"예":"아니오"}</b></div>
@@ -3367,6 +3368,7 @@ function bind(){
     else if(a==="reload")render()
     else if(a==="logout")logout()
     else if(a==="enablepush")enablePush()
+    else if(a==="disablepush")setCurrentPushEnabled(false)
     else if(a==="clearNotifications"){try{await api("/api/v1/notifications/clear",{method:"POST",form:{}});notificationsView(false)}catch(e){toast(e.message)}}
     else if(a==="share"){const u=b.dataset.url||"";try{if(navigator.share)await navigator.share({url:u});else{await navigator.clipboard.writeText(u);toast("링크를 복사했어요.")}}catch{}}
     else if(a==="topmenu")openDrawer()
@@ -3417,7 +3419,6 @@ function bind(){
   $("#accentSel")?.addEventListener("input",e=>applyAccent(e.target.value));
   document.querySelectorAll("[data-accent-preset]").forEach(b=>b.onclick=()=>{applyAccent(b.dataset.accentPreset);const input=$("#accentSel");if(input)input.value=b.dataset.accentPreset});
   $("#uiScaleRange")?.addEventListener("input",e=>{state.uiScale=Math.max(.8,Math.min(1.2,Number(e.target.value||100)/100));store.set("lenton_ui_scale",state.uiScale);const label=$("#uiScaleValue");if(label)label.textContent=Math.round(state.uiScale*100)+"%";applyAndroidSpecMetrics()});
-  $("#pushMasterToggle")?.addEventListener("change",async e=>{const on=e.currentTarget.checked;e.currentTarget.disabled=true;await setCurrentPushEnabled(on)});
   document.querySelectorAll("[data-push-pref]").forEach(x=>x.onchange=async()=>{const p=pushAlertPrefs();p[x.dataset.pushPref]=x.checked;savePushAlertPrefs(p);const ok=await syncPushPreferences({quiet:true});toast(ok?"알림 설정을 저장했어요.":"알림 종류를 저장했어요. 알림을 켜면 적용됩니다.")});
   const appRoot=document.querySelector("#app>.app");
   if(appRoot){
