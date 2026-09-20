@@ -3857,7 +3857,8 @@ img{display:block}
 
 
 /* 2026-09-20 foreground push + unread notification badge */
-.bottom button[data-view="notifications"]{
+.bottom button[data-view="notifications"],
+.bottom button[data-view="dm"]{
   position:relative;
 }
 .nav-notification-badge{
@@ -4054,4 +4055,29 @@ img{display:block}
 .lenton-view-home .lenton-status .cw{
   margin:calc(2px * var(--lenton-ui-scale,1)) 0 calc(4px * var(--lenton-ui-scale,1));
   padding:calc(6px * var(--lenton-ui-scale,1)) calc(8px * var(--lenton-ui-scale,1));
+}
+
+
+/* 2026-09-20 notification avatar-only click target */
+.android-notify-avatar{
+  width:36px;
+  height:36px;
+  flex:0 0 36px;
+  display:grid;
+  place-items:center;
+  padding:0;
+  border:0;
+  border-radius:50%;
+  background:transparent;
+  overflow:hidden;
+}
+.android-notify-avatar img{
+  width:36px;
+  height:36px;
+  border-radius:50%;
+  object-fit:cover;
+}
+.android-notify-person>b{
+  flex:1;
+  min-width:0;
 }

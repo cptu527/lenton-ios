@@ -22,9 +22,34 @@ async function writeMeta(meta){
     await cache.put(META_KEY,new Response(JSON.stringify(meta||{accounts:{}}),{headers:{"Content-Type":"application/json"}}));
   }catch{}
 }
-async function incrementUnread(){
+async function classifyPush(data,acc){
+  const type=String(data?.notification_type||data?.notification?.type||"");
+  if(type&&type!=="mention")return "notification";
+  const notificationId=String(data?.notification_id||data?.id||"");
+  const token=String(data?.access_token||"");
+  const host=String(acc?.host||"");
+  if(type==="mention"&&notificationId&&token&&host){
+    try{
+      const r=await fetch("https://"+host+"/api/v1/notifications/"+encodeURIComponent(notificationId),{
+        headers:{Accept:"application/json",Authorization:"Bearer "+token},cache:"no-store"
+      });
+      if(r.ok){
+        const n=await r.json();
+        if(n?.status?.visibility==="direct")return "dm";
+      }
+    }catch{}
+  }
+  return "notification";
+}
+async function incrementUnread(kind){
   const slot=accountSlot(),meta=await readMeta(),key=String(slot),acc=meta.accounts?.[key]||null;
-  if(acc){acc.unread=Math.max(0,Number(acc.unread)||0)+1;meta.accounts[key]=acc;await writeMeta(meta)}
+  if(acc){
+    acc.notificationUnread=Math.max(0,Number(acc.notificationUnread)||0);
+    acc.dmUnread=Math.max(0,Number(acc.dmUnread)||0);
+    if(kind==="dm")acc.dmUnread++;else acc.notificationUnread++;
+    acc.unread=acc.notificationUnread+acc.dmUnread;
+    meta.accounts[key]=acc;await writeMeta(meta);
+  }
   const total=Object.values(meta.accounts||{}).reduce((n,a)=>n+Math.max(0,Number(a?.unread)||0),0);
   try{
     if("setAppBadge" in self.navigator){
@@ -41,7 +66,9 @@ self.addEventListener("push",event=>{
   let data={};
   try{data=event.data?event.data.json():{}}catch{try{data={body:event.data?.text()||""}}catch{}}
   event.waitUntil((async()=>{
-    const {slot,acc,total}=await incrementUnread();
+    const slot=accountSlot(),meta=await readMeta(),acc=meta.accounts?.[String(slot)]||null;
+    const kind=await classifyPush(data,acc);
+    const counted=await incrementUnread(kind),total=counted.total;
     const n=data.notification||{};
     const title=data.title||n.title||"렌톤";
     const body=data.body||n.body||data.message||"새 알림이 도착했습니다.";
@@ -54,13 +81,13 @@ self.addEventListener("push",event=>{
       badge:appIcon(),
       tag:(acc?.key||"lenton")+"|"+(notificationId||Date.now()),
       renotify:true,
-      data:{url:target,accountSlot:slot,notificationId,accountKey:acc?.key||"",icon:senderIcon},
+      data:{url:target,accountSlot:slot,notificationId,accountKey:acc?.key||"",icon:senderIcon,kind},
       silent:false
     };
     await self.registration.showNotification(title,options);
     const clients=await self.clients.matchAll({type:"window",includeUncontrolled:true});
     await Promise.all(clients.map(c=>c.postMessage({
-      type:"push",title,body,icon:senderIcon,notificationId,accountSlot:slot,accountKey:acc?.key||"",totalUnread:total
+      type:"push",title,body,icon:senderIcon,notificationId,accountSlot:slot,accountKey:acc?.key||"",totalUnread:total,kind
     })));
   })());
 });
