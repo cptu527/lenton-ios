@@ -853,7 +853,7 @@ function setHomePagerMode(mode,animate=true){
   state.homeMode=mode;state.listId=null;state.timelineItems=state.homePagerData?.[mode]||[];
   syncHomePagerUi(mode,animate);
 }
-async function homeView({silent=false}={}){
+async function homeView({silent=false,forceFresh=false}={}){
   state.busy=true;
   try{
     if(state.listId){
@@ -866,7 +866,7 @@ async function homeView({silent=false}={}){
       return;
     }
 
-    const cached=(state.homePagerData?.home?.length?state.homePagerData:homeSnapshotRead());
+    const cached=forceFresh?null:(state.homePagerData?.home?.length?state.homePagerData:homeSnapshotRead());
     if(cached){
       state.homePagerData=cached;
       renderHomePagerData(cached);
@@ -879,7 +879,7 @@ async function homeView({silent=false}={}){
     // First paint only needs the Mastodon home endpoint; do not block it on
     // the complete following list or public-timeline filtering.
     let quickRawHome=null;
-    if(!cached){
+    if(forceFresh||!cached){
       try{
         const quick=await loadHomeQuickPair();
         quickRawHome=quick.rawHome;
@@ -3285,7 +3285,7 @@ function attachHomePullToRefresh(){
     main.style.transition="transform 160ms ease";main.style.transform="translate3d(0,0,0)";
     if(should){
       if(indicator)indicator.classList.add("loading");
-      try{await homeView()}finally{setTimeout(cleanup,120)}
+      try{await homeView({silent:true,forceFresh:true})}finally{setTimeout(cleanup,120)}
     }else setTimeout(cleanup,170);
   },{passive:true});
   main.addEventListener("touchcancel",cleanup,{passive:true});
@@ -3321,8 +3321,14 @@ function bind(){
   document.querySelectorAll("[data-layout-down]").forEach(b=>b.onclick=()=>mutateLayout(b.dataset.layoutDown,1));
   document.querySelectorAll("[data-layout-toggle]").forEach(b=>b.onclick=()=>mutateLayout(b.dataset.layoutToggle,0));
   document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{
+    const target=b.dataset.view,wasCurrent=target===state.view;
     rememberScroll();
-    const target=b.dataset.view;
+    if(target==="home"&&wasCurrent){
+      state.listId=null;
+      window.scrollTo({top:0,left:0,behavior:"auto"});
+      setTimeout(()=>homeView({silent:true,forceFresh:true}),0);
+      return;
+    }
     state.view=target;state.listId=null;
     const cached=state.pageCache[target]||"";
     if(cached.includes("lenton-view-"+target)){
@@ -3330,7 +3336,7 @@ function bind(){
       clearGestureBindingMarks($("#app"));
       bind();
       requestAnimationFrame(()=>attachLentonGestures());
-      if(target==="home")setTimeout(()=>homeView({silent:true}),0);
+      if(target==="home")setTimeout(()=>homeView({silent:true,forceFresh:true}),0);
       else if(target==="notifications")setTimeout(()=>notificationsView(false,true),0);
       else if(target==="dm")setTimeout(()=>dmView(true),0);
       return;
