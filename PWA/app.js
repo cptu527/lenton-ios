@@ -15,7 +15,7 @@ const state = {
   me:null, view:"home", homeMode:"home", listId:null, lists:[], busy:false,
   theme:store.get("lenton_theme","system"), accent:store.get("lenton_accent",ANDROID?.theme?.accent||"#1d9bf0"),
   uiScale:Math.max(.8,Math.min(1.2,Number(store.get("lenton_ui_scale",1))||1)),
-  pushError:"", toast:"", currentConversation:null, profileReplies:false, profileMode:"posts", profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, profilePagerData:{}, homePagerData:{}, navStack:[], dmDraftRecipients:[], updateAvailable:null, buildInfo:null
+  pushError:"", toast:"", notificationUnread:0, notificationUnreadOverflow:false, currentConversation:null, profileReplies:false, profileMode:"posts", profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, profilePagerData:{}, homePagerData:{}, navStack:[], dmDraftRecipients:[], updateAvailable:null, buildInfo:null
 };
 
 function accountScope(){
@@ -436,8 +436,31 @@ function shell(title,body,opts={}){
     ${opts.fab?`<button class="fab lenton-fab" data-action="${esc(opts.fabAction||"compose")}">＋</button>`:""}
   </div>`;
 }
-function nav(v){return `<button data-view="${v}" class="${state.view===v?"active":""}" aria-label="${v}">${navIcon(v)}</button>`}
+function notificationBadgeText(){
+  const n=Math.max(0,Number(state.notificationUnread)||0);
+  if(!n)return "";
+  return state.notificationUnreadOverflow||n>99?"99+":String(n);
+}
+function nav(v){
+  const badge=v==="notifications"&&state.notificationUnread>0?`<span class="nav-notification-badge">${esc(notificationBadgeText())}</span>`:"";
+  return `<button data-view="${v}" class="${state.view===v?"active":""}" aria-label="${v}">${navIcon(v)}${badge}</button>`;
+}
 function navBar(){return visibleNavItems().map(x=>nav(x.id)).join("")}
+function refreshNotificationBadgeDom(){
+  const txt=notificationBadgeText();
+  document.querySelectorAll('.bottom button[data-view="notifications"]').forEach(btn=>{
+    let badge=btn.querySelector(".nav-notification-badge");
+    if(!txt){badge?.remove();return}
+    if(!badge){badge=document.createElement("span");badge.className="nav-notification-badge";btn.appendChild(badge)}
+    badge.textContent=txt;
+  });
+  try{
+    if("setAppBadge"in navigator){
+      if(state.notificationUnread>0)navigator.setAppBadge(state.notificationUnread).catch(()=>{});
+      else navigator.clearAppBadge?.().catch(()=>{});
+    }
+  }catch{}
+}
 
 function stableItemKey(el){
   if(el?.dataset?.statusId)return "status:"+el.dataset.statusId;
@@ -839,11 +862,90 @@ function openNotificationFilter(){
     saveNotificationFilterPrefs(prefs);shade.remove();notificationsView(false);
   };
 }
+
+function localNotificationReadId(){return String(store.get(scopedKey("notification_last_read_id"),"")||"")}
+function setLocalNotificationReadId(id){if(id)store.set(scopedKey("notification_last_read_id"),String(id))}
+async function serverNotificationReadId(){
+  try{
+    const m=await api("/api/v1/markers",{query:{"timeline[]":"notifications"}});
+    return String(m?.notifications?.last_read_id||"");
+  }catch{return ""}
+}
+async function markNotificationsRead(latestId){
+  const id=String(latestId||"");if(!id)return;
+  setLocalNotificationReadId(id);
+  state.notificationUnread=0;state.notificationUnreadOverflow=false;refreshNotificationBadgeDom();
+  try{await api("/api/v1/markers",{method:"POST",form:{"notifications[last_read_id]":id}})}catch{}
+}
+let notificationUnreadReady=false;
+function notificationPreviewPayload(n){
+  const a=n?.account||{},st=n?.status||{},labels=ANDROID?.renderer?.notificationLabels||{};
+  const who=a.display_name||a.username||"렌톤";
+  const title=who+" · "+(labels[n?.type]||"새 알림");
+  const body=plain(st.content||"")||(
+    n?.type==="follow"?"새 팔로워가 생겼어요.":
+    n?.type==="follow_request"?"팔로우 요청이 왔어요.":
+    n?.type==="favourite"?"내 게시물을 좋아합니다.":
+    n?.type==="reblog"?"내 게시물을 부스트했습니다.":"새 알림이 도착했어요."
+  );
+  return {title,body,notificationId:String(n?.id||"")};
+}
+async function refreshUnreadNotificationCount({bootstrap=true}={}){
+  if(!state.session||!state.me)return 0;
+  try{
+    const previous=Math.max(0,Number(state.notificationUnread)||0);
+    const items=await api("/api/v1/notifications",{query:{limit:"80"}});
+    const filter=notificationFilterPrefs(),visible=(items||[]).filter(n=>filter[n.type]!==false);
+    const newest=String((items||[])[0]?.id||"");
+    let marker=await serverNotificationReadId();
+    if(!marker)marker=localNotificationReadId();
+    if(!marker&&bootstrap){
+      if(newest)setLocalNotificationReadId(newest);
+      state.notificationUnread=0;state.notificationUnreadOverflow=false;refreshNotificationBadgeDom();
+      notificationUnreadReady=true;
+      return 0;
+    }
+    let count=0,found=!marker;
+    if(marker){
+      for(const n of visible){
+        if(String(n.id)===marker){found=true;break}
+        count++;
+      }
+    }else count=visible.length;
+    state.notificationUnread=count;
+    state.notificationUnreadOverflow=!!marker&&!found&&visible.length>=80;
+    refreshNotificationBadgeDom();
+    if(notificationUnreadReady&&count>previous&&document.visibilityState==="visible"&&state.view!=="notifications"&&visible[0]){
+      showForegroundPushBanner(notificationPreviewPayload(visible[0]));
+    }
+    notificationUnreadReady=true;
+    return count;
+  }catch{return state.notificationUnread||0}
+}
+function closeForegroundPushBanner(){document.querySelector(".foreground-push-banner")?.remove()}
+function showForegroundPushBanner(payload={}){
+  if(document.visibilityState!=="visible"||state.view==="notifications")return;
+  closeForegroundPushBanner();
+  const b=document.createElement("button");b.type="button";b.className="foreground-push-banner";
+  const title=String(payload.title||"새 알림"),body=String(payload.body||"새 알림이 도착했어요.");
+  b.innerHTML='<span class="foreground-push-icon">'+lentonIcon("notifications")+'</span><span class="foreground-push-copy"><b>'+esc(title)+'</b><small>'+esc(body)+'</small></span>';
+  b.onclick=async()=>{
+    closeForegroundPushBanner();
+    const id=String(payload.notificationId||"");
+    if(id)await openNotificationDeepLink(id);
+    else{rememberScroll();state.view="notifications";await notificationsView(false)}
+  };
+  document.body.append(b);
+  setTimeout(()=>{if(b.isConnected)b.classList.add("show")},20);
+  setTimeout(()=>{if(b.isConnected){b.classList.remove("show");setTimeout(()=>b.remove(),180)}},5200);
+}
+
 async function notificationsView(mentionsOnly=false){
   renderLoadingShell("알림");
   try{
     const query={limit:"40"};if(mentionsOnly)query["types[]"]="mention";
     let items=await api("/api/v1/notifications",{query});
+    if(!mentionsOnly&&items?.[0]?.id)await markNotificationsRead(items[0].id);
     if(!mentionsOnly){
       const filter=notificationFilterPrefs();
       items=items.filter(n=>filter[n.type]!==false);
@@ -2939,7 +3041,16 @@ async function applyAutomaticUpdate(){
 async function registerSW(){
   if("serviceWorker"in navigator){
     const reg=await navigator.serviceWorker.register("./sw.js",{scope:"./",updateViaCache:"none"});
-    navigator.serviceWorker.addEventListener("message",e=>{if(e.data?.type==="push"){toast("새 알림이 도착했어요.");if(state.view==="notifications")notificationsView()}});
+    navigator.serviceWorker.addEventListener("message",e=>{
+      if(e.data?.type!=="push")return;
+      if(state.view==="notifications")notificationsView(false);
+      else{
+        state.notificationUnread=Math.max(1,(Number(state.notificationUnread)||0)+1);
+        refreshNotificationBadgeDom();
+        showForegroundPushBanner(e.data);
+        setTimeout(()=>refreshUnreadNotificationCount({bootstrap:false}),120);
+      }
+    });
     navigator.serviceWorker.addEventListener("controllerchange",()=>{
       if(window.__lentonControllerReloading)return;
       window.__lentonControllerReloading=true;
@@ -2950,9 +3061,9 @@ async function registerSW(){
     await reg.update().catch(()=>{});
   }
 }
-document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")applyAutomaticUpdate()});
-window.addEventListener("focus",applyAutomaticUpdate);
-setInterval(()=>{if(document.visibilityState==="visible")applyAutomaticUpdate()},60000);
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"){applyAutomaticUpdate();refreshUnreadNotificationCount()}});
+window.addEventListener("focus",()=>{applyAutomaticUpdate();refreshUnreadNotificationCount()});
+setInterval(()=>{if(document.visibilityState==="visible"){applyAutomaticUpdate();refreshUnreadNotificationCount()}},30000);
 window.addEventListener("beforeinstallprompt",e=>e.preventDefault());
 window.addEventListener("popstate",()=>{
   const modal=document.querySelector(".compose-modal");
@@ -2975,6 +3086,7 @@ window.addEventListener("beforeunload",e=>{
   if(state.session){try{state.me=await api("/api/v1/accounts/verify_credentials");await loadCustomEmojis();saveCurrentAccount()}catch{store.del("lenton_session");state.session=null}}
   const q=new URLSearchParams(location.search),notificationId=q.get("notification_id"),deep=q.get("view");if(["home","notifications","dm","profile","settings"].includes(deep))state.view=deep;
   render();
+  if(state.session)setTimeout(()=>refreshUnreadNotificationCount(),80);
   if(notificationId&&state.session)setTimeout(()=>openNotificationDeepLink(notificationId),0);
   applyAutomaticUpdate();
 })();
