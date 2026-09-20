@@ -243,12 +243,74 @@ async function finishOAuth(){
 }
 
 function savedAccounts(){return store.get("lenton_accounts",[])||[]}
-function saveCurrentAccount(){
+const PUSH_META_CACHE="lenton-push-meta-v2",PUSH_META_KEY="./__account_push_state";
+function currentAccountKey(){return state.session&&state.me?state.session.host+"|"+state.me.id:""}
+function allocatePushSlot(list,key){
+  const existing=list.find(x=>x.key===key);
+  if(Number.isInteger(existing?.pushSlot)&&existing.pushSlot>=0)return existing.pushSlot;
+  const used=new Set(list.map(x=>Number(x.pushSlot)).filter(Number.isInteger));
+  for(let i=0;i<16;i++)if(!used.has(i))return i;
+  return Math.max(0,list.length);
+}
+async function readPushMeta(){
+  try{
+    const cache=await caches.open(PUSH_META_CACHE),res=await cache.match(PUSH_META_KEY);
+    if(!res)return {accounts:{}};
+    const parsed=await res.json();
+    return parsed&&typeof parsed==="object"?{...parsed,accounts:parsed.accounts||{}}:{accounts:{}};
+  }catch{return {accounts:{}}}
+}
+async function writePushMeta(meta){
+  try{
+    const cache=await caches.open(PUSH_META_CACHE);
+    await cache.put(PUSH_META_KEY,new Response(JSON.stringify(meta||{accounts:{}}),{headers:{"Content-Type":"application/json"}}));
+  }catch{}
+}
+async function tokenFingerprint(token){
+  try{
+    const buf=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(String(token||"")));
+    return [...new Uint8Array(buf)].map(x=>x.toString(16).padStart(2,"0")).join("");
+  }catch{return ""}
+}
+async function syncSavedAccountsToPushMeta(){
+  const list=savedAccounts(),meta=await readPushMeta(),next={...meta,accounts:{...meta.accounts}};
+  const keep=new Set();
+  for(const x of list){
+    const slot=Number.isInteger(x.pushSlot)?x.pushSlot:allocatePushSlot(list,x.key);
+    keep.add(String(slot));
+    const prev=next.accounts[String(slot)]||{};
+    next.accounts[String(slot)]={
+      key:x.key,id:x.id,host:x.host,acct:x.acct,display_name:x.display_name,avatar:x.avatar,
+      tokenHash:await tokenFingerprint(x.session?.token||""),unread:Math.max(0,Number(prev.unread)||0)
+    };
+  }
+  for(const slot of Object.keys(next.accounts))if(!keep.has(String(slot)))delete next.accounts[slot];
+  await writePushMeta(next);
+  state.accountUnread={};
+  for(const a of Object.values(next.accounts||{}))if(a?.key)state.accountUnread[a.key]=Math.max(0,Number(a.unread)||0);
+  return next;
+}
+async function setSharedAccountUnread(key,count){
+  if(!key)return;
+  const meta=await readPushMeta();
+  const a=Object.values(meta.accounts||{}).find(x=>x?.key===key);
+  if(a)a.unread=Math.max(0,Number(count)||0);
+  await writePushMeta(meta);
+  state.accountUnread={};
+  for(const x of Object.values(meta.accounts||{}))if(x?.key)state.accountUnread[x.key]=Math.max(0,Number(x.unread)||0);
+}
+function totalAccountUnread(){
+  const vals=Object.values(state.accountUnread||{}).map(Number).filter(Number.isFinite);
+  return vals.length?vals.reduce((a,b)=>a+Math.max(0,b),0):Math.max(0,Number(state.notificationUnread)||0);
+}
+function accountUnreadFor(entry){return Math.max(0,Number(state.accountUnread?.[entry?.key])||0)}
+async function saveCurrentAccount(){
   if(!state.session||!state.me)return;
-  const list=savedAccounts(),key=state.session.host+"|"+state.me.id;
-  const entry={key,id:state.me.id,host:state.session.host,acct:state.me.acct,display_name:state.me.display_name||state.me.username,avatar:state.me.avatar_static||state.me.avatar||"",session:state.session};
-  const i=list.findIndex(x=>x.key===key);if(i>=0)list[i]=entry;else list.push(entry);
+  const list=savedAccounts(),key=state.session.host+"|"+state.me.id,i=list.findIndex(x=>x.key===key),old=i>=0?list[i]:null;
+  const entry={...(old||{}),key,id:state.me.id,host:state.session.host,acct:state.me.acct,display_name:state.me.display_name||state.me.username,avatar:state.me.avatar_static||state.me.avatar||"",session:state.session,pushSlot:Number.isInteger(old?.pushSlot)?old.pushSlot:allocatePushSlot(list,key)};
+  if(i>=0)list[i]=entry;else list.push(entry);
   store.set("lenton_accounts",list);
+  await syncSavedAccountsToPushMeta();
 }
 function resetAccountState(){
   state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];
@@ -256,7 +318,7 @@ function resetAccountState(){
 async function switchSavedAccount(index){
   const list=savedAccounts(),entry=list[index];if(!entry?.session)return;
   rememberScroll();state.session=entry.session;store.set("lenton_session",state.session);resetAccountState();
-  try{state.me=await api("/api/v1/accounts/verify_credentials");state.customEmojis=null;await loadCustomEmojis();saveCurrentAccount();state.view="home";render();toast("계정을 전환했어요.")}
+  try{state.me=await api("/api/v1/accounts/verify_credentials");state.customEmojis=null;await loadCustomEmojis();await saveCurrentAccount();state.view="home";render();toast("계정을 전환했어요.")}
   catch(e){toast("계정 전환 실패: "+e.message)}
 }
 function savedAccountFullHandle(x){
@@ -361,7 +423,7 @@ async function saveProfileEdit(){
   }
   try{
     state.me=await apiMultipart("/api/v1/accounts/update_credentials",fd,{method:"PATCH"});
-    saveCurrentAccount();toast("프로필을 저장했어요.");
+    await saveCurrentAccount();toast("프로필을 저장했어요.");
     state.view="profile";state.profileMode="posts";render();
   }catch(e){toast(e.message);if(btn){btn.disabled=false;btn.textContent="저장"}}
 }
