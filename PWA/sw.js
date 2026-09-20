@@ -65,7 +65,13 @@ self.addEventListener("push",event=>{
   event.waitUntil(Promise.all([
     self.registration.showNotification(title,options),
     caches.open("lenton-meta").then(c=>c.put("./__lastpush",new Response(String(Date.now())))),
-    self.clients.matchAll({type:"window",includeUncontrolled:true}).then(cs=>Promise.all(cs.map(c=>c.postMessage({type:"push"}))))
+    self.clients.matchAll({type:"window",includeUncontrolled:true}).then(cs=>Promise.all(cs.map(c=>c.postMessage({
+      type:"push",
+      title,
+      body,
+      url:target,
+      notificationId:String(data.notification_id||data.id||"")
+    }))))
   ]));
 });
 
