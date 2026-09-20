@@ -840,67 +840,54 @@ function updatePublicTimelinePage(items,{preserveScroll=true}={}){
     if(y!==null)window.scrollTo(0,y);
   });
 }
-function cachedFollowingIdSet(){
-  const cached=store.get(scopedKey("following_cache_v1"),null);
-  if(!cached?.at||Date.now()-Number(cached.at)>300000||!Array.isArray(cached.items))return null;
-  const ids=new Set(cached.items.map(x=>String(x?.id||"")).filter(Boolean));
-  if(state.me?.id)ids.add(String(state.me.id));
-  return ids;
+async function loadPublicFollowingAccounts(){
+  if(!state.me)state.me=await api("/api/v1/accounts/verify_credentials");
+  const key=scopedKey("public_following_80_v1"),cached=store.get(key,null);
+  if(cached?.at&&Date.now()-Number(cached.at)<300000&&Array.isArray(cached.items))return cached.items;
+  const rows=await api(`/api/v1/accounts/${state.me.id}/following`,{query:{limit:"80"}});
+  const items=Array.isArray(rows)?rows.slice(0,80):[];
+  store.set(key,{at:Date.now(),items});
+  return items;
 }
 async function ensurePublicTimelineFilled(){
   if(state.publicFillPromise)return state.publicFillPromise;
   state.publicFillPromise=(async()=>{
-    const cfg=ANDROID?.timeline?.public||{},target=Math.max(10,Number(cfg.targetInitialItems)||30),maxScans=Math.max(1,Number(cfg.maxHomeScans)||6);
+    const cfg=ANDROID?.timeline?.public||{},target=Math.max(10,Number(cfg.targetInitialItems)||30);
     const base=state.homePagerData||{home:[],public:[]};
-    let collected=mergeNewestTimeline((base.public||[]).filter(lentonPublicStatus),(base.home||[]).filter(lentonPublicStatus),80);
+    if(state.publicFilledAt&&Date.now()-state.publicFilledAt<60000&&(base.public||[]).length>=target)return base.public;
+
+    // Android v0.18 public tab: followed accounts only. Home can be sparse, so
+    // fetch up to 80 followed accounts and supplement from each account's own
+    // status timeline (limit 8), then apply the same public/non-reply/non-boost filter.
+    const following=await loadPublicFollowingAccounts();
+    const allowed=new Set((following||[]).map(x=>String(x?.id||"")).filter(Boolean));
+    const eligible=raw=>allowed.has(String(raw?.account?.id||""))&&lentonPublicStatus(raw);
+
+    let collected=mergeNewestTimeline(
+      (base.public||[]).filter(eligible),
+      (base.home||[]).filter(eligible),
+      80
+    );
     updatePublicTimelinePage(collected);
 
-    const knownAllowed=new Set((base.home||[]).map(x=>String(x?.account?.id||"")).filter(Boolean));
-    if(state.me?.id)knownAllowed.add(String(state.me.id));
-    const publicPagePromise=api("/api/v1/timelines/public",{query:{limit:"40"}}).catch(()=>[]);
-    const fullFollowingPromise=loadAllFollowing().then(rows=>{
-      const set=new Set((rows||[]).map(x=>String(x?.id||"")).filter(Boolean));
-      if(state.me?.id)set.add(String(state.me.id));
-      return set;
-    }).catch(()=>null);
-
-    // Fast path: use a cached following set (or accounts already seen in HOME)
-    // against one public endpoint request while HOME pagination fills in parallel.
-    const cachedAllowed=cachedFollowingIdSet();
-    publicPagePromise.then(rows=>{
-      const allowed=cachedAllowed||knownAllowed;
-      const extra=(rows||[]).filter(x=>allowed.has(String(x?.account?.id||""))&&lentonPublicStatus(x));
+    const maxAccounts=Math.min(80,following.length),batchSize=8;
+    for(let i=0;i<maxAccounts;i+=batchSize){
+      const batch=following.slice(i,i+batchSize);
+      const pages=await Promise.all(batch.map(ac=>{
+        const id=String(ac?.id||"");if(!id)return Promise.resolve([]);
+        return api(`/api/v1/accounts/${id}/statuses`,{query:{limit:"8"}}).catch(()=>[]);
+      }));
+      const extra=[];
+      for(const rows of pages)for(const raw of (Array.isArray(rows)?rows:[]))if(eligible(raw))extra.push(raw);
       if(extra.length){
         collected=mergeNewestTimeline(extra,collected,80);
         updatePublicTimelinePage(collected);
       }
-    }).catch(()=>{});
-
-    let cursor=(base.home||[])[(base.home||[]).length-1]?.id||"",lastCursor="";
-    for(let scan=0;scan<maxScans&&collected.length<target;scan++){
-      const query={limit:"40"};if(cursor)query.max_id=cursor;
-      const rows=await api("/api/v1/timelines/home",{query}).catch(()=>[]);
-      if(!Array.isArray(rows)||!rows.length)break;
-      const eligible=rows.filter(lentonPublicStatus);
-      if(eligible.length){
-        collected=mergeNewestTimeline(eligible,collected,80);
-        updatePublicTimelinePage(collected);
-      }
-      const next=rows[rows.length-1]?.id||"";
-      if(!next||next===cursor||next===lastCursor)break;
-      lastCursor=cursor;cursor=next;
+      // Yield briefly between batches so scrolling/taps stay responsive while
+      // the remaining followed accounts continue filling in.
+      if(i+batchSize<maxAccounts)await new Promise(resolve=>setTimeout(resolve,20));
     }
-
-    // Android also knows the public endpoint. Once the full following set is
-    // available, merge any followed-account public originals from that page.
-    const [allPublic,fullAllowed]=await Promise.all([publicPagePromise,fullFollowingPromise]);
-    if(fullAllowed){
-      const extra=(allPublic||[]).filter(x=>fullAllowed.has(String(x?.account?.id||""))&&lentonPublicStatus(x));
-      if(extra.length){
-        collected=mergeNewestTimeline(extra,collected,80);
-        updatePublicTimelinePage(collected);
-      }
-    }
+    state.publicFilledAt=Date.now();
     return collected;
   })().finally(()=>{state.publicFillPromise=null});
   return state.publicFillPromise;
@@ -1025,14 +1012,18 @@ async function loadMoreHome(){
     if(state.listId){
       more=await api(`/api/v1/timelines/list/${state.listId}`,{query:{limit:"40",max_id:maxId}});
     }else if(state.homeMode==="public"){
-      let cursor=maxId;
-      for(let scan=0;scan<Math.max(2,Number(ANDROID?.timeline?.public?.maxHomeScans||6))&&more.length<20;scan++){
-        const rows=await api("/api/v1/timelines/home",{query:{limit:"40",max_id:cursor}});
-        if(!Array.isArray(rows)||!rows.length)break;
-        more.push(...rows.filter(lentonPublicStatus));
-        const next=rows[rows.length-1]?.id||"";
-        if(!next||next===cursor)break;cursor=next;
+      const following=await loadPublicFollowingAccounts(),allowed=new Set(following.map(x=>String(x?.id||"")).filter(Boolean));
+      const eligible=raw=>allowed.has(String(raw?.account?.id||""))&&lentonPublicStatus(raw);
+      const batchSize=8;
+      for(let i=0;i<Math.min(80,following.length)&&more.length<40;i+=batchSize){
+        const batch=following.slice(i,i+batchSize);
+        const pages=await Promise.all(batch.map(ac=>{
+          const id=String(ac?.id||"");if(!id)return Promise.resolve([]);
+          return api(`/api/v1/accounts/${id}/statuses`,{query:{limit:"8",max_id:maxId}}).catch(()=>[]);
+        }));
+        for(const rows of pages)for(const raw of (Array.isArray(rows)?rows:[]))if(eligible(raw))more.push(raw);
       }
+      more=mergeNewestTimeline(more,[],40);
     }else{
       more=await api("/api/v1/timelines/home",{query:{limit:"40",max_id:maxId}});
     }
