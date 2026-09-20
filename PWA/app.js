@@ -313,12 +313,12 @@ async function saveCurrentAccount(){
   await syncSavedAccountsToPushMeta();
 }
 function resetAccountState(){
-  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];
+  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];state.notificationUnread=0;state.notificationUnreadOverflow=false;
 }
 async function switchSavedAccount(index){
   const list=savedAccounts(),entry=list[index];if(!entry?.session)return;
   rememberScroll();state.session=entry.session;store.set("lenton_session",state.session);resetAccountState();
-  try{state.me=await api("/api/v1/accounts/verify_credentials");state.customEmojis=null;await loadCustomEmojis();await saveCurrentAccount();state.view="home";render();toast("계정을 전환했어요.")}
+  try{state.me=await api("/api/v1/accounts/verify_credentials");state.customEmojis=null;await loadCustomEmojis();await saveCurrentAccount();state.notificationUnread=accountUnreadFor(entry);state.view="home";render();refreshNotificationBadgeDom();setTimeout(()=>refreshUnreadNotificationCount(),80);toast("계정을 전환했어요.")}
   catch(e){toast("계정 전환 실패: "+e.message)}
 }
 function savedAccountFullHandle(x){
@@ -2027,14 +2027,14 @@ function composeDefaultVisibility(reply,forced){
 }
 async function refreshCredentialAccount(){
   state.me=await api("/api/v1/accounts/verify_credentials");
-  saveCurrentAccount();
+  await saveCurrentAccount();
   return state.me;
 }
 async function updateAccountCredential(key,value,{quiet=false}={}){
   try{
     const form=new URLSearchParams();form.append(key,String(value));
     state.me=await api("/api/v1/accounts/update_credentials",{method:"PATCH",form});
-    saveCurrentAccount();
+    await saveCurrentAccount();
     if(!quiet)toast("계정 설정을 저장했어요.");
     return true;
   }catch(e){
@@ -3223,7 +3223,7 @@ window.addEventListener("beforeunload",e=>{
   if(["home","notifications","dm","profile","settings"].includes(deep))state.view=deep;
   render();refreshNotificationBadgeDom();
   if(state.session)setTimeout(()=>refreshUnreadNotificationCount(),80);
-  if(Notification.permission==="granted")setTimeout(()=>ensureAllAccountPushSubscriptions({quiet:true}),450);
+  if(("Notification"in window)&&Notification.permission==="granted")setTimeout(()=>ensureAllAccountPushSubscriptions({quiet:true}),450);
   if(notificationId&&state.session)setTimeout(()=>openNotificationDeepLink(notificationId),0);
   applyAutomaticUpdate();
 })();
