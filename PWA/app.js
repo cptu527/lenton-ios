@@ -326,12 +326,13 @@ function savedAccountFullHandle(x){
   return "@"+acct+(acct.includes("@")?"":("@"+String(x?.host||"")));
 }
 function closeAccountSwitcher(){document.querySelector(".account-switcher-shade")?.remove()}
-function openAccountSwitcher(){
+async function openAccountSwitcher(){
   closeAccountSwitcher();
+  await syncSavedAccountsToPushMeta();
   const list=savedAccounts(),current=state.session?.host+"|"+(state.me?.id||""),shade=document.createElement("div");
   shade.className="account-switcher-shade";
   shade.innerHTML='<section class="account-switcher-sheet"><header><h2>계정</h2><button type="button" data-account-sheet-close aria-label="닫기">×</button></header>'+
-    '<div class="account-switcher-list">'+list.map((x,i)=>'<button type="button" class="account-switcher-row" data-account-sheet-switch="'+i+'"><img src="'+esc(x.avatar||"")+'" alt=""><span><b>'+esc(x.display_name||x.acct||"계정")+'</b><small>'+esc(savedAccountFullHandle(x))+'</small></span><em>'+(x.key===current?"✓":"")+'</em></button>').join("")+'</div>'+
+    '<div class="account-switcher-list">'+list.map((x,i)=>{const unread=accountUnreadFor(x);return '<button type="button" class="account-switcher-row" data-account-sheet-switch="'+i+'"><img src="'+esc(x.avatar||"")+'" alt=""><span><b>'+esc(x.display_name||x.acct||"계정")+'</b><small>'+esc(savedAccountFullHandle(x))+'</small></span><em>'+(unread>0?'<i class="account-unread-badge">'+esc(unread>99?"99+":String(unread))+'</i>':(x.key===current?'<i class="account-current-check">✓</i>':""))+'</em></button>'}).join("")+'</div>'+
     '<button type="button" class="account-existing-add" data-existing-account-add>기존 계정 추가</button></section>';
   document.body.append(shade);
   shade.onclick=e=>{if(e.target===shade)closeAccountSwitcher()};
@@ -1801,10 +1802,11 @@ async function pushDiagnostics(){
   return {supported,regd,last};
 }
 
-function accountManagerScreen(){
+async function accountManagerScreen(){
+  await syncSavedAccountsToPushMeta();
   const list=savedAccounts(),current=state.session?.host+"|"+(state.me?.id||"");
   const rows=list.map((x,i)=>`<div class="account-manage-row">
-    <button class="account-main" data-account-switch="${i}"><img class="avatar" src="${esc(x.avatar||"")}" alt=""><span class="grow"><b>${esc(x.display_name||x.acct||"계정")}</b><small>@${esc(x.acct||"")} · ${esc(x.host||"")}</small></span>${x.key===current?"<em>사용 중</em>":""}</button>
+    <button class="account-main" data-account-switch="${i}"><img class="avatar" src="${esc(x.avatar||"")}" alt=""><span class="grow"><b>${esc(x.display_name||x.acct||"계정")}</b><small>@${esc(x.acct||"")} · ${esc(x.host||"")}</small></span>${accountUnreadFor(x)>0?'<i class="account-unread-badge">'+esc(accountUnreadFor(x)>99?"99+":String(accountUnreadFor(x)))+'</i>':(x.key===current?"<em>사용 중</em>":"")}</button>
     <button class="danger-text" data-account-remove="${i}" ${x.key===current?"disabled":""}>제거</button>
   </div>`).join("");
   $("#app").innerHTML=standaloneShell("계정 관리",`<div class="settings"><div class="section"><h3>계정</h3>${rows||'<div class="center">저장된 계정이 없어요.</div>'}<div class="setting-row"><button class="primary" data-action="addAccount">＋ 계정 추가</button></div></div></div>`);
