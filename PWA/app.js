@@ -699,6 +699,7 @@ function lentonPublicStatus(raw){
   if(cfg.excludeDirect!==false&&raw.visibility==="direct")return false;
   if(cfg.excludeBoosts!==false&&raw.reblog)return false;
   if(cfg.excludeReplies!==false&&raw.in_reply_to_id!==null&&raw.in_reply_to_id!==undefined&&String(raw.in_reply_to_id)!=="")return false;
+  if(cfg.excludeOwnPosts!==false&&me&&String(author)===String(me))return false;
   return true;
 }
 function mergeChronological(home,pub,allowed){
@@ -824,6 +825,86 @@ function mergeNewestTimeline(fresh=[],existing=[],limit=80){
   out.sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
   return out.slice(0,limit);
 }
+function updatePublicTimelinePage(items,{preserveScroll=true}={}){
+  const data=state.homePagerData||{home:[],public:[]};
+  data.public=items||[];state.homePagerData=data;
+  homeSnapshotWrite(data);
+  if(state.homeMode==="public")state.timelineItems=data.public;
+  const page=document.querySelector('[data-home-page="public"]');
+  if(!page||state.view!=="home"||state.listId)return;
+  const y=preserveScroll?(window.scrollY||document.documentElement.scrollTop||0):null;
+  page.innerHTML=homePageHtml(data.public,"public");
+  bind();
+  requestAnimationFrame(()=>{
+    syncHomePagerUi(state.homeMode,false);
+    if(y!==null)window.scrollTo(0,y);
+  });
+}
+function cachedFollowingIdSet(){
+  const cached=store.get(scopedKey("following_cache_v1"),null);
+  if(!cached?.at||Date.now()-Number(cached.at)>300000||!Array.isArray(cached.items))return null;
+  const ids=new Set(cached.items.map(x=>String(x?.id||"")).filter(Boolean));
+  if(state.me?.id)ids.add(String(state.me.id));
+  return ids;
+}
+async function ensurePublicTimelineFilled(){
+  if(state.publicFillPromise)return state.publicFillPromise;
+  state.publicFillPromise=(async()=>{
+    const cfg=ANDROID?.timeline?.public||{},target=Math.max(10,Number(cfg.targetInitialItems)||30),maxScans=Math.max(1,Number(cfg.maxHomeScans)||6);
+    const base=state.homePagerData||{home:[],public:[]};
+    let collected=mergeNewestTimeline((base.public||[]).filter(lentonPublicStatus),(base.home||[]).filter(lentonPublicStatus),80);
+    updatePublicTimelinePage(collected);
+
+    const knownAllowed=new Set((base.home||[]).map(x=>String(x?.account?.id||"")).filter(Boolean));
+    if(state.me?.id)knownAllowed.add(String(state.me.id));
+    const publicPagePromise=api("/api/v1/timelines/public",{query:{limit:"40"}}).catch(()=>[]);
+    const fullFollowingPromise=loadAllFollowing().then(rows=>{
+      const set=new Set((rows||[]).map(x=>String(x?.id||"")).filter(Boolean));
+      if(state.me?.id)set.add(String(state.me.id));
+      return set;
+    }).catch(()=>null);
+
+    // Fast path: use a cached following set (or accounts already seen in HOME)
+    // against one public endpoint request while HOME pagination fills in parallel.
+    const cachedAllowed=cachedFollowingIdSet();
+    publicPagePromise.then(rows=>{
+      const allowed=cachedAllowed||knownAllowed;
+      const extra=(rows||[]).filter(x=>allowed.has(String(x?.account?.id||""))&&lentonPublicStatus(x));
+      if(extra.length){
+        collected=mergeNewestTimeline(extra,collected,80);
+        updatePublicTimelinePage(collected);
+      }
+    }).catch(()=>{});
+
+    let cursor=(base.home||[])[(base.home||[]).length-1]?.id||"",lastCursor="";
+    for(let scan=0;scan<maxScans&&collected.length<target;scan++){
+      const query={limit:"40"};if(cursor)query.max_id=cursor;
+      const rows=await api("/api/v1/timelines/home",{query}).catch(()=>[]);
+      if(!Array.isArray(rows)||!rows.length)break;
+      const eligible=rows.filter(lentonPublicStatus);
+      if(eligible.length){
+        collected=mergeNewestTimeline(eligible,collected,80);
+        updatePublicTimelinePage(collected);
+      }
+      const next=rows[rows.length-1]?.id||"";
+      if(!next||next===cursor||next===lastCursor)break;
+      lastCursor=cursor;cursor=next;
+    }
+
+    // Android also knows the public endpoint. Once the full following set is
+    // available, merge any followed-account public originals from that page.
+    const [allPublic,fullAllowed]=await Promise.all([publicPagePromise,fullFollowingPromise]);
+    if(fullAllowed){
+      const extra=(allPublic||[]).filter(x=>fullAllowed.has(String(x?.account?.id||""))&&lentonPublicStatus(x));
+      if(extra.length){
+        collected=mergeNewestTimeline(extra,collected,80);
+        updatePublicTimelinePage(collected);
+      }
+    }
+    return collected;
+  })().finally(()=>{state.publicFillPromise=null});
+  return state.publicFillPromise;
+}
 async function refreshHomeIncremental(){
   if(state.homeRefreshPromise)return state.homeRefreshPromise;
   state.homeRefreshPromise=(async()=>{
@@ -881,6 +962,7 @@ function setHomePagerMode(mode,animate=true){
   if(!homeModes().includes(mode))mode="home";
   state.homeMode=mode;state.listId=null;state.timelineItems=state.homePagerData?.[mode]||[];
   syncHomePagerUi(mode,animate);
+  if(mode==="public")setTimeout(()=>ensurePublicTimelineFilled().catch(()=>{}),0);
 }
 async function homeView({silent=false,forceFresh=false}={}){
   state.busy=true;
@@ -922,17 +1004,10 @@ async function homeView({silent=false,forceFresh=false}={}){
       }catch{}
     }
 
-    // The screen is usable now. Fill public from a few additional HOME pages in
-    // the background; never wait for the full following list or public endpoint.
-    const scanLimit=Math.min(3,Math.max(1,Number(ANDROID?.timeline?.public?.maxHomeScans||3)));
-    Promise.all([
-      loadLentonHomePair({maxScans:scanLimit,initialHome:quickRawHome}),
-      listsPromise
-    ]).then(([fresh])=>{
-      state.homePagerData=fresh;
-      homeSnapshotWrite(fresh);
-      if(state.view==="home"&&!state.listId)renderHomePagerData(fresh,{preserveScroll:true});
-    }).catch(()=>{});
+    // Keep HOME immediate. Lists may finish in the background; Public is filled
+    // on demand when its tab is opened so HOME refresh never waits for it.
+    listsPromise.catch(()=>{});
+    if(state.homeMode==="public")setTimeout(()=>ensurePublicTimelineFilled().catch(()=>{}),0);
   }catch(e){
     if(!state.homePagerData?.home?.length)renderMainStable("홈",'<div class="center">타임라인을 불러오지 못했어요.<br><br>'+esc(e.message)+'<br><br><button class="primary" data-action="reload">다시 시도</button></div>',{view:"home",fab:true});
   }finally{
@@ -949,9 +1024,17 @@ async function loadMoreHome(){
     let more=[];
     if(state.listId){
       more=await api(`/api/v1/timelines/list/${state.listId}`,{query:{limit:"40",max_id:maxId}});
+    }else if(state.homeMode==="public"){
+      let cursor=maxId;
+      for(let scan=0;scan<Math.max(2,Number(ANDROID?.timeline?.public?.maxHomeScans||6))&&more.length<20;scan++){
+        const rows=await api("/api/v1/timelines/home",{query:{limit:"40",max_id:cursor}});
+        if(!Array.isArray(rows)||!rows.length)break;
+        more.push(...rows.filter(lentonPublicStatus));
+        const next=rows[rows.length-1]?.id||"";
+        if(!next||next===cursor)break;cursor=next;
+      }
     }else{
       more=await api("/api/v1/timelines/home",{query:{limit:"40",max_id:maxId}});
-      if(state.homeMode==="public")more=more.filter(lentonPublicStatus);
     }
     const seen=new Set(state.timelineItems.map(statusId));
     more=more.filter(x=>{const id=statusId(x);if(!id||seen.has(id))return false;seen.add(id);return true});
