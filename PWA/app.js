@@ -792,8 +792,8 @@ function homeSnapshotRead(){
 function homeSnapshotWrite(data){
   try{if(data&&Array.isArray(data.home)&&Array.isArray(data.public))store.set(scopedKey("home_snapshot_v3"),{at:Date.now(),data})}catch{}
 }
-async function loadHomeQuickPair(){
-  const home=await api("/api/v1/timelines/home",{query:{limit:"40"}});
+async function loadHomeQuickPair(limit=20){
+  const home=await api("/api/v1/timelines/home",{query:{limit:String(limit)}});
   const clean=(home||[]).filter(nonDirect);
   const pub=clean.filter(lentonPublicStatus).slice(0,ANDROID?.timeline?.public?.targetInitialItems||30);
   return {data:{home:clean,public:pub},rawHome:home||[]};
@@ -814,15 +814,44 @@ function renderHomePagerData(data,{preserveScroll=false}={}){
     if(y!==null)window.scrollTo(0,y);
   });
 }
-async function refreshHomeAfterPost(){
-  try{
-    state.homePagerData=await loadLentonHomePair();
-    if(state.view==="home"&&!state.listId){
-      state.timelineItems=state.homePagerData[state.homeMode]||state.homePagerData.home;
-      homeSnapshotWrite(state.homePagerData);
-      renderHomePagerData(state.homePagerData,{preserveScroll:true});
+function mergeNewestTimeline(fresh=[],existing=[],limit=80){
+  const out=[],seen=new Set();
+  for(const raw of [...fresh,...existing]){
+    if(!raw)continue;
+    const id=statusId(raw);if(id&&seen.has(id))continue;if(id)seen.add(id);
+    out.push(raw);
+  }
+  out.sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
+  return out.slice(0,limit);
+}
+async function refreshHomeIncremental(){
+  if(state.homeRefreshPromise)return state.homeRefreshPromise;
+  state.homeRefreshPromise=(async()=>{
+    const base=state.homePagerData?.home?.length?state.homePagerData:homeSnapshotRead();
+    if(!base?.home?.length){
+      const quick=await loadHomeQuickPair(20);
+      state.homePagerData=quick.data;homeSnapshotWrite(quick.data);
+      if(state.view==="home"&&!state.listId)renderHomePagerData(quick.data);
+      return quick.data;
     }
-  }catch{}
+    const newest=statusId(base.home[0]),query={limit:"20"};
+    if(newest)query.since_id=newest;
+    const raw=await api("/api/v1/timelines/home",{query});
+    const freshHome=(raw||[]).filter(nonDirect);
+    if(!freshHome.length)return base;
+    const freshPublic=freshHome.filter(lentonPublicStatus);
+    const data={
+      home:mergeNewestTimeline(freshHome,base.home),
+      public:mergeNewestTimeline(freshPublic,base.public)
+    };
+    state.homePagerData=data;homeSnapshotWrite(data);
+    if(state.view==="home"&&!state.listId)renderHomePagerData(data,{preserveScroll:true});
+    return data;
+  })().finally(()=>{state.homeRefreshPromise=null});
+  return state.homeRefreshPromise;
+}
+async function refreshHomeAfterPost(){
+  try{await refreshHomeIncremental()}catch{}
 }
 function homeModes(){return ["home","public"]}
 function homePageHtml(items,mode){
@@ -866,22 +895,25 @@ async function homeView({silent=false,forceFresh=false}={}){
       return;
     }
 
-    const cached=forceFresh?null:(state.homePagerData?.home?.length?state.homePagerData:homeSnapshotRead());
+    const cached=state.homePagerData?.home?.length?state.homePagerData:homeSnapshotRead();
     if(cached){
       state.homePagerData=cached;
       renderHomePagerData(cached);
+      if(forceFresh){
+        await refreshHomeIncremental();
+        return;
+      }
     }else if(!silent){
       renderLoadingShell("홈");
     }
 
     const listsPromise=state.lists.length?Promise.resolve():loadLists();
 
-    // First paint only needs the Mastodon home endpoint; do not block it on
-    // the complete following list or public-timeline filtering.
+    // First paint only needs a small Mastodon home page.
     let quickRawHome=null;
-    if(forceFresh||!cached){
+    if(!cached){
       try{
-        const quick=await loadHomeQuickPair();
+        const quick=await loadHomeQuickPair(20);
         quickRawHome=quick.rawHome;
         if(state.view==="home"&&!state.listId){
           renderHomePagerData(quick.data);
