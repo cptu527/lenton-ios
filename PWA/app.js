@@ -958,9 +958,9 @@ async function cleanupAccountPush(entry){
 
 async function syncPushPreferences({quiet=false}={}){
   try{
-    if(!("serviceWorker"in navigator)||!("PushManager"in window))return false;
-    const reg=await navigator.serviceWorker.ready,sub=await reg.pushManager.getSubscription();
-    if(!sub)return false;
+    if(!("serviceWorker"in navigator)||!("PushManager"in window)||Notification.permission!=="granted")return false;
+    const key=currentAccountKey(),entry=savedAccounts().find(x=>x.key===key);
+    if(entry)await registerPushForAccount(entry);
     await api("/api/v1/push/subscription",{method:"PUT",form:pushAlertForm()});
     if(!quiet)toast("알림 종류를 저장했어요.");
     return true;
@@ -1891,11 +1891,12 @@ async function accountManagerScreen(){
   $("#app").innerHTML=standaloneShell("계정 관리",`<div class="settings"><div class="section"><h3>계정</h3>${rows||'<div class="center">저장된 계정이 없어요.</div>'}<div class="setting-row"><button class="primary" data-action="addAccount">＋ 계정 추가</button></div></div></div>`);
   bind();
 }
-function removeSavedAccount(index){
+async function removeSavedAccount(index){
   const list=savedAccounts();if(index<0||index>=list.length)return;
   const target=list[index],current=state.session?.host+"|"+(state.me?.id||"");if(target.key===current){toast("현재 사용 중인 계정은 먼저 다른 계정으로 전환해 주세요.");return}
   if(!confirm("이 계정을 이 기기에서 제거할까요?"))return;
-  list.splice(index,1);store.set("lenton_accounts",list);accountManagerScreen();
+  await cleanupAccountPush(target);
+  list.splice(index,1);store.set("lenton_accounts",list);await syncSavedAccountsToPushMeta();refreshNotificationBadgeDom();accountManagerScreen();
 }
 function inquiryScreen(initialType=""){
   state.inquiryFiles=state.inquiryFiles||[];
@@ -2689,32 +2690,11 @@ async function enablePush(){
   try{
     if(!standalone() && /iPad|iPhone|iPod/.test(navigator.userAgent)) throw new Error("iPhone/iPad에서는 먼저 Safari 공유 → 홈 화면에 추가로 설치해주세요.");
     if(!("serviceWorker"in navigator)||!("PushManager"in window)||!("Notification"in window)) throw new Error("이 브라우저는 Web Push를 지원하지 않습니다.");
-    const perm=await Notification.requestPermission(); if(perm!=="granted") throw new Error("알림 권한이 허용되지 않았습니다.");
-    const inst=await api("/api/v2/instance");
-    const key=inst?.configuration?.vapid?.public_key||state.session.vapid_key;
-    if(!key) throw new Error("이 Mastodon 서버에서 VAPID 공개키를 찾지 못했습니다.");
-    const reg=await navigator.serviceWorker.ready;
-    const old=await reg.pushManager.getSubscription(); if(old) await old.unsubscribe();
-    const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlBase64ToUint8Array(key)});
-    const j=sub.toJSON(), form={
-      "subscription[endpoint]":j.endpoint,
-      "subscription[keys][p256dh]":j.keys.p256dh,
-      "subscription[keys][auth]":j.keys.auth,
-      "subscription[standard]":"true",
-      ...pushAlertForm()
-    };
-    try {
-      await api("/api/v1/push/subscription",{method:"POST",form});
-    } catch (firstError) {
-      const legacy={...form};
-      delete legacy["subscription[standard]"];
-      try {
-        await api("/api/v1/push/subscription",{method:"POST",form:legacy});
-      } catch {
-        throw firstError;
-      }
-    }
-    toast("빠른 알림을 켰어요.");settingsView();
+    const perm=await Notification.requestPermission();if(perm!=="granted")throw new Error("알림 권한이 허용되지 않았습니다.");
+    await saveCurrentAccount();
+    const ok=await ensureAllAccountPushSubscriptions({quiet:false});
+    if(!ok)throw new Error("푸시 알림 연결에 실패했습니다.");
+    settingsView();
   }catch(e){state.pushError=e.message;toast("알림 설정 실패");settingsView()}
 }
 function urlBase64ToUint8Array(s){const p="=".repeat((4-s.length%4)%4),b=(s+p).replace(/-/g,"+").replace(/_/g,"/"),raw=atob(b),a=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)a[i]=raw.charCodeAt(i);return a}
