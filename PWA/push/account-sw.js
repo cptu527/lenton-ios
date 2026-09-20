@@ -24,22 +24,20 @@ async function writeMeta(meta){
 }
 async function classifyPush(data,acc){
   const type=String(data?.notification_type||data?.notification?.type||"");
-  if(type&&type!=="mention")return "notification";
   const notificationId=String(data?.notification_id||data?.id||"");
   const token=String(data?.access_token||"");
   const host=String(acc?.host||"");
-  if(type==="mention"&&notificationId&&token&&host){
+  let detail=null;
+  if(notificationId&&token&&host){
     try{
       const r=await fetch("https://"+host+"/api/v1/notifications/"+encodeURIComponent(notificationId),{
         headers:{Accept:"application/json",Authorization:"Bearer "+token},cache:"no-store"
       });
-      if(r.ok){
-        const n=await r.json();
-        if(n?.status?.visibility==="direct")return "dm";
-      }
+      if(r.ok)detail=await r.json();
     }catch{}
   }
-  return "notification";
+  const kind=(type==="mention"&&detail?.status?.visibility==="direct")?"dm":"notification";
+  return {kind,detail};
 }
 async function incrementUnread(kind){
   const slot=accountSlot(),meta=await readMeta(),key=String(slot),acc=meta.accounts?.[key]||null;
@@ -67,12 +65,12 @@ self.addEventListener("push",event=>{
   try{data=event.data?event.data.json():{}}catch{try{data={body:event.data?.text()||""}}catch{}}
   event.waitUntil((async()=>{
     const slot=accountSlot(),meta=await readMeta(),acc=meta.accounts?.[String(slot)]||null;
-    const kind=await classifyPush(data,acc);
+    const classified=await classifyPush(data,acc),kind=classified.kind;
     const counted=await incrementUnread(kind),total=counted.total;
     const n=data.notification||{};
     const title=data.title||n.title||"렌톤";
     const body=data.body||n.body||data.message||"새 알림이 도착했습니다.";
-    const senderIcon=data.icon||n.icon||acc?.avatar||appIcon();
+    const senderIcon=classified.detail?.account?.avatar_static||classified.detail?.account?.avatar||data.icon||n.icon||acc?.avatar||appIcon();
     const notificationId=String(data.notification_id||data.id||"");
     const target=n.navigate||data.url||("../../?notification_id="+encodeURIComponent(notificationId)+"&account_slot="+encodeURIComponent(slot));
     const options={

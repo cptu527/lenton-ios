@@ -4237,3 +4237,127 @@ img{display:block}
   z-index:3;
   touch-action:manipulation;
 }
+
+
+/* 2026-09-20 performance + composer interaction polish */
+/* Network refreshes must not flash/pulse over the current screen. */
+.app.refreshing::before{display:none!important}
+.lenton-loading{opacity:.72}
+
+/* Hide the browser's dark-mode select arrows completely; render our own label. */
+.compose-modal .compose-visibility-row{
+  position:relative!important;
+  gap:8px;
+}
+.compose-visibility-label{
+  min-height:44px;
+  display:flex;
+  align-items:center;
+  color:var(--accent);
+  font-size:14px;
+  font-weight:800;
+  pointer-events:none;
+}
+.compose-modal .compose-visibility-row .compose-visibility{
+  position:absolute!important;
+  left:12px!important;
+  top:3px!important;
+  width:150px!important;
+  height:46px!important;
+  opacity:0!important;
+  z-index:4!important;
+  -webkit-appearance:none!important;
+  appearance:none!important;
+}
+.compose-visibility-chevron{
+  margin:0 0 4px 0!important;
+  flex:0 0 8px!important;
+  width:8px!important;
+  height:8px!important;
+  border-right:2px solid var(--accent)!important;
+  border-bottom:2px solid var(--accent)!important;
+  transform:rotate(45deg)!important;
+  pointer-events:none!important;
+}
+
+/* Thread parts can be removed after pressing +. */
+.part-remove-row{
+  min-height:32px;
+  margin:0 0 7px 56px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+.part-remove-row b{
+  font-size:14px;
+  color:var(--sub);
+}
+.part-remove-row button{
+  width:34px;
+  height:34px;
+  border:0;
+  border-radius:50%;
+  background:var(--surface);
+  color:var(--fg);
+  font-size:25px;
+  line-height:1;
+}
+
+/* Server emoji picker is a real overlay above the composer/keyboard. */
+.compose-bottom-dock .emoji-picker,
+.compose-modal.keyboard-open .compose-bottom-dock .emoji-picker{
+  position:fixed!important;
+  left:12px!important;
+  right:12px!important;
+  bottom:calc(var(--compose-keyboard-offset,0px) + 118px + env(safe-area-inset-bottom))!important;
+  z-index:260!important;
+  max-height:min(42vh,360px)!important;
+  background:var(--bg)!important;
+  box-shadow:0 10px 30px rgba(0,0,0,.28)!important;
+}
+
+/* Status action taps belong to the action, never to the surrounding card. */
+.lenton-actions{
+  position:relative;
+  z-index:5;
+}
+.lenton-actions button{
+  position:relative;
+  z-index:6;
+  touch-action:manipulation;
+}
+.lenton-actions button::before{
+  content:"";
+  position:absolute;
+  inset:-3px 0;
+}
+
+/* Private memo dialog opens/closes softly instead of looking like a screen flash. */
+.android-dialog-shade{
+  opacity:1;
+  transition:opacity 130ms ease;
+}
+.android-dialog-shade .android-dialog{
+  animation:lenton-dialog-in 130ms ease-out both;
+}
+.android-dialog-shade.closing{
+  opacity:0;
+  pointer-events:none;
+}
+@keyframes lenton-dialog-in{
+  from{opacity:0;transform:translateY(5px) scale(.99)}
+  to{opacity:1;transform:translateY(0) scale(1)}
+}
+
+/* Push banners use the sender/character portrait when provided. */
+.foreground-push-icon{
+  overflow:hidden;
+  border-radius:50%;
+}
+.foreground-push-icon img{
+  width:100%!important;
+  height:100%!important;
+  border-radius:50%!important;
+  object-fit:cover!important;
+}
