@@ -1708,7 +1708,7 @@ function searchTabsMarkup(){
   return '<div class="search-tabs">'+modes.map(([id,label])=>'<button type="button" data-search-mode="'+id+'" class="'+(state.searchMode===id?"active":"")+'">'+label+'</button>').join("")+'</div>';
 }
 function searchPeopleMarkup(items=[]){
-  return items.length?items.map(a=>'<button class="row search-person-row" data-profile="'+esc(a.id||"")+'"><img class="avatar search-person-avatar" src="'+esc(a.avatar_static||a.avatar||"")+'" alt=""><div class="grow"><b>'+renderEmojiText(a.display_name||a.username,a.emojis||[])+'</b><div class="muted">@'+esc(a.acct||"")+'</div><div class="search-person-note">'+renderRichText(a.note||"")+'</div></div></button>').join(""):'<div class="center">사람 검색 결과가 없어요.</div>';
+  return items.length?items.map(a=>'<button class="row search-person-row" data-profile="'+esc(a.id||"")+'"><img class="avatar search-person-avatar" src="'+esc(a.avatar_static||a.avatar||"")+'" alt=""><div class="grow"><b>'+renderEmojiText(a.display_name||a.username,a.emojis||[])+'</b><div class="muted">@'+esc(a.acct||"")+'</div><div class="search-person-note">'+esc(plain(a.note||""))+'</div></div></button>').join(""):'<div class="center">사람 검색 결과가 없어요.</div>';
 }
 function searchStatusesForMode(mode){
   const statuses=Array.isArray(state.searchResults?.statuses)?state.searchResults.statuses:[];
