@@ -4081,3 +4081,161 @@ img{display:block}
   flex:1;
   min-width:0;
 }
+
+
+/* 2026-09-20 search/touch/locked-boost/private-note fixes */
+
+/* Search: posts first, then people/media tabs. */
+.search-tabs{
+  position:sticky;
+  top:var(--android-topbar,62px);
+  z-index:8;
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  height:48px;
+  border-bottom:1px solid var(--line);
+  background:var(--bg);
+}
+.search-tabs button{
+  position:relative;
+  border:0;
+  background:none;
+  color:var(--sub);
+  font-size:15px;
+  font-weight:650;
+}
+.search-tabs button.active{
+  color:var(--fg);
+  font-weight:800;
+}
+.search-tabs button.active::after{
+  content:"";
+  position:absolute;
+  left:50%;
+  bottom:0;
+  width:38px;
+  height:3px;
+  transform:translateX(-50%);
+  border-radius:999px;
+  background:var(--accent);
+}
+.search-tab-body{min-height:180px}
+.search-person-row{align-items:flex-start}
+.search-person-avatar{width:48px!important;height:48px!important;flex:0 0 48px}
+.search-person-note{
+  margin-top:5px;
+  color:var(--fg);
+  font-size:14px;
+  line-height:1.35;
+  display:-webkit-box;
+  -webkit-line-clamp:2;
+  -webkit-box-orient:vertical;
+  overflow:hidden;
+}
+.search-popup .android-popup{
+  position:fixed;
+  top:calc(env(safe-area-inset-top) + var(--android-topbar,62px) - 6px);
+  right:10px;
+  left:auto;
+  transform:none;
+  width:min(220px,70vw);
+  margin:0;
+}
+.search-popup-menu button.active{color:var(--accent);font-weight:800}
+
+/* Locked/followers-only/direct statuses cannot be boosted. */
+.lenton-actions button.boost.unavailable{
+  position:relative;
+  opacity:.38;
+  color:var(--sub)!important;
+  cursor:default;
+}
+.boost-unavailable-mark{
+  display:grid;
+  place-items:center;
+  width:22px;
+  height:22px;
+  font-size:24px;
+  font-weight:400;
+  line-height:1;
+}
+
+/* Give the status kebab a Twitter-like forgiving touch target. */
+.lenton-status-top{
+  position:relative;
+}
+.lenton-status-top .status-more{
+  position:relative;
+  z-index:6;
+  flex:0 0 44px;
+  width:44px;
+  height:44px;
+  margin:-8px -8px -8px 0;
+}
+.lenton-status-top .status-more::before{
+  content:"";
+  position:absolute;
+  inset:-5px -5px -5px -16px;
+}
+.lenton-status-top .status-more .lenton-icon{
+  position:relative;
+  z-index:1;
+}
+.lenton-status-top .author-line{
+  position:relative;
+  z-index:1;
+  padding-right:6px;
+}
+.lenton-view-home .lenton-status .status-more{
+  width:44px!important;
+  height:44px!important;
+  flex-basis:44px!important;
+}
+
+/* Native iOS select arrows can turn black in dark mode; use an app-colored arrow. */
+.compose-modal .compose-visibility-row{
+  position:relative;
+}
+.compose-modal .compose-visibility-row .compose-visibility{
+  -webkit-appearance:none!important;
+  appearance:none!important;
+  padding-right:26px!important;
+  color:var(--accent)!important;
+}
+.compose-modal .compose-visibility-row::after{
+  content:"";
+  position:absolute;
+  left:auto;
+  right:calc(100% - 116px);
+  top:50%;
+  width:7px;
+  height:7px;
+  border-right:2px solid var(--accent);
+  border-bottom:2px solid var(--accent);
+  transform:translateY(-65%) rotate(45deg);
+  pointer-events:none;
+}
+.compose-modal .compose-visibility-row select option{
+  background:var(--bg);
+  color:var(--fg);
+}
+
+/* Private memo editor is always centered, dismissible, and above profile/swipe layers. */
+.android-dialog-shade{
+  z-index:240!important;
+  align-items:center!important;
+  justify-items:center!important;
+}
+.android-dialog{
+  position:relative!important;
+  inset:auto!important;
+  transform:none!important;
+  margin:0!important;
+  max-height:min(78dvh,620px);
+  overflow:auto;
+}
+.private-note-card{
+  position:relative;
+  z-index:3;
+  touch-action:manipulation;
+}
