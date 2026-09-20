@@ -15,7 +15,7 @@ const state = {
   me:null, view:"home", homeMode:"home", listId:null, lists:[], busy:false,
   theme:store.get("lenton_theme","system"), accent:store.get("lenton_accent",ANDROID?.theme?.accent||"#1d9bf0"),
   uiScale:Math.max(.8,Math.min(1.2,Number(store.get("lenton_ui_scale",1))||1)),
-  pushError:"", toast:"", notificationUnread:0, notificationUnreadOverflow:false, accountUnread:{}, currentConversation:null, profileReplies:false, profileMode:"posts", profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, profilePagerData:{}, homePagerData:{}, navStack:[], dmDraftRecipients:[], updateAvailable:null, buildInfo:null
+  pushError:"", toast:"", notificationUnread:0, notificationUnreadOverflow:false, dmUnread:0, accountUnread:{}, accountNotificationUnread:{}, accountDmUnread:{}, currentConversation:null, profileReplies:false, profileMode:"posts", profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, profilePagerData:{}, homePagerData:{}, navStack:[], dmDraftRecipients:[], updateAvailable:null, buildInfo:null
 };
 
 function accountScope(){
@@ -279,31 +279,56 @@ async function syncSavedAccountsToPushMeta(){
     const slot=Number.isInteger(x.pushSlot)?x.pushSlot:allocatePushSlot(list,x.key);
     keep.add(String(slot));
     const prev=next.accounts[String(slot)]||{};
+    const prevNotification=Math.max(0,Number(prev.notificationUnread)||0);
+    const prevDm=Math.max(0,Number(prev.dmUnread)||0);
+    const legacyTotal=Math.max(0,Number(prev.unread)||0);
     next.accounts[String(slot)]={
       key:x.key,id:x.id,host:x.host,acct:x.acct,display_name:x.display_name,avatar:x.avatar,
-      tokenHash:await tokenFingerprint(x.session?.token||""),unread:Math.max(0,Number(prev.unread)||0)
+      tokenHash:await tokenFingerprint(x.session?.token||""),
+      notificationUnread:prevNotification,
+      dmUnread:prevDm,
+      unread:prevNotification+prevDm || legacyTotal
     };
   }
   for(const slot of Object.keys(next.accounts))if(!keep.has(String(slot)))delete next.accounts[slot];
   await writePushMeta(next);
-  state.accountUnread={};
-  for(const a of Object.values(next.accounts||{}))if(a?.key)state.accountUnread[a.key]=Math.max(0,Number(a.unread)||0);
+  state.accountUnread={};state.accountNotificationUnread={};state.accountDmUnread={};
+  for(const a of Object.values(next.accounts||{}))if(a?.key){
+    const notificationUnread=Math.max(0,Number(a.notificationUnread)||0);
+    const dmUnread=Math.max(0,Number(a.dmUnread)||0);
+    const total=Math.max(0,Number(a.unread)||0)||notificationUnread+dmUnread;
+    state.accountUnread[a.key]=total;
+    state.accountNotificationUnread[a.key]=notificationUnread;
+    state.accountDmUnread[a.key]=dmUnread;
+  }
   return next;
 }
-async function setSharedAccountUnread(key,count){
+async function setSharedAccountUnreadBreakdown(key,notificationCount,dmCount){
   if(!key)return;
   const meta=await readPushMeta();
   const a=Object.values(meta.accounts||{}).find(x=>x?.key===key);
-  if(a)a.unread=Math.max(0,Number(count)||0);
+  if(a){
+    a.notificationUnread=Math.max(0,Number(notificationCount)||0);
+    a.dmUnread=Math.max(0,Number(dmCount)||0);
+    a.unread=a.notificationUnread+a.dmUnread;
+  }
   await writePushMeta(meta);
-  state.accountUnread={};
-  for(const x of Object.values(meta.accounts||{}))if(x?.key)state.accountUnread[x.key]=Math.max(0,Number(x.unread)||0);
+  state.accountUnread={};state.accountNotificationUnread={};state.accountDmUnread={};
+  for(const x of Object.values(meta.accounts||{}))if(x?.key){
+    const notificationUnread=Math.max(0,Number(x.notificationUnread)||0);
+    const dmUnread=Math.max(0,Number(x.dmUnread)||0);
+    state.accountUnread[x.key]=Math.max(0,Number(x.unread)||0)||notificationUnread+dmUnread;
+    state.accountNotificationUnread[x.key]=notificationUnread;
+    state.accountDmUnread[x.key]=dmUnread;
+  }
 }
 function totalAccountUnread(){
   const vals=Object.values(state.accountUnread||{}).map(Number).filter(Number.isFinite);
   return vals.length?vals.reduce((a,b)=>a+Math.max(0,b),0):Math.max(0,Number(state.notificationUnread)||0);
 }
 function accountUnreadFor(entry){return Math.max(0,Number(state.accountUnread?.[entry?.key])||0)}
+function accountNotificationUnreadFor(entry){return Math.max(0,Number(state.accountNotificationUnread?.[entry?.key])||0)}
+function accountDmUnreadFor(entry){return Math.max(0,Number(state.accountDmUnread?.[entry?.key])||0)}
 async function saveCurrentAccount(){
   if(!state.session||!state.me)return;
   const list=savedAccounts(),key=state.session.host+"|"+state.me.id,i=list.findIndex(x=>x.key===key),old=i>=0?list[i]:null;
@@ -313,12 +338,12 @@ async function saveCurrentAccount(){
   await syncSavedAccountsToPushMeta();
 }
 function resetAccountState(){
-  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];state.notificationUnread=0;state.notificationUnreadOverflow=false;
+  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];state.notificationUnread=0;state.notificationUnreadOverflow=false;state.dmUnread=0;
 }
 async function switchSavedAccount(index){
   const list=savedAccounts(),entry=list[index];if(!entry?.session)return;
   rememberScroll();state.session=entry.session;store.set("lenton_session",state.session);resetAccountState();
-  try{state.me=await api("/api/v1/accounts/verify_credentials");state.customEmojis=null;await loadCustomEmojis();await saveCurrentAccount();state.notificationUnread=accountUnreadFor(entry);state.view="home";render();refreshNotificationBadgeDom();setTimeout(()=>refreshUnreadNotificationCount(),80);toast("계정을 전환했어요.")}
+  try{state.me=await api("/api/v1/accounts/verify_credentials");state.customEmojis=null;await loadCustomEmojis();await saveCurrentAccount();state.notificationUnread=accountNotificationUnreadFor(entry);state.dmUnread=accountDmUnreadFor(entry);state.view="home";render();refreshNotificationBadgeDom();setTimeout(()=>refreshUnreadNotificationCount(),80);toast("계정을 전환했어요.")}
   catch(e){toast("계정 전환 실패: "+e.message)}
 }
 function savedAccountFullHandle(x){
@@ -499,24 +524,28 @@ function shell(title,body,opts={}){
     ${opts.fab?`<button class="fab lenton-fab" data-action="${esc(opts.fabAction||"compose")}">＋</button>`:""}
   </div>`;
 }
-function notificationBadgeText(){
-  const n=Math.max(0,Number(state.notificationUnread)||0);
+function badgeText(n,overflow=false){
+  n=Math.max(0,Number(n)||0);
   if(!n)return "";
-  return state.notificationUnreadOverflow||n>99?"99+":String(n);
+  return overflow||n>99?"99+":String(n);
 }
+function notificationBadgeText(){return badgeText(state.notificationUnread,state.notificationUnreadOverflow)}
+function dmBadgeText(){return badgeText(state.dmUnread,false)}
 function nav(v){
-  const badge=v==="notifications"&&state.notificationUnread>0?`<span class="nav-notification-badge">${esc(notificationBadgeText())}</span>`:"";
+  const txt=v==="notifications"?notificationBadgeText():v==="dm"?dmBadgeText():"";
+  const badge=txt?`<span class="nav-notification-badge">${esc(txt)}</span>`:"";
   return `<button data-view="${v}" class="${state.view===v?"active":""}" aria-label="${v}">${navIcon(v)}${badge}</button>`;
 }
 function navBar(){return visibleNavItems().map(x=>nav(x.id)).join("")}
 function refreshNotificationBadgeDom(){
-  const txt=notificationBadgeText();
-  document.querySelectorAll('.bottom button[data-view="notifications"]').forEach(btn=>{
-    let badge=btn.querySelector(".nav-notification-badge");
-    if(!txt){badge?.remove();return}
-    if(!badge){badge=document.createElement("span");badge.className="nav-notification-badge";btn.appendChild(badge)}
-    badge.textContent=txt;
-  });
+  for(const [view,txt] of [["notifications",notificationBadgeText()],["dm",dmBadgeText()]]){
+    document.querySelectorAll('.bottom button[data-view="'+view+'"]').forEach(btn=>{
+      let badge=btn.querySelector(".nav-notification-badge");
+      if(!txt){badge?.remove();return}
+      if(!badge){badge=document.createElement("span");badge.className="nav-notification-badge";btn.appendChild(badge)}
+      badge.textContent=txt;
+    });
+  }
   try{
     const total=totalAccountUnread();
     if("setAppBadge"in navigator){
@@ -634,8 +663,10 @@ function setListHidden(id,hidden){
   store.set(scopedKey("hidden_lists"),[...set]);
 }
 async function loadLists(){try{state.lists=await api("/api/v1/lists")}catch{state.lists=[]}}
-async function loadAllFollowing(){
+async function loadAllFollowing({fresh=false}={}){
   if(!state.me) state.me=await api("/api/v1/accounts/verify_credentials");
+  const cacheKey=scopedKey("following_cache_v1"),cached=store.get(cacheKey,null);
+  if(!fresh&&cached?.at&&Date.now()-Number(cached.at)<300000&&Array.isArray(cached.items))return cached.items;
   const out=[],seen=new Set();let maxId="";
   for(let page=0;page<50;page++){
     const query={limit:"80"};if(maxId)query.max_id=maxId;
@@ -646,6 +677,7 @@ async function loadAllFollowing(){
     const next=a[a.length-1]?.id||"";
     if(!next||next===maxId)break;maxId=next;
   }
+  store.set(cacheKey,{at:Date.now(),items:out});
   return out;
 }
 function statusId(raw){return raw?.id||raw?.reblog?.id||""}
@@ -715,12 +747,47 @@ async function loadLentonHome(chronological){
   collected.sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
   return collected.slice(0,80);
 }
+async function loadLentonHomePair(){
+  const followingPromise=loadAllFollowing();
+  const homePromise=api("/api/v1/timelines/home",{query:{limit:"40"}});
+  const publicPromise=api("/api/v1/timelines/public",{query:{limit:"40"}});
+  const [following,firstHome,firstPub]=await Promise.all([followingPromise,homePromise,publicPromise]);
+  const allowed=new Set((following||[]).map(x=>String(x.id)));if(state.me?.id)allowed.add(String(state.me.id));
+  const homeData=mergeChronological(firstHome||[],firstPub||[],allowed);
+  const collected=[],seen=new Set(),target=ANDROID?.timeline?.public?.targetInitialItems||30,maxScans=ANDROID?.timeline?.public?.maxHomeScans||6;
+  let home=firstHome||[],pub=firstPub||[],homeCursor=home[home.length-1]?.id||"",homeDone=false;
+  const addPage=()=>{
+    for(const raw of home){
+      if(!lentonPublicStatus(raw))continue;
+      const id=statusId(raw);if(id&&seen.has(id))continue;if(id)seen.add(id);
+      collected.push(raw);if(collected.length>=target)return;
+    }
+    for(const raw of pub){
+      if(!lentonPublicStatus(raw))continue;
+      const author=String(raw?.account?.id||"");if(!allowed.has(author))continue;
+      const id=statusId(raw);if(id&&seen.has(id))continue;if(id)seen.add(id);
+      collected.push(raw);if(collected.length>=target)return;
+    }
+  };
+  for(let scan=0;scan<maxScans&&collected.length<target;scan++){
+    if(scan>0){
+      if(homeDone)break;
+      const query={limit:"40"};if(homeCursor)query.max_id=homeCursor;
+      const rawHome=await api("/api/v1/timelines/home",{query});
+      const next=rawHome?.[rawHome.length-1]?.id||"";
+      home=rawHome||[];pub=[];
+      if(!home.length||!next||next===homeCursor)homeDone=true;else homeCursor=next;
+    }
+    addPage();
+  }
+  collected.sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
+  return {home:homeData,public:collected.slice(0,80)};
+}
 async function refreshHomeAfterPost(){
   try{
-    const [homeData,publicData]=await Promise.all([loadLentonHome(true),loadLentonHome(false)]);
-    state.homePagerData={home:homeData,public:publicData};
+    state.homePagerData=await loadLentonHomePair();
     if(state.view==="home"&&!state.listId){
-      state.timelineItems=state.homePagerData[state.homeMode]||homeData;
+      state.timelineItems=state.homePagerData[state.homeMode]||state.homePagerData.home;
       await homeView();
     }
   }catch{}
@@ -757,7 +824,7 @@ function setHomePagerMode(mode,animate=true){
 async function homeView(){
   state.busy=true;renderLoadingShell("홈");
   try{
-    if(!state.lists.length)await loadLists();
+    const listsPromise=state.lists.length?Promise.resolve():loadLists();
     const chronologicalLabel=ANDROID?.homeTabs?.chronological||"시간순",publicLabel=ANDROID?.homeTabs?.public||"퍼블릭";
     if(state.listId){
       const data=await api("/api/v1/timelines/list/"+state.listId,{query:{limit:"30"}});
@@ -767,8 +834,10 @@ async function homeView(){
       renderMainStable(state.lists.find(x=>x.id===state.listId)?.title||"리스트",chips+homePageHtml(data,"list"),{view:"home",fab:true});
       state.busy=false;bind();return;
     }
-    const [homeData,publicData]=await Promise.all([loadLentonHome(true),loadLentonHome(false)]);
-    state.homePagerData={home:homeData,public:publicData};
+    const pagerDataPromise=loadLentonHomePair();
+    await listsPromise;
+    state.homePagerData=await pagerDataPromise;
+    const homeData=state.homePagerData.home,publicData=state.homePagerData.public;
     state.timelineItems=state.homePagerData[state.homeMode]||homeData;
     const tabs='<div class="home-tabs" data-home-tabs><button data-home-mode="home" class="'+(state.homeMode==="home"?"active":"")+'">'+esc(chronologicalLabel)+'</button><button data-home-mode="public" class="'+(state.homeMode==="public"?"active":"")+'">'+esc(publicLabel)+'</button><span class="home-tab-indicator" aria-hidden="true"></span></div>';
     const visibleLists=state.lists.filter(x=>!hiddenListIds().has(x.id));
@@ -1012,7 +1081,7 @@ async function markNotificationsRead(latestId){
   const id=String(latestId||"");if(!id)return;
   setLocalNotificationReadId(id);
   state.notificationUnread=0;state.notificationUnreadOverflow=false;
-  await setSharedAccountUnread(currentAccountKey(),0);
+  await setSharedAccountUnreadBreakdown(currentAccountKey(),0,state.dmUnread);
   refreshNotificationBadgeDom();
   try{await api("/api/v1/markers",{method:"POST",form:{"notifications[last_read_id]":id}})}catch{}
 }
@@ -1033,32 +1102,38 @@ async function refreshUnreadNotificationCount({bootstrap=true}={}){
   if(!state.session||!state.me)return 0;
   try{
     const previous=Math.max(0,Number(state.notificationUnread)||0);
-    const items=await api("/api/v1/notifications",{query:{limit:"80"}});
-    const filter=notificationFilterPrefs(),visible=(items||[]).filter(n=>filter[n.type]!==false);
+    const [items,markerFromServer,conversations]=await Promise.all([
+      api("/api/v1/notifications",{query:{limit:"80"}}),
+      serverNotificationReadId(),
+      api("/api/v1/conversations",{query:{limit:"80"}}).catch(()=>[])
+    ]);
+    const filter=notificationFilterPrefs();
+    const isDirect=n=>n?.status?.visibility==="direct";
+    const visibleNonDirect=(items||[]).filter(n=>filter[n.type]!==false&&!isDirect(n));
     const newest=String((items||[])[0]?.id||"");
-    let marker=await serverNotificationReadId();
-    if(!marker)marker=localNotificationReadId();
+    let marker=markerFromServer||localNotificationReadId();
+    state.dmUnread=(conversations||[]).filter(x=>x?.unread).length;
     if(!marker&&bootstrap){
       if(newest)setLocalNotificationReadId(newest);
       state.notificationUnread=0;state.notificationUnreadOverflow=false;
-      await setSharedAccountUnread(currentAccountKey(),0);
+      await setSharedAccountUnreadBreakdown(currentAccountKey(),0,state.dmUnread);
       refreshNotificationBadgeDom();
       notificationUnreadReady=true;
       return 0;
     }
     let count=0,found=!marker;
     if(marker){
-      for(const n of visible){
+      for(const n of items||[]){
         if(String(n.id)===marker){found=true;break}
-        count++;
+        if(filter[n.type]!==false&&!isDirect(n))count++;
       }
-    }else count=visible.length;
+    }else count=visibleNonDirect.length;
     state.notificationUnread=count;
-    state.notificationUnreadOverflow=!!marker&&!found&&visible.length>=80;
-    await setSharedAccountUnread(currentAccountKey(),count);
+    state.notificationUnreadOverflow=!!marker&&!found&&(items||[]).length>=80;
+    await setSharedAccountUnreadBreakdown(currentAccountKey(),count,state.dmUnread);
     refreshNotificationBadgeDom();
-    if(notificationUnreadReady&&count>previous&&document.visibilityState==="visible"&&state.view!=="notifications"&&visible[0]){
-      showForegroundPushBanner(notificationPreviewPayload(visible[0]));
+    if(notificationUnreadReady&&count>previous&&document.visibilityState==="visible"&&state.view!=="notifications"&&visibleNonDirect[0]){
+      showForegroundPushBanner(notificationPreviewPayload(visibleNonDirect[0]));
     }
     notificationUnreadReady=true;
     return count;
@@ -1092,11 +1167,10 @@ async function notificationsView(mentionsOnly=false){
   try{
     const query={limit:"40"};if(mentionsOnly)query["types[]"]="mention";
     let items=await api("/api/v1/notifications",{query});
-    if(!mentionsOnly&&items?.[0]?.id)await markNotificationsRead(items[0].id);
-    if(!mentionsOnly){
-      const filter=notificationFilterPrefs();
-      items=items.filter(n=>filter[n.type]!==false);
-    }
+    const rawItems=items||[];
+    if(!mentionsOnly&&rawItems?.[0]?.id)await markNotificationsRead(rawItems[0].id);
+    const filter=notificationFilterPrefs();
+    items=rawItems.filter(n=>n?.status?.visibility!=="direct"&&(mentionsOnly?n.type==="mention":filter[n.type]!==false));
     const tabLabels=ANDROID?.renderer?.notificationTabs||["전체","멘션"];
     const tabs='<div class="notify-tabs lenton-notify-tabs"><button data-notify="all" class="'+(mentionsOnly?"":"active")+'">'+esc(tabLabels[0]||"전체")+'</button><button data-notify="mention" class="'+(mentionsOnly?"active":"")+'">'+esc(tabLabels[1]||"멘션")+'</button></div>';
     const labels=ANDROID?.renderer?.notificationLabels||{};
@@ -1110,7 +1184,7 @@ async function notificationsView(mentionsOnly=false){
       return '<article class="android-notify-card '+tone+' '+(st?"has-status":"")+'" '+(st?'data-notify-status="'+esc(st.id||"")+'"':"")+'>'+
         '<div class="android-notify-glyph '+(colors[type]||"default")+'">'+esc(glyph)+'</div>'+
         '<div class="android-notify-main">'+
-          '<button class="android-notify-person" data-profile="'+esc(a.id||"")+'"><img src="'+esc(a.avatar_static||a.avatar||"")+'" alt=""><b>'+renderEmojiText(a.display_name||a.username||"알림",a.emojis||[])+' · '+esc(label)+'</b></button>'+
+          '<div class="android-notify-person"><button type="button" class="android-notify-avatar" data-profile="'+esc(a.id||"")+'" aria-label="프로필 열기"><img src="'+esc(a.avatar_static||a.avatar||"")+'" alt=""></button><b>'+renderEmojiText(a.display_name||a.username||"알림",a.emojis||[])+' · '+esc(label)+'</b></div>'+
           body+
         '</div></article>';
     }).join(""):'<div class="center">새 알림이 없어요.</div>';
@@ -1144,6 +1218,9 @@ async function dmView(){
   renderLoadingShell("메시지");
   try{
     const raw=await api("/api/v1/conversations",{query:{limit:"80"}});
+    state.dmUnread=(raw||[]).filter(x=>x?.unread).length;
+    await setSharedAccountUnreadBreakdown(currentAccountKey(),state.notificationUnread,state.dmUnread);
+    refreshNotificationBadgeDom();
     const cs=groupDmConversations(raw);
     const body=cs.length?cs.map(c=>{
       const a=c.accounts?.[0],txt=c.last_status?plain(c.last_status.content):"";
@@ -1355,7 +1432,14 @@ async function openConversation(id){
     $("#dmInlineCameraFile")?.addEventListener("change",e=>previewFiles(e.target.files));
     $("#dmInlineSend")?.addEventListener("click",()=>sendInlineDm(c));
     input?.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendInlineDm(c)}});
-    api("/api/v1/conversations/"+id+"/read",{method:"POST",form:{}}).catch(()=>{});
+    api("/api/v1/conversations/"+id+"/read",{method:"POST",form:{}}).then(async()=>{
+      if(c.unread){
+        c.unread=false;
+        state.dmUnread=Math.max(0,Number(state.dmUnread||0)-1);
+        await setSharedAccountUnreadBreakdown(currentAccountKey(),state.notificationUnread,state.dmUnread);
+        refreshNotificationBadgeDom();
+      }
+    }).catch(()=>{});
     requestAnimationFrame(()=>{const main=document.querySelector(".standalone-page .main");if(main)main.scrollTop=main.scrollHeight});
   }catch(e){toast(e.message)}
 }
@@ -3173,12 +3257,17 @@ async function registerSW(){
       if(e.data?.type!=="push")return;
       await syncSavedAccountsToPushMeta();
       const current=currentAccountKey();
-      if(e.data?.accountKey&&e.data.accountKey===current)state.notificationUnread=accountUnreadFor({key:current});
-      if(state.view==="notifications"&&(!e.data?.accountKey||e.data.accountKey===current))notificationsView(false);
+      if(e.data?.accountKey&&e.data.accountKey===current){
+        state.notificationUnread=accountNotificationUnreadFor({key:current});
+        state.dmUnread=accountDmUnreadFor({key:current});
+      }
+      const sameAccount=!e.data?.accountKey||e.data.accountKey===current;
+      if(state.view==="notifications"&&sameAccount&&e.data?.kind!=="dm")notificationsView(false);
+      else if(state.view==="dm"&&sameAccount&&e.data?.kind==="dm")dmView();
       else{
         refreshNotificationBadgeDom();
         showForegroundPushBanner(e.data);
-        if(!e.data?.accountKey||e.data.accountKey===current)setTimeout(()=>refreshUnreadNotificationCount({bootstrap:false}),120);
+        if(sameAccount)setTimeout(()=>refreshUnreadNotificationCount({bootstrap:false}),120);
       }
     });
     navigator.serviceWorker.addEventListener("controllerchange",()=>{
@@ -3220,6 +3309,11 @@ window.addEventListener("beforeunload",e=>{
   }
   if(state.session){try{state.me=await api("/api/v1/accounts/verify_credentials");await loadCustomEmojis();await saveCurrentAccount()}catch{store.del("lenton_session");state.session=null}}
   await syncSavedAccountsToPushMeta();
+  if(state.session){
+    const current={key:currentAccountKey()};
+    state.notificationUnread=accountNotificationUnreadFor(current);
+    state.dmUnread=accountDmUnreadFor(current);
+  }
   if(["home","notifications","dm","profile","settings"].includes(deep))state.view=deep;
   render();refreshNotificationBadgeDom();
   if(state.session)setTimeout(()=>refreshUnreadNotificationCount(),80);
