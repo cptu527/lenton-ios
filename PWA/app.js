@@ -735,7 +735,7 @@ async function loadLentonHome(chronological){
   };
 
   const target=ANDROID?.timeline?.public?.targetInitialItems||30,maxScans=ANDROID?.timeline?.public?.maxHomeScans||6;
-  for(let scan=0;scan<maxScans&&collected.length<target;scan++){
+  for(let scan=0;scan<scanLimit&&collected.length<target;scan++){
     if(scan>0){
       if(homeDone)break;
       const query={limit:"40"};if(homeCursor)query.max_id=homeCursor;
@@ -750,14 +750,14 @@ async function loadLentonHome(chronological){
   collected.sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
   return collected.slice(0,80);
 }
-async function loadLentonHomePair(){
+async function loadLentonHomePair({maxScans=1}={}){
   const followingPromise=loadAllFollowing();
   const homePromise=api("/api/v1/timelines/home",{query:{limit:"40"}});
   const publicPromise=api("/api/v1/timelines/public",{query:{limit:"40"}});
   const [following,firstHome,firstPub]=await Promise.all([followingPromise,homePromise,publicPromise]);
   const allowed=new Set((following||[]).map(x=>String(x.id)));if(state.me?.id)allowed.add(String(state.me.id));
   const homeData=mergeChronological(firstHome||[],firstPub||[],allowed);
-  const collected=[],seen=new Set(),target=ANDROID?.timeline?.public?.targetInitialItems||30,maxScans=ANDROID?.timeline?.public?.maxHomeScans||6;
+  const collected=[],seen=new Set(),target=ANDROID?.timeline?.public?.targetInitialItems||30,scanLimit=Math.max(1,Number(maxScans)||1);
   let home=firstHome||[],pub=firstPub||[],homeCursor=home[home.length-1]?.id||"",homeDone=false;
   const addPage=()=>{
     for(const raw of home){
@@ -786,12 +786,45 @@ async function loadLentonHomePair(){
   collected.sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
   return {home:homeData,public:collected.slice(0,80)};
 }
+
+function homeSnapshotRead(){
+  const snap=store.get(scopedKey("home_snapshot_v2"),null);
+  if(!snap?.at||Date.now()-Number(snap.at)>15*60*1000)return null;
+  const data=snap.data;
+  return data&&Array.isArray(data.home)&&Array.isArray(data.public)?data:null;
+}
+function homeSnapshotWrite(data){
+  try{if(data&&Array.isArray(data.home)&&Array.isArray(data.public))store.set(scopedKey("home_snapshot_v2"),{at:Date.now(),data})}catch{}
+}
+async function loadHomeQuickPair(){
+  const home=await api("/api/v1/timelines/home",{query:{limit:"40"}});
+  const clean=(home||[]).filter(nonDirect);
+  const pub=clean.filter(lentonPublicStatus).slice(0,ANDROID?.timeline?.public?.targetInitialItems||30);
+  return {home:clean,public:pub};
+}
+function renderHomePagerData(data,{preserveScroll=false}={}){
+  if(!data)return;
+  const y=preserveScroll?(window.scrollY||document.documentElement.scrollTop||0):null;
+  const chronologicalLabel=ANDROID?.homeTabs?.chronological||"시간순",publicLabel=ANDROID?.homeTabs?.public||"퍼블릭";
+  state.homePagerData=data;
+  const homeData=data.home||[];
+  state.timelineItems=data[state.homeMode]||homeData;
+  const tabs='<div class="home-tabs" data-home-tabs><button data-home-mode="home" class="'+(state.homeMode==="home"?"active":"")+'">'+esc(chronologicalLabel)+'</button><button data-home-mode="public" class="'+(state.homeMode==="public"?"active":"")+'">'+esc(publicLabel)+'</button><span class="home-tab-indicator" aria-hidden="true"></span></div>';
+  const visibleLists=state.lists.filter(x=>!hiddenListIds().has(x.id));
+  const chips=(visibleLists.length||state.lists.length)?'<div class="chips">'+visibleLists.map(x=>'<button class="chip" data-list="'+x.id+'">'+esc(x.title)+'</button>').join("")+'<button class="chip" data-action="newlist">＋ 리스트</button></div>':"";
+  renderMainStable("홈",tabs+chips+buildHomePager(state.homeMode,data),{view:"home",fab:true});
+  requestAnimationFrame(()=>{
+    syncHomePagerUi(state.homeMode,false);
+    if(y!==null)window.scrollTo(0,y);
+  });
+}
 async function refreshHomeAfterPost(){
   try{
     state.homePagerData=await loadLentonHomePair();
     if(state.view==="home"&&!state.listId){
       state.timelineItems=state.homePagerData[state.homeMode]||state.homePagerData.home;
-      await homeView();
+      homeSnapshotWrite(state.homePagerData);
+      renderHomePagerData(state.homePagerData,{preserveScroll:true});
     }
   }catch{}
 }
@@ -824,33 +857,54 @@ function setHomePagerMode(mode,animate=true){
   state.homeMode=mode;state.listId=null;state.timelineItems=state.homePagerData?.[mode]||[];
   syncHomePagerUi(mode,animate);
 }
-async function homeView(){
-  state.busy=true;renderLoadingShell("홈");
+async function homeView({silent=false}={}){
+  state.busy=true;
   try{
-    const listsPromise=state.lists.length?Promise.resolve():loadLists();
-    const chronologicalLabel=ANDROID?.homeTabs?.chronological||"시간순",publicLabel=ANDROID?.homeTabs?.public||"퍼블릭";
     if(state.listId){
+      if(!silent)renderLoadingShell("홈");
       const data=await api("/api/v1/timelines/list/"+state.listId,{query:{limit:"30"}});
       const visibleLists=state.lists.filter(x=>!hiddenListIds().has(x.id));
       const chips=(visibleLists.length||state.lists.length)?'<div class="chips">'+visibleLists.map(x=>'<button class="chip '+(state.listId===x.id?"active":"")+'" data-list="'+x.id+'">'+esc(x.title)+'</button>').join("")+'<button class="chip" data-action="newlist">＋ 리스트</button></div>':"";
       state.timelineItems=data;
       renderMainStable(state.lists.find(x=>x.id===state.listId)?.title||"리스트",chips+homePageHtml(data,"list"),{view:"home",fab:true});
-      state.busy=false;bind();return;
+      return;
     }
-    const pagerDataPromise=loadLentonHomePair();
-    await listsPromise;
-    state.homePagerData=await pagerDataPromise;
-    const homeData=state.homePagerData.home,publicData=state.homePagerData.public;
-    state.timelineItems=state.homePagerData[state.homeMode]||homeData;
-    const tabs='<div class="home-tabs" data-home-tabs><button data-home-mode="home" class="'+(state.homeMode==="home"?"active":"")+'">'+esc(chronologicalLabel)+'</button><button data-home-mode="public" class="'+(state.homeMode==="public"?"active":"")+'">'+esc(publicLabel)+'</button><span class="home-tab-indicator" aria-hidden="true"></span></div>';
-    const visibleLists=state.lists.filter(x=>!hiddenListIds().has(x.id));
-    const chips=(visibleLists.length||state.lists.length)?'<div class="chips">'+visibleLists.map(x=>'<button class="chip" data-list="'+x.id+'">'+esc(x.title)+'</button>').join("")+'<button class="chip" data-action="newlist">＋ 리스트</button></div>':"";
-    renderMainStable("홈",tabs+chips+buildHomePager(state.homeMode,state.homePagerData),{view:"home",fab:true});
-    requestAnimationFrame(()=>syncHomePagerUi(state.homeMode,false));
-  }catch(e){renderMainStable("홈",'<div class="center">타임라인을 불러오지 못했어요.<br><br>'+esc(e.message)+'<br><br><button class="primary" data-action="reload">다시 시도</button></div>',{view:"home",fab:true})}
-  state.busy=false;bind();
-}
 
+    const cached=(state.homePagerData?.home?.length?state.homePagerData:homeSnapshotRead());
+    if(cached){
+      state.homePagerData=cached;
+      renderHomePagerData(cached);
+    }else if(!silent){
+      renderLoadingShell("홈");
+    }
+
+    const listsPromise=state.lists.length?Promise.resolve():loadLists();
+
+    // First paint only needs the Mastodon home endpoint; do not block it on
+    // the complete following list or public-timeline filtering.
+    if(!cached){
+      try{
+        const quick=await loadHomeQuickPair();
+        if(state.view==="home"&&!state.listId){
+          renderHomePagerData(quick);
+          homeSnapshotWrite(quick);
+        }
+      }catch{}
+    }
+
+    // Refresh the complete pair after the screen is already usable.
+    const fresh=await loadLentonHomePair({maxScans:1});
+    await listsPromise;
+    state.homePagerData=fresh;
+    homeSnapshotWrite(fresh);
+    if(state.view==="home"&&!state.listId)renderHomePagerData(fresh,{preserveScroll:!!cached});
+  }catch(e){
+    if(!state.homePagerData?.home?.length)renderMainStable("홈",'<div class="center">타임라인을 불러오지 못했어요.<br><br>'+esc(e.message)+'<br><br><button class="primary" data-action="reload">다시 시도</button></div>',{view:"home",fab:true});
+  }finally{
+    state.busy=false;
+    bind();
+  }
+}
 async function loadMoreHome(){
   if(state.timelineLoadingMore)return;
   const last=state.timelineItems[state.timelineItems.length-1];const maxId=statusId(last);
@@ -913,13 +967,9 @@ function goBackScreen(){
 }
 function renderLoadingShell(title){
   const current=document.querySelector("#app>.app");
-  if(current){
-    current.classList.add("refreshing");
-    const h=current.querySelector(".topbar h1");if(h)h.textContent=title;
-    return;
-  }
+  if(current&&current.classList.contains("lenton-view-"+state.view))return;
   if(document.querySelector("#app>.standalone-page"))return;
-  $("#app").innerHTML=shell(title,'<div class="center">불러오는 중…</div>',{fab:title==="홈"});
+  $("#app").innerHTML=shell(title,'<div class="center lenton-loading">불러오는 중…</div>',{fab:title==="홈"});
   bind();
 }
 
@@ -1165,8 +1215,8 @@ function showForegroundPushBanner(payload={}){
   setTimeout(()=>{if(b.isConnected){b.classList.remove("show");setTimeout(()=>b.remove(),180)}},5200);
 }
 
-async function notificationsView(mentionsOnly=false){
-  renderLoadingShell("알림");
+async function notificationsView(mentionsOnly=false,silent=false){
+  if(!silent)renderLoadingShell("알림");
   try{
     const query={limit:"40"};if(mentionsOnly)query["types[]"]="mention";
     let items=await api("/api/v1/notifications",{query});
@@ -1217,8 +1267,8 @@ function groupDmConversations(cs){
   }
   return [...(cs||[])].sort((a,b)=>String(b.last_status?.created_at||"").localeCompare(String(a.last_status?.created_at||"")));
 }
-async function dmView(){
-  renderLoadingShell("메시지");
+async function dmView(silent=false){
+  if(!silent)renderLoadingShell("메시지");
   try{
     const raw=await api("/api/v1/conversations",{query:{limit:"80"}});
     state.dmUnread=(raw||[]).filter(x=>x?.unread).length;
@@ -2631,8 +2681,9 @@ function attachComposerViewportDock(m){
     raf=requestAnimationFrame(()=>{
       if(!m.isConnected)return;
       const viewport=window.visualViewport;
+      const baseHeight=Math.max(Number(window.__lentonComposeLayoutHeight)||0,window.innerHeight||0,document.documentElement.clientHeight||0);
       const keyboardOffset=viewport
-        ? Math.max(0,Math.round(window.innerHeight-viewport.height-viewport.offsetTop))
+        ? Math.max(0,Math.round(baseHeight-viewport.height-viewport.offsetTop))
         : 0;
       m.style.setProperty("--compose-keyboard-offset",keyboardOffset+"px");
       m.classList.toggle("keyboard-open",keyboardOffset>80);
@@ -2662,6 +2713,7 @@ function attachComposerViewportDock(m){
 }
 function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyContext=[]){
   let historyPushed=false;
+  window.__lentonComposeLayoutHeight=Math.max(window.innerHeight||0,document.documentElement.clientHeight||0,window.visualViewport?.height||0);
   let parts=[{text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[],poll:null}];
   let visibility=composeDefaultVisibility(reply,forcedVisibility),activePart=0,uploading=false;
   const recips=[];
@@ -2707,7 +2759,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
       ${!reply&&visibility==="direct"&&recips.length?`<div class="compose-direct-recipient">${esc(directRecipientText())}</div>`:""}
       ${!reply&&visibility!=="direct"&&recips.length?`<div class="recips">${recips.map((r,i)=>`<button data-r="${i}" class="${r.on?"":"off"}">${r.avatar?`<img src="${esc(r.avatar)}" alt="">`:""}<span>@${esc(r.acct)}</span></button>`).join("")}</div>`:""}
       <div id="parts">${parts.map((p,i)=>`<div class="part ${i===activePart?"active":""}" data-p="${i}">
-        ${(!reply&&visibility!=="direct")?`<div class="part-head"><b>게시물 ${i+1}</b></div>`:""}
+        ${i>0?`<div class="part-remove-row">${(!reply&&visibility!=="direct")?`<b>게시물 ${i+1}</b>`:""}<button type="button" data-remove-part="${i}" aria-label="추가 게시물 삭제">×</button></div>`:((!reply&&visibility!=="direct")?`<div class="part-head"><b>게시물 1</b></div>`:"")}
         <div class="part-body"><img class="avatar" src="${esc(state.me?.avatar_static||state.me?.avatar||"")}" alt=""><div class="part-fields">
           ${p.cw?`<input type="text" data-sp="${i}" placeholder="내용 경고" value="${esc(p.spoiler)}">`:""}
           <textarea data-t="${i}" placeholder="${reply?"답글을 입력하세요":(visibility==="direct"?"메시지를 입력하세요":"무슨 일이 일어나고 있나요?")}">${esc(p.text)}</textarea>
@@ -2723,7 +2775,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
         </div></div>
       </div>`).join("")}</div>
       <div class="compose-bottom-dock">
-        <div class="compose-meta-row compose-visibility-row"><select id="composeVisibility" class="compose-visibility" aria-label="공개 범위">${visOptions.map(x=>`<option value="${x[0]}" ${visibility===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select><span class="compose-visibility-chevron" aria-hidden="true"></span></div>
+        <div class="compose-meta-row compose-visibility-row"><span id="composeVisibilityLabel" class="compose-visibility-label">${esc((visOptions.find(x=>x[0]===visibility)||visOptions[0])[1])}</span><span class="compose-visibility-chevron" aria-hidden="true"></span><select id="composeVisibility" class="compose-visibility" aria-label="공개 범위">${visOptions.map(x=>`<option value="${x[0]}" ${visibility===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select></div>
         <div class="compose-tools android-compose-tools">
           ${composeToolMarkup(ct,!!reply)}
           <input id="composeFile" type="file" accept="image/*,video/*" multiple hidden>
@@ -2737,7 +2789,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
     attachComposerViewportDock(m);
     if(!historyPushed){history.pushState({...history.state,lentonCompose:true},"",location.href);historyPushed=true}
     window.__lentonComposeGuard=confirmClose;
-    window.__lentonComposeClose=()=>{window.__lentonComposeViewportCleanup?.();document.querySelector(".compose-modal")?.remove();historyPushed=false;window.__lentonComposeGuard=null;window.__lentonComposeClose=null};
+    window.__lentonComposeClose=()=>{window.__lentonComposeViewportCleanup?.();document.querySelector(".compose-modal")?.remove();historyPushed=false;window.__lentonComposeLayoutHeight=0;window.__lentonComposeGuard=null;window.__lentonComposeClose=null};
     const ta=m.querySelector(`[data-t="${activePart}"]`);
     if(refocus)requestAnimationFrame(()=>ta?.focus());
     m.querySelectorAll("[data-t]").forEach(x=>{
@@ -2760,18 +2812,19 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
     m.querySelectorAll("[data-poll-remove]").forEach(x=>x.onclick=e=>{const [pi,oi]=e.currentTarget.dataset.pollRemove.split(":").map(Number);if(parts[pi].poll&&parts[pi].poll.options.length>2)parts[pi].poll.options.splice(oi,1);activePart=pi;draw(false)});
     m.querySelectorAll("[data-poll-expire]").forEach(x=>x.onchange=e=>{const pi=+e.currentTarget.dataset.pollExpire;if(parts[pi].poll)parts[pi].poll.expires=+e.currentTarget.value});
     m.querySelectorAll("[data-poll-multiple]").forEach(x=>x.onchange=e=>{const pi=+e.currentTarget.dataset.pollMultiple;if(parts[pi].poll)parts[pi].poll.multiple=e.currentTarget.checked});
-    $("#composeVisibility",m).onchange=e=>visibility=e.target.value;
+    $("#composeVisibility",m).onchange=e=>{visibility=e.target.value;const label=$("#composeVisibilityLabel",m),opt=e.target.selectedOptions?.[0];if(label)label.textContent=opt?.textContent||visibility};
     $("#addPart",m)?.addEventListener("click",()=>{parts.push({text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[],poll:null});activePart=parts.length-1;draw()});
+    m.querySelectorAll("[data-remove-part]").forEach(x=>x.onclick=e=>{const pi=Number(e.currentTarget.dataset.removePart);if(pi<=0||pi>=parts.length)return;parts.splice(pi,1);activePart=Math.max(0,Math.min(activePart,parts.length-1));draw(false)});
     $("#composeCW",m)?.addEventListener("click",()=>{parts[activePart].cw=!parts[activePart].cw;if(parts[activePart].cw&&!parts[activePart].spoiler&&reply?.spoiler_text)parts[activePart].spoiler=reply.spoiler_text;draw()});
     $("#closeCompose",m).onclick=()=>{if(!confirmClose())return;if(historyPushed){window.__lentonComposeBypass=true;history.back()}else window.__lentonComposeClose?.()};
     $("#composeAttach",m)?.addEventListener("click",()=>$("#composeFile",m)?.click());
     $("#composeCamera",m)?.addEventListener("click",()=>$("#composeCameraFile",m)?.click());
     $("#composeGif",m)?.addEventListener("click",()=>$("#composeGifFile",m)?.click());
-    $("#composePoll",m).onclick=()=>{
+    $("#composePoll",m)?.addEventListener("click",()=>{
       const p=parts[activePart];
       p.poll=p.poll?null:{options:["",""],expires:86400,multiple:false};
       draw(false);
-    };
+    });
     const handleComposeFiles=async filesLike=>{
       const files=[...filesLike].slice(0,Math.max(0,4-parts[activePart].media.length));
       if(!files.length)return;uploading=true;$("#sendCompose",m).disabled=true;toast("미디어 업로드 중…");
@@ -2784,8 +2837,13 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
     $("#composeFile",m).onchange=async e=>{await handleComposeFiles(e.target.files)};
     $("#composeCameraFile",m).onchange=async e=>{await handleComposeFiles(e.target.files)};
     $("#composeGifFile",m).onchange=async e=>{await handleComposeFiles(e.target.files)};
-    $("#composeEmoji",m).onclick=async()=>{
-      const box=$("#emojiPicker",m);box.hidden=!box.hidden;if(box.hidden)return;
+    $("#composeEmoji",m)?.addEventListener("click",async e=>{
+      e.preventDefault();e.stopPropagation();
+      const box=$("#emojiPicker",m);if(!box)return;
+      const opening=box.hidden;
+      box.hidden=!opening;
+      if(!opening)return;
+      const active=document.activeElement;if(active&&m.contains(active)&&typeof active.blur==="function")active.blur();
       box.innerHTML='<div class="center">이모지 불러오는 중…</div>';
       const emojis=await loadCustomEmojis();
       box.innerHTML=emojis.length?emojis.map(e=>`<button data-emoji="${esc(e.shortcode)}" title=":${esc(e.shortcode)}:"><img src="${esc(e.static_url||e.url)}" alt=":${esc(e.shortcode)}:"></button>`).join(""):'<div class="center">서버 이모지가 없어요.</div>';
@@ -2793,9 +2851,9 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
         const textarea=m.querySelector(`[data-t="${activePart}"]`);if(!textarea)return;
         const ins=":"+b.dataset.emoji+":",start=textarea.selectionStart??textarea.value.length,end=textarea.selectionEnd??start;
         parts[activePart].text=textarea.value.slice(0,start)+ins+textarea.value.slice(end);
-        textarea.value=parts[activePart].text;textarea.focus();textarea.setSelectionRange(start+ins.length,start+ins.length);
+        textarea.value=parts[activePart].text;box.hidden=true;textarea.focus();textarea.setSelectionRange(start+ins.length,start+ins.length);
       });
-    };
+    });
     $("#sendCompose",m).onclick=async()=>{
       if(uploading){toast("미디어 업로드가 끝날 때까지 기다려주세요.");return}
       const valid=parts.filter(p=>p.text.trim()||p.media.length||p.poll?.options?.some(x=>x.trim()));if(!valid.length){toast("내용을 입력해주세요.");return}
@@ -3168,8 +3226,25 @@ function bind(){
   document.querySelectorAll("[data-layout-up]").forEach(b=>b.onclick=()=>mutateLayout(b.dataset.layoutUp,-1));
   document.querySelectorAll("[data-layout-down]").forEach(b=>b.onclick=()=>mutateLayout(b.dataset.layoutDown,1));
   document.querySelectorAll("[data-layout-toggle]").forEach(b=>b.onclick=()=>mutateLayout(b.dataset.layoutToggle,0));
-  document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{rememberScroll();state.view=b.dataset.view;state.listId=null;render()});
-  document.querySelectorAll("[data-action]").forEach(b=>b.onclick=async()=>{
+  document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{
+    rememberScroll();
+    const target=b.dataset.view;
+    state.view=target;state.listId=null;
+    const cached=state.pageCache[target]||"";
+    if(cached.includes("lenton-view-"+target)){
+      $("#app").innerHTML=cached;
+      clearGestureBindingMarks($("#app"));
+      bind();
+      requestAnimationFrame(()=>attachLentonGestures());
+      if(target==="home")setTimeout(()=>homeView({silent:true}),0);
+      else if(target==="notifications")setTimeout(()=>notificationsView(false,true),0);
+      else if(target==="dm")setTimeout(()=>dmView(true),0);
+      return;
+    }
+    render();
+  });
+  document.querySelectorAll("[data-action]").forEach(b=>b.onclick=async e=>{
+    if(b.closest(".lenton-actions,.status-more,.cw,.compose-tools"))e.stopPropagation();
     const a=b.dataset.action;
     if(a==="settings"){state.view="settings";render()}
     else if(a==="drawer")openDrawer()
