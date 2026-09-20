@@ -735,7 +735,7 @@ async function loadLentonHome(chronological){
   };
 
   const target=ANDROID?.timeline?.public?.targetInitialItems||30,maxScans=ANDROID?.timeline?.public?.maxHomeScans||6;
-  for(let scan=0;scan<scanLimit&&collected.length<target;scan++){
+  for(let scan=0;scan<maxScans&&collected.length<target;scan++){
     if(scan>0){
       if(homeDone)break;
       const query={limit:"40"};if(homeCursor)query.max_id=homeCursor;
@@ -772,7 +772,7 @@ async function loadLentonHomePair({maxScans=1}={}){
       collected.push(raw);if(collected.length>=target)return;
     }
   };
-  for(let scan=0;scan<maxScans&&collected.length<target;scan++){
+  for(let scan=0;scan<scanLimit&&collected.length<target;scan++){
     if(scan>0){
       if(homeDone)break;
       const query={limit:"40"};if(homeCursor)query.max_id=homeCursor;
