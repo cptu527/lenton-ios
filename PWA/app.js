@@ -15,7 +15,7 @@ const state = {
   me:null, view:"home", homeMode:"home", listId:null, lists:[], busy:false,
   theme:store.get("lenton_theme","system"), accent:store.get("lenton_accent",ANDROID?.theme?.accent||"#1d9bf0"),
   uiScale:Math.max(.8,Math.min(1.2,Number(store.get("lenton_ui_scale",1))||1)),
-  pushError:"", toast:"", notificationUnread:0, notificationUnreadOverflow:false, currentConversation:null, profileReplies:false, profileMode:"posts", profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, profilePagerData:{}, homePagerData:{}, navStack:[], dmDraftRecipients:[], updateAvailable:null, buildInfo:null
+  pushError:"", toast:"", notificationUnread:0, notificationUnreadOverflow:false, accountUnread:{}, currentConversation:null, profileReplies:false, profileMode:"posts", profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, profilePagerData:{}, homePagerData:{}, navStack:[], dmDraftRecipients:[], updateAvailable:null, buildInfo:null
 };
 
 function accountScope(){
