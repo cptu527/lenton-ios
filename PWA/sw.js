@@ -64,20 +64,18 @@ async function rootPushBadge(data){
   const meta=await pushMetaRead(),hash=await swTokenHash(data?.access_token||""),accounts=meta.accounts||{};
   let match=null;
   for(const a of Object.values(accounts))if(hash&&a?.tokenHash===hash){match=a;break}
-  let kind="notification";
+  let kind="notification",detail=null;
   const type=String(data?.notification_type||data?.notification?.type||"");
   const notificationId=String(data?.notification_id||data?.id||"");
-  if(type==="mention"&&match?.host&&notificationId&&data?.access_token){
+  if(match?.host&&notificationId&&data?.access_token){
     try{
       const r=await fetch("https://"+match.host+"/api/v1/notifications/"+encodeURIComponent(notificationId),{
         headers:{Accept:"application/json",Authorization:"Bearer "+String(data.access_token)},cache:"no-store"
       });
-      if(r.ok){
-        const n=await r.json();
-        if(n?.status?.visibility==="direct")kind="dm";
-      }
+      if(r.ok)detail=await r.json();
     }catch{}
   }
+  if(type==="mention"&&detail?.status?.visibility==="direct")kind="dm";
   if(match){
     match.notificationUnread=Math.max(0,Number(match.notificationUnread)||0);
     match.dmUnread=Math.max(0,Number(match.dmUnread)||0);
@@ -87,7 +85,7 @@ async function rootPushBadge(data){
   await pushMetaWrite(meta);
   const total=Object.values(accounts).reduce((n,a)=>n+Math.max(0,Number(a?.unread)||0),0)+Math.max(0,Number(meta.unscopedUnread)||0);
   try{if("setAppBadge" in self.navigator){if(total>0)await self.navigator.setAppBadge(total);else if("clearAppBadge" in self.navigator)await self.navigator.clearAppBadge()}}catch{}
-  return {match,total,kind};
+  return {match,total,kind,detail};
 }
 
 self.addEventListener("push",event=>{
@@ -95,8 +93,9 @@ self.addEventListener("push",event=>{
   try{data=event.data?event.data.json():{}}catch{try{data={body:event.data?.text()||""}}catch{}}
   event.waitUntil((async()=>{
     const n=data.notification||{},title=data.title||n.title||"렌톤",body=data.body||n.body||data.message||"새 알림이 도착했습니다.";
-    const icon=data.icon||n.icon||"./icon-1024.png",notificationId=String(data.notification_id||data.id||"");
+    const notificationId=String(data.notification_id||data.id||"");
     const badgeInfo=await rootPushBadge(data),accountKey=badgeInfo.match?.key||"",kind=badgeInfo.kind||"notification";
+    const icon=badgeInfo.detail?.account?.avatar_static||badgeInfo.detail?.account?.avatar||data.icon||n.icon||badgeInfo.match?.avatar||"./icon-1024.png";
     const target=n.navigate||data.url||(notificationId?("./?notification_id="+encodeURIComponent(notificationId)):"./?view=notifications");
     const options={body,icon,badge:"./icon-1024.png",tag:notificationId||"lenton-notification",renotify:true,data:{url:target,accountKey,notificationId,icon,kind},silent:false};
     await Promise.all([
