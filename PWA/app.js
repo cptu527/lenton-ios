@@ -967,7 +967,7 @@ function goBackScreen(){
 }
 function renderLoadingShell(title){
   const current=document.querySelector("#app>.app");
-  if(current&&current.classList.contains("lenton-view-"+state.view))return;
+  if(current)return;
   if(document.querySelector("#app>.standalone-page"))return;
   $("#app").innerHTML=shell(title,'<div class="center lenton-loading">불러오는 중…</div>',{fab:title==="홈"});
   bind();
@@ -2650,9 +2650,23 @@ async function newList(){
   const title=prompt("새 리스트 이름");if(!title)return;
   try{await api("/api/v1/lists",{method:"POST",form:{title}});await loadLists();render()}catch(e){toast(e.message)}
 }
-async function loadCustomEmojis(){
-  if(Array.isArray(state.customEmojis))return state.customEmojis;
-  try{state.customEmojis=await api("/api/v1/custom_emojis");return state.customEmojis}catch{state.customEmojis=[];return []}
+async function loadCustomEmojis({fresh=false}={}){
+  if(Array.isArray(state.customEmojis)&&!fresh)return state.customEmojis;
+  const key=scopedKey("emoji_cache_v1"),cached=store.get(key,null);
+  if(!fresh&&cached?.at&&Date.now()-Number(cached.at)<24*60*60*1000&&Array.isArray(cached.items)){
+    state.customEmojis=cached.items;
+    setTimeout(()=>loadCustomEmojis({fresh:true}).catch(()=>{}),0);
+    return state.customEmojis;
+  }
+  try{
+    const items=await api("/api/v1/custom_emojis");
+    state.customEmojis=Array.isArray(items)?items:[];
+    store.set(key,{at:Date.now(),items:state.customEmojis});
+    return state.customEmojis;
+  }catch{
+    if(Array.isArray(cached?.items)){state.customEmojis=cached.items;return state.customEmojis}
+    state.customEmojis=[];return [];
+  }
 }
 async function uploadComposerFile(file){
   const fd=new FormData();fd.append("file",file);
@@ -3422,7 +3436,7 @@ async function registerSW(){
       u.searchParams.set("__sw_refresh",Date.now().toString());
       location.replace(u.toString());
     });
-    await reg.update().catch(()=>{});
+    reg.update().catch(()=>{});
   }
 }
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"){applyAutomaticUpdate();refreshUnreadNotificationCount()}});
@@ -3452,7 +3466,7 @@ window.addEventListener("beforeunload",e=>{
     const entry=savedAccounts().find(x=>String(x.pushSlot)===String(accountSlot));
     if(entry?.session){state.session=entry.session;store.set("lenton_session",state.session);resetAccountState()}
   }
-  if(state.session){try{state.me=await api("/api/v1/accounts/verify_credentials");await loadCustomEmojis();await saveCurrentAccount()}catch{store.del("lenton_session");state.session=null}}
+  if(state.session){try{state.me=await api("/api/v1/accounts/verify_credentials")}catch{store.del("lenton_session");state.session=null}}
   await syncSavedAccountsToPushMeta();
   if(state.session){
     const current={key:currentAccountKey()};
@@ -3461,8 +3475,12 @@ window.addEventListener("beforeunload",e=>{
   }
   if(["home","notifications","dm","profile","settings"].includes(deep))state.view=deep;
   render();refreshNotificationBadgeDom();
-  if(state.session)setTimeout(()=>refreshUnreadNotificationCount(),80);
-  if(("Notification"in window)&&Notification.permission==="granted")setTimeout(()=>ensureAllAccountPushSubscriptions({quiet:true}),450);
+  if(state.session){
+    loadCustomEmojis().catch(()=>{});
+    saveCurrentAccount().catch(()=>{});
+    setTimeout(()=>refreshUnreadNotificationCount(),80);
+  }
+  if(("Notification"in window)&&Notification.permission==="granted")setTimeout(()=>ensureAllAccountPushSubscriptions({quiet:true}),650);
   if(notificationId&&state.session)setTimeout(()=>openNotificationDeepLink(notificationId),0);
   applyAutomaticUpdate();
 })();
