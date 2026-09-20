@@ -841,11 +841,27 @@ function updatePublicTimelinePage(items,{preserveScroll=true}={}){
   });
 }
 async function loadPublicFollowingAccounts({fresh=false}={}){
-  const key=scopedKey("public_following_all_v2"),cached=store.get(key,null);
-  if(!fresh&&cached?.at&&Date.now()-Number(cached.at)<300000&&Array.isArray(cached.items))return cached.items;
-  const items=await loadAllFollowing({fresh});
-  store.set(key,{at:Date.now(),items});
-  return items;
+  if(!state.me)state.me=await api("/api/v1/accounts/verify_credentials");
+  const key=scopedKey("public_following_android80_v1"),cached=store.get(key,null);
+  if(!fresh&&cached?.at&&Date.now()-Number(cached.at)<120000&&Array.isArray(cached.items))return cached.items;
+  try{
+    const rows=await api(`/api/v1/accounts/${state.me.id}/following`,{query:{limit:"80"}});
+    const items=Array.isArray(rows)?rows.slice(0,80):[];
+    store.set(key,{at:Date.now(),items});
+    return items;
+  }catch(e){
+    if(Array.isArray(cached?.items))return cached.items;
+    throw e;
+  }
+}
+async function loadPublicAccountStatuses(id,{maxId=""}={}){
+  if(!id)return [];
+  const query={limit:"8"};if(maxId)query.max_id=maxId;
+  try{return await api(`/api/v1/accounts/${id}/statuses`,{query})}
+  catch{
+    await new Promise(resolve=>setTimeout(resolve,120));
+    try{return await api(`/api/v1/accounts/${id}/statuses`,{query})}catch{return []}
+  }
 }
 async function ensurePublicTimelineFilled(){
   if(state.publicFillPromise)return state.publicFillPromise;
@@ -874,25 +890,21 @@ async function ensurePublicTimelineFilled(){
     }
     updatePublicTimelinePage(collected);
 
-    // If the fresh home page already filled the target, stop here. Otherwise
-    // supplement from every followed account, progressively.
-    if(collected.length>=target){state.publicFilledAt=Date.now();return collected}
-    const maxAccounts=following.length,batchSize=10;
-    for(let i=0;i<maxAccounts;i+=batchSize){
-      const batch=following.slice(i,i+batchSize);
-      const pages=await Promise.all(batch.map(ac=>{
-        const id=String(ac?.id||"");if(!id)return Promise.resolve([]);
-        return api(`/api/v1/accounts/${id}/statuses`,{query:{limit:"8"}}).catch(()=>[]);
-      }));
-      const extra=[];
-      for(const rows of pages)for(const raw of (Array.isArray(rows)?rows:[]))if(eligible(raw))extra.push(raw);
-      if(extra.length){
-        collected=mergeNewestTimeline(extra,collected,80);
-        updatePublicTimelinePage(collected);
+    // Android v0.18 supplements when the merged public set is still under 40.
+    // Check followed accounts SEQUENTIALLY (not in parallel) to avoid browser-side
+    // request drops/rate limiting; Android also pauses every six accounts.
+    if(collected.length<40){
+      const maxAccounts=Math.min(80,following.length);
+      for(let i=0;i<maxAccounts;i++){
+        const id=String(following[i]?.id||"");
+        const rows=await loadPublicAccountStatuses(id);
+        const extra=(Array.isArray(rows)?rows:[]).filter(eligible);
+        if(extra.length){
+          collected=mergeNewestTimeline(extra,collected,80);
+          updatePublicTimelinePage(collected);
+        }
+        if(i>0&&i%6===0)await new Promise(resolve=>setTimeout(resolve,75));
       }
-      // Yield briefly between batches so scrolling/taps stay responsive while
-      // the remaining followed accounts continue filling in.
-      if(i+batchSize<maxAccounts)await new Promise(resolve=>setTimeout(resolve,20));
     }
     state.publicFilledAt=Date.now();
     return collected;
@@ -1025,14 +1037,10 @@ async function loadMoreHome(){
     }else if(state.homeMode==="public"){
       const following=await loadPublicFollowingAccounts(),allowed=new Set(following.map(x=>String(x?.id||"")).filter(Boolean));
       const eligible=raw=>allowed.has(String(raw?.account?.id||""))&&lentonPublicStatus(raw);
-      const batchSize=8;
-      for(let i=0;i<following.length&&more.length<40;i+=batchSize){
-        const batch=following.slice(i,i+batchSize);
-        const pages=await Promise.all(batch.map(ac=>{
-          const id=String(ac?.id||"");if(!id)return Promise.resolve([]);
-          return api(`/api/v1/accounts/${id}/statuses`,{query:{limit:"8",max_id:maxId}}).catch(()=>[]);
-        }));
-        for(const rows of pages)for(const raw of (Array.isArray(rows)?rows:[]))if(eligible(raw))more.push(raw);
+      for(let i=0;i<Math.min(80,following.length)&&more.length<40;i++){
+        const rows=await loadPublicAccountStatuses(String(following[i]?.id||""),{maxId});
+        for(const raw of (Array.isArray(rows)?rows:[]))if(eligible(raw))more.push(raw);
+        if(i>0&&i%6===0)await new Promise(resolve=>setTimeout(resolve,75));
       }
       more=mergeNewestTimeline(more,[],40);
     }else{
