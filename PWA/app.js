@@ -883,6 +883,79 @@ function pushAlertForm(prefs=pushAlertPrefs()){
     "data[policy]":"all"
   };
 }
+
+function pushAlertPrefsForAccount(entry){
+  const saved=store.get("lenton_push_alerts_"+String(entry?.key||""),{})||{};
+  return {dm:true,mention:true,status:true,interactions:true,follow:true,...saved};
+}
+function pushAlertFormForAccount(entry){return pushAlertForm(pushAlertPrefsForAccount(entry))}
+async function apiWithSession(session,path,{method="GET",form=null,query=null}={}){
+  if(!session?.host||!session?.token)throw new Error("계정 세션이 없습니다.");
+  let url="https://"+session.host+path;
+  if(query){const q=new URLSearchParams(query);url+="?"+q}
+  const headers={Accept:"application/json",Authorization:"Bearer "+session.token},opts={method,headers};
+  if(form){headers["Content-Type"]="application/x-www-form-urlencoded;charset=UTF-8";opts.body=form instanceof URLSearchParams?form:new URLSearchParams(form)}
+  const res=await fetch(url,opts),txt=await res.text();let data=null;try{data=txt?JSON.parse(txt):null}catch{data=txt}
+  if(!res.ok)throw new Error((data&&data.error)||("HTTP "+res.status));
+  return data;
+}
+function arrayBufferEqual(a,b){
+  if(!a||!b)return false;const x=new Uint8Array(a),y=new Uint8Array(b);if(x.length!==y.length)return false;
+  for(let i=0;i<x.length;i++)if(x[i]!==y[i])return false;
+  return true;
+}
+async function accountPushRegistration(entry){
+  const slot=Number(entry?.pushSlot);if(!Number.isInteger(slot)||slot<0)throw new Error("알림 슬롯이 없습니다.");
+  return navigator.serviceWorker.register("./push/account-sw.js",{scope:"./push/a"+slot+"/",updateViaCache:"none"});
+}
+async function registerPushForAccount(entry){
+  if(!entry?.session)return false;
+  const inst=await apiWithSession(entry.session,"/api/v2/instance");
+  const vapid=inst?.configuration?.vapid?.public_key||entry.session?.vapid_key;
+  if(!vapid)throw new Error((entry.display_name||entry.acct||"계정")+" 서버의 VAPID 키를 찾지 못했습니다.");
+  const reg=await accountPushRegistration(entry);
+  await reg.update().catch(()=>{});
+  const wanted=urlBase64ToUint8Array(vapid),old=await reg.pushManager.getSubscription();
+  let sub=old;
+  if(old&&!arrayBufferEqual(old.options?.applicationServerKey,wanted.buffer)){await old.unsubscribe().catch(()=>{});sub=null}
+  if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:wanted});
+  const j=sub.toJSON(),form={
+    "subscription[endpoint]":j.endpoint,
+    "subscription[keys][p256dh]":j.keys.p256dh,
+    "subscription[keys][auth]":j.keys.auth,
+    "subscription[standard]":"true",
+    ...pushAlertFormForAccount(entry)
+  };
+  try{await apiWithSession(entry.session,"/api/v1/push/subscription",{method:"POST",form})}
+  catch(firstError){
+    const legacy={...form};delete legacy["subscription[standard]"];
+    try{await apiWithSession(entry.session,"/api/v1/push/subscription",{method:"POST",form:legacy})}catch{throw firstError}
+  }
+  return true;
+}
+async function ensureAllAccountPushSubscriptions({quiet=true}={}){
+  if(!("serviceWorker"in navigator)||!("PushManager"in window)||!("Notification"in window))return false;
+  if(Notification.permission!=="granted")return false;
+  await syncSavedAccountsToPushMeta();
+  const list=savedAccounts();
+  let ok=0,failed=0;
+  for(const entry of list){
+    try{await registerPushForAccount(entry);ok++}catch{failed++}
+  }
+  const root=await navigator.serviceWorker.getRegistration("./").catch(()=>null);
+  const legacy=await root?.pushManager?.getSubscription?.().catch(()=>null);
+  if(legacy)await legacy.unsubscribe().catch(()=>{});
+  if(!quiet)toast(failed?("알림 "+ok+"개 계정 연결, "+failed+"개 실패"):("저장된 "+ok+"개 계정의 빠른 알림을 연결했어요."));
+  return ok>0;
+}
+async function cleanupAccountPush(entry){
+  try{await apiWithSession(entry.session,"/api/v1/push/subscription",{method:"DELETE"})}catch{}
+  try{
+    const reg=await navigator.serviceWorker.getRegistration("./push/a"+Number(entry.pushSlot)+"/");
+    const sub=await reg?.pushManager?.getSubscription?.();await sub?.unsubscribe?.();await reg?.unregister?.();
+  }catch{}
+}
+
 async function syncPushPreferences({quiet=false}={}){
   try{
     if(!("serviceWorker"in navigator)||!("PushManager"in window))return false;
