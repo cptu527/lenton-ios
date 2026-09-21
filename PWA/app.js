@@ -760,37 +760,37 @@ async function loadRecentMentionStatuses(){
     return out;
   }catch{return[]}
 }
-async function loadChronologicalHome({maxId="",limit=40,maxScans=1,includeMentions=true}={}){
+async function loadChronologicalHome({maxId="",limit=40,maxScans=1}={}){
   let cursor=maxId||"",homeItems=[];
   const scans=Math.max(1,Number(maxScans)||1);
   for(let scan=0;scan<scans;scan++){
     const query={limit:String(limit)};
     if(cursor)query.max_id=cursor;
-    const page=await settleWithin(
-      api("/api/v1/timelines/home",{query}),
-      5000,
-      []
-    );
+
+    // 첫 홈 페이지는 절대 빈 배열로 타임아웃 대체하지 않는다.
+    // Mastodon 홈 자체가 느리면 기다렸다가 실제 결과를 사용한다.
+    const page=scan===0
+      ? await api("/api/v1/timelines/home",{query})
+      : await settleWithin(api("/api/v1/timelines/home",{query}),8000,[]);
+
     if(!Array.isArray(page)||!page.length)break;
     homeItems=mergeNewestTimeline(page.filter(nonDirect),homeItems,160);
     const next=String(page[page.length-1]?.id||"");
     if(!next||next===cursor||page.length<Number(limit))break;
     cursor=next;
   }
-  const mentions=(!maxId&&includeMentions)?await loadRecentMentionStatuses():[];
-  return mergeNewestTimeline(
-    homeItems,
-    (Array.isArray(mentions)?mentions:[]).filter(nonDirect),
-    160
-  );
+  // 시간순은 Mastodon 홈 타임라인 그 자체다. 알림/멘션을 별도로 섞지 않는다.
+  return homeItems;
 }
 async function expandHomeTimelineInBackground(){
   if(state.homeBackgroundFillPromise)return state.homeBackgroundFillPromise;
   state.homeBackgroundFillPromise=(async()=>{
-    const items=await loadChronologicalHome({limit:40,maxScans:3,includeMentions:true});
+    const items=await loadChronologicalHome({limit:40,maxScans:3});
     if(!items.length)return;
-    const pub=publicFromHome(items);
-    updateHomeTimelinePage(items,{preserveScroll:true});
+    const current=state.homePagerData?.home||[];
+    const merged=mergeNewestTimeline(items,current,160);
+    const pub=publicFromHome(merged);
+    updateHomeTimelinePage(merged,{preserveScroll:true});
     updatePublicTimelinePage(pub,{preserveScroll:true});
     state.publicFilledAt=Date.now();
   })().finally(()=>{state.homeBackgroundFillPromise=null});
@@ -810,7 +810,7 @@ function publicFromHome(items=[]){
 }
 
 function homeSnapshotRead(){
-  const snap=store.get(scopedKey("home_snapshot_v9"),null);
+  const snap=store.get(scopedKey("home_snapshot_v10"),null);
   if(!snap?.at||Date.now()-Number(snap.at)>10*60*1000)return null;
   const data=snap.data;
   return data&&Array.isArray(data.home)&&Array.isArray(data.public)?data:null;
@@ -818,7 +818,7 @@ function homeSnapshotRead(){
 function homeSnapshotWrite(data){
   try{
     if(data&&Array.isArray(data.home)&&Array.isArray(data.public)){
-      store.set(scopedKey("home_snapshot_v9"),{at:Date.now(),data});
+      store.set(scopedKey("home_snapshot_v10"),{at:Date.now(),data});
     }
   }catch{}
 }
@@ -876,7 +876,7 @@ async function refreshHomeIncremental(){
   if(state.homeRefreshPromise)return state.homeRefreshPromise;
   state.homeRefreshPromise=(async()=>{
     // 새로고침은 첫 페이지를 먼저 빠르게 보여주고, 나머지는 뒤에서 보강한다.
-    const items=await loadChronologicalHome({limit:40,maxScans:1,includeMentions:false});
+    const items=await loadChronologicalHome({limit:40,maxScans:1});
     if(items.length){
       const pub=publicFromHome(items);
       updateHomeTimelinePage(items,{preserveScroll:true});
@@ -1007,7 +1007,8 @@ async function homeView({silent=false,forceFresh=false}={}){
     }
 
     if(!cached){
-      const home=await loadChronologicalHome({limit:40,maxScans:1,includeMentions:false});
+      const home=await loadChronologicalHome({limit:40,maxScans:1});
+      if(!home.length)throw new Error("홈 타임라인이 비어 있습니다.");
       const data={home,public:publicFromHome(home)};
       renderHomePagerData(data);
       homeSnapshotWrite(data);
