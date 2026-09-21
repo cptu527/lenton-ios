@@ -891,6 +891,33 @@ function buildHomePager(mode,data){
     modes.map(m=>'<section class="home-pager-page" data-home-page="'+m+'">'+homePageHtml(data[m]||[],m)+'</section>').join("")+
     '</div></div>';
 }
+function syncHomePagerHeight(){
+  const pager=document.querySelector("[data-home-pager]");
+  const track=document.querySelector("[data-home-track]");
+  if(!pager||!track)return;
+  const page=track.querySelector('[data-home-page="'+state.homeMode+'"]');
+  if(!page)return;
+  const height=Math.max(1,Math.ceil(page.scrollHeight),Math.ceil(page.getBoundingClientRect().height));
+  pager.style.height=height+"px";
+}
+function watchHomePagerHeight(){
+  const track=document.querySelector("[data-home-track]");
+  if(!track)return;
+  const page=track.querySelector('[data-home-page="'+state.homeMode+'"]');
+  if(!page)return;
+  if(state.homePagerObservedPage===page)return;
+  try{state.homePagerResizeObserver?.disconnect()}catch{}
+  state.homePagerObservedPage=page;
+  if("ResizeObserver" in window){
+    state.homePagerResizeObserver=new ResizeObserver(()=>requestAnimationFrame(syncHomePagerHeight));
+    state.homePagerResizeObserver.observe(page);
+  }
+  page.querySelectorAll("img,video").forEach(el=>{
+    if(el.complete)return;
+    el.addEventListener("load",syncHomePagerHeight,{once:true});
+    el.addEventListener("loadedmetadata",syncHomePagerHeight,{once:true});
+  });
+}
 function syncHomePagerUi(mode,animate=true){
   const modes=homeModes(),index=Math.max(0,modes.indexOf(mode));
   const pager=document.querySelector("[data-home-pager]"),track=document.querySelector("[data-home-track]"),tabs=document.querySelector("[data-home-tabs]");
@@ -901,8 +928,10 @@ function syncHomePagerUi(mode,animate=true){
   tabs.querySelectorAll("[data-home-mode]").forEach(b=>b.classList.toggle("active",b.dataset.homeMode===mode));
   const indicator=tabs.querySelector(".home-tab-indicator"),tabW=tabs.clientWidth/modes.length;
   if(indicator){indicator.style.transition=animate?"transform 190ms cubic-bezier(.2,.75,.25,1)":"none";indicator.style.transform="translate3d("+(index*tabW+(tabW-36)/2)+"px,0,0)"}
-  const page=track.querySelector('[data-home-page="'+mode+'"]');
-  if(page)requestAnimationFrame(()=>{pager.style.height=Math.max(1,page.scrollHeight)+"px"});
+  requestAnimationFrame(()=>{
+    syncHomePagerHeight();
+    watchHomePagerHeight();
+  });
 }
 function setHomePagerMode(mode,animate=true){
   if(!homeModes().includes(mode))mode="home";
@@ -1007,7 +1036,14 @@ async function loadMoreHome(){
       btn.disabled=false;btn.textContent="더 불러오기";
     }
     bind();
-    if(!state.listId)requestAnimationFrame(()=>syncHomePagerUi(state.homeMode,false));
+    if(!state.listId){
+      requestAnimationFrame(()=>{
+        syncHomePagerUi(state.homeMode,false);
+        syncHomePagerHeight();
+      });
+      setTimeout(syncHomePagerHeight,120);
+      setTimeout(syncHomePagerHeight,450);
+    }
   }catch(e){
     toast(e.message);
     if(btn){btn.disabled=false;btn.textContent="다시 시도"}
