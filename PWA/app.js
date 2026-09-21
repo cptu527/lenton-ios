@@ -767,10 +767,10 @@ function publicHomeStatus(raw){
   if(!raw||!nonDirect(raw))return false;
   const st=raw?.reblog||raw;
   if(!st)return false;
-  // 퍼블릭 탭은 시간순과 같은 홈 타임라인을 사용한다.
-  // 단, 실제 답글(in_reply_to_id 있음)은 누구의 글이든 제외한다.
-  // mentions 배열은 보지 않는다: 새 글에서 @태그한 퍼블릭 글은 그대로 표시한다.
-  if(String(st.visibility||raw.visibility||"")!=="public")return false;
+  // 퍼블릭 탭은 시간순과 같은 홈 타임라인을 그대로 사용하고
+  // 실제 답글(in_reply_to_id 있음)만 제거한다.
+  // visibility/mentions/작성자는 필터링하지 않는다.
+  // 따라서 새 글에서 @태그한 글도 일반 홈 글과 똑같이 남는다.
   const reply=st.in_reply_to_id;
   if(reply!==null&&reply!==undefined&&String(reply)!=="")return false;
   return true;
@@ -791,7 +791,7 @@ async function loadPublicFromHome({maxId="",limit=40,maxScans=6}={}){
 }
 
 function homeSnapshotRead(){
-  const snap=store.get(scopedKey("home_snapshot_v7"),null);
+  const snap=store.get(scopedKey("home_snapshot_v8"),null);
   if(!snap?.at||Date.now()-Number(snap.at)>10*60*1000)return null;
   const data=snap.data;
   return data&&Array.isArray(data.home)&&Array.isArray(data.public)?data:null;
@@ -799,7 +799,7 @@ function homeSnapshotRead(){
 function homeSnapshotWrite(data){
   try{
     if(data&&Array.isArray(data.home)&&Array.isArray(data.public)){
-      store.set(scopedKey("home_snapshot_v7"),{at:Date.now(),data});
+      store.set(scopedKey("home_snapshot_v8"),{at:Date.now(),data});
     }
   }catch{}
 }
