@@ -719,169 +719,162 @@ async function loadAllFollowing({fresh=false}={}){
 function statusId(raw){return raw?.id||raw?.reblog?.id||""}
 function nonDirect(raw){return raw&&raw.visibility!=="direct"}
 function statusCreatedAtMs(raw){
-  const v=raw?.created_at||raw?.reblog?.created_at||"";
-  const t=Date.parse(v);return Number.isFinite(t)?t:0;
+  const t=Date.parse(raw?.created_at||"");
+  return Number.isFinite(t)?t:0;
+}
+function mergeNewestTimeline(fresh=[],existing=[],limit=80){
+  const out=[],seen=new Set();
+  for(const raw of [...fresh,...existing]){
+    if(!raw)continue;
+    const id=String(statusId(raw)||"");
+    if(id&&seen.has(id))continue;
+    if(id)seen.add(id);
+    out.push(raw);
+  }
+  out.sort((a,b)=>statusCreatedAtMs(b)-statusCreatedAtMs(a));
+  return out.slice(0,limit);
 }
 function recentMentionStatus(raw,days=30){
   if(!raw||!nonDirect(raw))return false;
   const t=statusCreatedAtMs(raw);
   return !!t&&t>=Date.now()-days*86400000;
 }
-function mergeRecentMentionStatuses(base=[],notifications=[]){
-  const mentions=[];
-  for(const n of notifications||[]){
-    if(String(n?.type||"")!=="mention")continue;
-    const st=n?.status;if(st&&recentMentionStatus(st))mentions.push(st);
-  }
-  return mergeNewestTimeline(mentions,base,80);
-}
 async function loadRecentMentionStatuses(){
   try{
     const notes=await api("/api/v1/notifications",{query:{limit:"80","types[]":"mention"}});
-    return Array.isArray(notes)?notes:[];
+    const out=[];
+    for(const n of Array.isArray(notes)?notes:[]){
+      const st=n?.status;
+      if(String(n?.type||"")==="mention"&&st&&recentMentionStatus(st))out.push(st);
+    }
+    return out;
   }catch{return[]}
 }
-function lentonPublicStatus(raw){
+async function loadChronologicalHome({maxId="",limit=40}={}){
+  const query={limit:String(limit)};
+  if(maxId)query.max_id=maxId;
+  const [home,mentions]=await Promise.all([
+    api("/api/v1/timelines/home",{query}).catch(()=>[]),
+    maxId?Promise.resolve([]):loadRecentMentionStatuses()
+  ]);
+  return mergeNewestTimeline(
+    (Array.isArray(home)?home:[]).filter(nonDirect),
+    (Array.isArray(mentions)?mentions:[]).filter(nonDirect),
+    80
+  );
+}
+function publicOriginalStatus(raw,allowed){
   if(!raw||!raw.account)return false;
-  const cfg=ANDROID?.timeline?.public||{};
-  const author=raw.account.id||"",me=state.me?.id||"";
-  if(!author)return false;
-  if(cfg.excludeDirect!==false&&raw.visibility==="direct")return false;
-  if(cfg.excludeBoosts!==false&&raw.reblog)return false;
-  // Public tab shows every public original/reply/mention from followed accounts
-  // plus the signed-in account's own public posts. Only boosts and non-public
-  // visibility are excluded here.
+  const author=String(raw.account.id||"");
+  if(!author||!allowed.has(author))return false;
+  if(String(raw.visibility||"")!=="public")return false;
+  if(raw.reblog)return false;
+  const reply=raw.in_reply_to_id;
+  if(reply!==null&&reply!==undefined&&String(reply)!=="")return false;
   return true;
 }
-function mergeChronological(home,pub,allowed){
-  const out=[],seen=new Set();
-  const add=raw=>{if(!nonDirect(raw))return;const id=statusId(raw);if(id&&seen.has(id))return;if(id)seen.add(id);out.push(raw)};
-  for(const raw of home||[])add(raw);
-  for(const raw of pub||[]){const author=raw?.account?.id||"";if(author&&allowed.has(author))add(raw)}
-  out.sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
-  return out;
+async function publicAccountsAndAllowed({fresh=false}={}){
+  if(!state.me)state.me=await api("/api/v1/accounts/verify_credentials");
+  const following=await loadAllFollowing({fresh});
+  const accounts=[...(following||[])];
+  const meId=String(state.me?.id||"");
+  if(meId&&!accounts.some(x=>String(x?.id||"")===meId))accounts.unshift(state.me);
+  const allowed=new Set(accounts.map(x=>String(x?.id||"")).filter(Boolean));
+  return {accounts,allowed};
 }
-async function loadLentonHome(chronological){
-  const following=await loadAllFollowing(),allowed=new Set(following.map(x=>x.id));if(state.me?.id)allowed.add(String(state.me.id));
-  if(chronological){
-    const [home,pub]=await Promise.all([
-      api("/api/v1/timelines/home",{query:{limit:"40"}}),
-      api("/api/v1/timelines/public",{query:{limit:"40"}})
-    ]);
-    return mergeChronological(home,pub,allowed);
-  }
-
-  const [firstHome,firstPub]=await Promise.all([
-    api("/api/v1/timelines/home",{query:{limit:"40"}}),
-    api("/api/v1/timelines/public",{query:{limit:"40"}})
+async function loadPublicBase({fresh=false,maxId=""}={}){
+  const [{accounts,allowed},home,serverPublic]=await Promise.all([
+    publicAccountsAndAllowed({fresh}),
+    api("/api/v1/timelines/home",{query:{limit:"40",...(maxId?{max_id:maxId}:{})}}).catch(()=>[]),
+    api("/api/v1/timelines/public",{query:{limit:"40",...(maxId?{max_id:maxId}:{})}}).catch(()=>[])
   ]);
-  const collected=[],seen=new Set();
-  let home=firstHome||[],pub=firstPub||[],homeCursor=home[home.length-1]?.id||"",homeDone=false;
-
-  const addPage=()=>{
-    for(const raw of home){
-      if(!lentonPublicStatus(raw))continue;
-      const id=statusId(raw);if(id&&seen.has(id))continue;if(id)seen.add(id);
-      collected.push(raw);if(collected.length>=(ANDROID?.timeline?.public?.targetInitialItems||30))return;
-    }
-    for(const raw of pub){
-      if(!lentonPublicStatus(raw))continue;
-      const author=raw?.account?.id||"";if(!allowed.has(author))continue;
-      const id=statusId(raw);if(id&&seen.has(id))continue;if(id)seen.add(id);
-      collected.push(raw);if(collected.length>=(ANDROID?.timeline?.public?.targetInitialItems||30))return;
-    }
-  };
-
-  const target=ANDROID?.timeline?.public?.targetInitialItems||30,maxScans=ANDROID?.timeline?.public?.maxHomeScans||6;
-  for(let scan=0;scan<maxScans&&collected.length<target;scan++){
-    if(scan>0){
-      if(homeDone)break;
-      const query={limit:"40"};if(homeCursor)query.max_id=homeCursor;
-      const rawHome=await api("/api/v1/timelines/home",{query});
-      const next=rawHome?.[rawHome.length-1]?.id||"";
-      home=rawHome||[];pub=[];
-      if(!home.length||!next||next===homeCursor)homeDone=true;
-      else homeCursor=next;
-    }
-    addPage();
-  }
-  collected.sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
-  return collected.slice(0,80);
+  const base=[
+    ...(Array.isArray(home)?home:[]),
+    ...(Array.isArray(serverPublic)?serverPublic:[])
+  ].filter(x=>publicOriginalStatus(x,allowed));
+  return {accounts,allowed,items:mergeNewestTimeline(base,[],80)};
 }
-async function loadLentonHomePair({maxScans=1,initialHome=null}={}){
-  const firstHome=Array.isArray(initialHome)?initialHome:await api("/api/v1/timelines/home",{query:{limit:"40"}});
-  const homeData=(firstHome||[]).filter(nonDirect);
-  const collected=[],seen=new Set(),target=ANDROID?.timeline?.public?.targetInitialItems||30,scanLimit=Math.max(1,Number(maxScans)||1);
-  let home=firstHome||[],homeCursor=home[home.length-1]?.id||"",homeDone=false;
-  const addPage=()=>{
-    for(const raw of home){
-      if(!lentonPublicStatus(raw))continue;
-      const id=statusId(raw);if(id&&seen.has(id))continue;if(id)seen.add(id);
-      collected.push(raw);if(collected.length>=target)return;
+async function supplementPublicFromAccounts(accounts,allowed,{maxId="",deep=false,onBatch=null}={}){
+  let collected=[];
+  const source=(accounts||[]).slice(0,81),batchSize=10;
+  for(let i=0;i<source.length;i+=batchSize){
+    const batch=source.slice(i,i+batchSize);
+    const pages=await Promise.all(batch.map(ac=>{
+      const id=String(ac?.id||"");if(!id)return Promise.resolve([]);
+      const query={
+        limit:deep?"20":"10",
+        exclude_reblogs:"true",
+        exclude_replies:"true",
+        ...(maxId?{max_id:maxId}:{})
+      };
+      return api(`/api/v1/accounts/${id}/statuses`,{query}).catch(()=>[]);
+    }));
+    const extra=[];
+    for(const rows of pages){
+      for(const raw of Array.isArray(rows)?rows:[]){
+        if(publicOriginalStatus(raw,allowed))extra.push(raw);
+      }
     }
-  };
-  for(let scan=0;scan<scanLimit&&collected.length<target;scan++){
-    if(scan>0){
-      if(homeDone)break;
-      const query={limit:"40"};if(homeCursor)query.max_id=homeCursor;
-      const rawHome=await api("/api/v1/timelines/home",{query});
-      const next=rawHome?.[rawHome.length-1]?.id||"";
-      home=rawHome||[];
-      if(!home.length||!next||next===homeCursor)homeDone=true;else homeCursor=next;
+    if(extra.length){
+      collected=mergeNewestTimeline(extra,collected,80);
+      onBatch?.(extra);
     }
-    addPage();
+    if(i+batchSize<source.length)await new Promise(resolve=>setTimeout(resolve,20));
   }
-  collected.sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
-  return {home:homeData,public:collected.slice(0,80)};
+  return collected;
 }
 
 function homeSnapshotRead(){
-  const snap=store.get(scopedKey("home_snapshot_v3"),null);
-  if(!snap?.at||Date.now()-Number(snap.at)>15*60*1000)return null;
+  const snap=store.get(scopedKey("home_snapshot_v4"),null);
+  if(!snap?.at||Date.now()-Number(snap.at)>10*60*1000)return null;
   const data=snap.data;
   return data&&Array.isArray(data.home)&&Array.isArray(data.public)?data:null;
 }
 function homeSnapshotWrite(data){
-  try{if(data&&Array.isArray(data.home)&&Array.isArray(data.public))store.set(scopedKey("home_snapshot_v3"),{at:Date.now(),data})}catch{}
-}
-async function loadHomeQuickPair(limit=20){
-  const [home,notes]=await Promise.all([
-    api("/api/v1/timelines/home",{query:{limit:String(limit)}}),
-    loadRecentMentionStatuses()
-  ]);
-  const clean=mergeRecentMentionStatuses((home||[]).filter(nonDirect),notes);
-  const pub=(home||[]).filter(lentonPublicStatus).slice(0,ANDROID?.timeline?.public?.targetInitialItems||30);
-  return {data:{home:clean,public:pub},rawHome:home||[]};
+  try{
+    if(data&&Array.isArray(data.home)&&Array.isArray(data.public)){
+      store.set(scopedKey("home_snapshot_v4"),{at:Date.now(),data});
+    }
+  }catch{}
 }
 function renderHomePagerData(data,{preserveScroll=false}={}){
   if(!data)return;
   const y=preserveScroll?(window.scrollY||document.documentElement.scrollTop||0):null;
   const chronologicalLabel=ANDROID?.homeTabs?.chronological||"시간순",publicLabel=ANDROID?.homeTabs?.public||"퍼블릭";
-  state.homePagerData=data;
-  const homeData=data.home||[];
-  state.timelineItems=data[state.homeMode]||homeData;
+  state.homePagerData={
+    home:Array.isArray(data.home)?data.home:[],
+    public:Array.isArray(data.public)?data.public:[]
+  };
+  state.timelineItems=state.homePagerData[state.homeMode]||state.homePagerData.home;
   const tabs='<div class="home-tabs" data-home-tabs><button data-home-mode="home" class="'+(state.homeMode==="home"?"active":"")+'">'+esc(chronologicalLabel)+'</button><button data-home-mode="public" class="'+(state.homeMode==="public"?"active":"")+'">'+esc(publicLabel)+'</button><span class="home-tab-indicator" aria-hidden="true"></span></div>';
   const visibleLists=state.lists.filter(x=>!hiddenListIds().has(x.id));
   const chips=(visibleLists.length||state.lists.length)?'<div class="chips">'+visibleLists.map(x=>'<button class="chip" data-list="'+x.id+'">'+esc(x.title)+'</button>').join("")+'<button class="chip" data-action="newlist">＋ 리스트</button></div>':"";
-  renderMainStable("홈",tabs+chips+buildHomePager(state.homeMode,data),{view:"home",fab:true});
+  renderMainStable("홈",tabs+chips+buildHomePager(state.homeMode,state.homePagerData),{view:"home",fab:true});
   requestAnimationFrame(()=>{
     syncHomePagerUi(state.homeMode,false);
     if(y!==null)window.scrollTo(0,y);
   });
 }
-function mergeNewestTimeline(fresh=[],existing=[],limit=80){
-  const out=[],seen=new Set();
-  for(const raw of [...fresh,...existing]){
-    if(!raw)continue;
-    const id=statusId(raw);if(id&&seen.has(id))continue;if(id)seen.add(id);
-    out.push(raw);
-  }
-  out.sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
-  return out.slice(0,limit);
+function updateHomeTimelinePage(items,{preserveScroll=true}={}){
+  const data=state.homePagerData||{home:[],public:[]};
+  data.home=Array.isArray(items)?items:[];
+  state.homePagerData=data;
+  homeSnapshotWrite(data);
+  if(state.homeMode==="home")state.timelineItems=data.home;
+  const page=document.querySelector('[data-home-page="home"]');
+  if(!page||state.view!=="home"||state.listId)return;
+  const y=preserveScroll?(window.scrollY||document.documentElement.scrollTop||0):null;
+  page.innerHTML=homePageHtml(data.home,"home");
+  bind();
+  requestAnimationFrame(()=>{
+    syncHomePagerUi(state.homeMode,false);
+    if(y!==null)window.scrollTo(0,y);
+  });
 }
 function updatePublicTimelinePage(items,{preserveScroll=true}={}){
   const data=state.homePagerData||{home:[],public:[]};
-  data.public=items||[];state.homePagerData=data;
+  data.public=Array.isArray(items)?items:[];
+  state.homePagerData=data;
   homeSnapshotWrite(data);
   if(state.homeMode==="public")state.timelineItems=data.public;
   const page=document.querySelector('[data-home-page="public"]');
@@ -894,114 +887,48 @@ function updatePublicTimelinePage(items,{preserveScroll=true}={}){
     if(y!==null)window.scrollTo(0,y);
   });
 }
-async function loadPublicFollowingAccounts({fresh=false}={}){
-  const key=scopedKey("public_following_all_v2"),cached=store.get(key,null);
-  if(!fresh&&cached?.at&&Date.now()-Number(cached.at)<300000&&Array.isArray(cached.items))return cached.items;
-  const items=await loadAllFollowing({fresh});
-  store.set(key,{at:Date.now(),items});
-  return items;
+async function refreshHomeIncremental(){
+  if(state.homeRefreshPromise)return state.homeRefreshPromise;
+  state.homeRefreshPromise=(async()=>{
+    const items=await loadChronologicalHome({limit:40});
+    updateHomeTimelinePage(items,{preserveScroll:true});
+    return items;
+  })().finally(()=>{state.homeRefreshPromise=null});
+  return state.homeRefreshPromise;
 }
 async function ensurePublicTimelineFilled({fresh=false,forceFullScan=false}={}){
-  if(state.publicFillPromise)return state.publicFillPromise;
+  if(state.publicFillPromise){
+    if(!fresh)return state.publicFillPromise;
+    try{await state.publicFillPromise}catch{}
+  }
   state.publicFillPromise=(async()=>{
-    const cfg=ANDROID?.timeline?.public||{},target=Math.max(10,Number(cfg.targetInitialItems)||30),supplementTarget=Math.max(40,target);
-    const base=state.homePagerData||{home:[],public:[]};
-
-    // Public needs both the authenticated home source and the server public
-    // source. Some Mastodon servers omit a few followed-account originals from
-    // /timelines/home, so relying on Home alone leaves visible gaps.
-    const freshHomePromise=api("/api/v1/timelines/home",{query:{limit:"40"}}).catch(()=>[]);
-    const publicPromise=api("/api/v1/timelines/public",{query:{limit:"40"}}).catch(()=>[]);
-    const followingPromise=loadPublicFollowingAccounts({fresh});
-    const [freshHome,serverPublic,following]=await Promise.all([freshHomePromise,publicPromise,followingPromise]);
-    const allowed=new Set((following||[]).map(x=>String(x?.id||"")).filter(Boolean));
-    if(state.me?.id)allowed.add(String(state.me.id));
-    const eligible=raw=>allowed.has(String(raw?.account?.id||""))&&lentonPublicStatus(raw);
-
-    let collected=mergeNewestTimeline(
-      [
-        ...(Array.isArray(freshHome)?freshHome:[]),
-        ...(Array.isArray(serverPublic)?serverPublic:[])
-      ].filter(eligible),
-      mergeNewestTimeline((base.public||[]).filter(eligible),(base.home||[]).filter(eligible),80),
-      80
-    );
-    // Keep home cache current too; switching back to chronological should see
-    // the same newest statuses without another full request.
-    if(Array.isArray(freshHome)&&freshHome.length){
-      base.home=mergeNewestTimeline(freshHome.filter(nonDirect),base.home||[],80);
-      state.homePagerData=base;
-    }
-    updatePublicTimelinePage(collected);
-
-    // If the fresh home page already filled the target, stop here. Otherwise
-    // supplement from every followed account, progressively.
-    if(collected.length>=supplementTarget&&!forceFullScan){state.publicFilledAt=Date.now();return collected}
-    const publicAccounts=[...(following||[])];
-    if(state.me?.id&&!publicAccounts.some(x=>String(x?.id||"")===String(state.me.id)))publicAccounts.unshift(state.me);
-    const maxAccounts=Math.min(publicAccounts.length,81),batchSize=10;
-    for(let i=0;i<maxAccounts;i+=batchSize){
-      const batch=publicAccounts.slice(i,i+batchSize);
-      const pages=await Promise.all(batch.map(ac=>{
-        const id=String(ac?.id||"");if(!id)return Promise.resolve([]);
-        return api(`/api/v1/accounts/${id}/statuses`,{query:{limit:forceFullScan?"20":"12"}}).catch(()=>[]);
-      }));
-      const extra=[];
-      for(const rows of pages)for(const raw of (Array.isArray(rows)?rows:[]))if(eligible(raw))extra.push(raw);
-      if(extra.length){
-        collected=mergeNewestTimeline(extra,collected,80);
-        updatePublicTimelinePage(collected);
+    const {accounts,allowed,items:baseItems}=await loadPublicBase({fresh});
+    let collected=baseItems;
+    updatePublicTimelinePage(collected,{preserveScroll:true});
+    const extra=await supplementPublicFromAccounts(accounts,allowed,{
+      deep:!!forceFullScan,
+      onBatch:rows=>{
+        collected=mergeNewestTimeline(rows,collected,80);
+        updatePublicTimelinePage(collected,{preserveScroll:true});
       }
-      // Yield briefly between batches so scrolling/taps stay responsive while
-      // the remaining followed accounts continue filling in.
-      if(i+batchSize<maxAccounts)await new Promise(resolve=>setTimeout(resolve,20));
-    }
+    });
+    collected=mergeNewestTimeline(extra,collected,80);
+    updatePublicTimelinePage(collected,{preserveScroll:true});
     state.publicFilledAt=Date.now();
     return collected;
   })().finally(()=>{state.publicFillPromise=null});
   return state.publicFillPromise;
 }
 async function refreshPublicTimeline(){
-  // If an on-demand fill is already running, let it finish first, then run a
-  // real forced refresh so the user's gesture is never swallowed by deduping.
-  if(state.publicFillPromise){
-    try{await state.publicFillPromise}catch{}
-  }
   state.publicFilledAt=0;
-  try{await refreshHomeIncremental()}catch{}
   return ensurePublicTimelineFilled({fresh:true,forceFullScan:true});
-}
-
-async function refreshHomeIncremental(){
-  if(state.homeRefreshPromise)return state.homeRefreshPromise;
-  state.homeRefreshPromise=(async()=>{
-    const base=state.homePagerData?.home?.length?state.homePagerData:homeSnapshotRead();
-    if(!base?.home?.length){
-      const quick=await loadHomeQuickPair(20);
-      state.homePagerData=quick.data;homeSnapshotWrite(quick.data);
-      if(state.view==="home"&&!state.listId)renderHomePagerData(quick.data);
-      return quick.data;
-    }
-    const newest=statusId(base.home[0]),query={limit:"20"};
-    if(newest)query.since_id=newest;
-    const [raw,notes]=await Promise.all([
-      api("/api/v1/timelines/home",{query}).catch(()=>[]),
-      loadRecentMentionStatuses()
-    ]);
-    const freshHome=(raw||[]).filter(nonDirect);
-    const freshPublic=freshHome.filter(lentonPublicStatus);
-    const data={
-      home:mergeRecentMentionStatuses(mergeNewestTimeline(freshHome,base.home),notes),
-      public:mergeNewestTimeline(freshPublic,base.public)
-    };
-    state.homePagerData=data;homeSnapshotWrite(data);
-    if(state.view==="home"&&!state.listId)renderHomePagerData(data,{preserveScroll:true});
-    return data;
-  })().finally(()=>{state.homeRefreshPromise=null});
-  return state.homeRefreshPromise;
 }
 async function refreshHomeAfterPost(){
   try{await refreshHomeIncremental()}catch{}
+  state.publicFilledAt=0;
+  if(state.homeMode==="public"){
+    try{await refreshPublicTimeline()}catch{}
+  }
 }
 function homeModes(){return ["home","public"]}
 function homePageHtml(items,mode){
@@ -1029,12 +956,16 @@ function syncHomePagerUi(mode,animate=true){
 }
 function setHomePagerMode(mode,animate=true){
   if(!homeModes().includes(mode))mode="home";
-  const wasPublic=state.homeMode==="public";
-  state.homeMode=mode;state.listId=null;state.timelineItems=state.homePagerData?.[mode]||[];
+  const changed=state.homeMode!==mode;
+  state.homeMode=mode;
+  state.listId=null;
+  state.timelineItems=state.homePagerData?.[mode]||[];
   syncHomePagerUi(mode,animate);
   if(mode==="public"){
-    if(wasPublic)state.publicFilledAt=0;
-    setTimeout(()=>ensurePublicTimelineFilled().catch(()=>{}),0);
+    const stale=!state.publicFilledAt||Date.now()-Number(state.publicFilledAt)>60000;
+    if(changed&&(stale||!state.timelineItems.length)){
+      setTimeout(()=>ensurePublicTimelineFilled({fresh:false,forceFullScan:false}).catch(()=>{}),0);
+    }
   }
 }
 async function homeView({silent=false,forceFresh=false}={}){
@@ -1052,37 +983,37 @@ async function homeView({silent=false,forceFresh=false}={}){
 
     const cached=state.homePagerData?.home?.length?state.homePagerData:homeSnapshotRead();
     if(cached){
-      state.homePagerData=cached;
       renderHomePagerData(cached);
-      if(forceFresh){
-        await refreshHomeIncremental();
-        return;
-      }
     }else if(!silent){
       renderLoadingShell("홈");
     }
 
     const listsPromise=state.lists.length?Promise.resolve():loadLists();
+    listsPromise.catch(()=>{});
 
-    // First paint only needs a small Mastodon home page.
-    let quickRawHome=null;
-    if(!cached){
-      try{
-        const quick=await loadHomeQuickPair(20);
-        quickRawHome=quick.rawHome;
-        if(state.view==="home"&&!state.listId){
-          renderHomePagerData(quick.data);
-          homeSnapshotWrite(quick.data);
-        }
-      }catch{}
+    if(forceFresh){
+      if(state.homeMode==="public")await refreshPublicTimeline();
+      else await refreshHomeIncremental();
+      return;
     }
 
-    // Keep HOME immediate. Lists may finish in the background; Public is filled
-    // on demand when its tab is opened so HOME refresh never waits for it.
-    listsPromise.catch(()=>{});
-    if(state.homeMode==="public")setTimeout(()=>ensurePublicTimelineFilled().catch(()=>{}),0);
+    if(!cached){
+      const home=await loadChronologicalHome({limit:40});
+      const data={home,public:[]};
+      renderHomePagerData(data);
+      homeSnapshotWrite(data);
+    }
+
+    if(state.homeMode==="public"){
+      const stale=!state.publicFilledAt||Date.now()-Number(state.publicFilledAt)>60000;
+      if(stale||!(state.homePagerData?.public||[]).length){
+        setTimeout(()=>ensurePublicTimelineFilled({fresh:false,forceFullScan:false}).catch(()=>{}),0);
+      }
+    }
   }catch(e){
-    if(!state.homePagerData?.home?.length)renderMainStable("홈",'<div class="center">타임라인을 불러오지 못했어요.<br><br>'+esc(e.message)+'<br><br><button class="primary" data-action="reload">다시 시도</button></div>',{view:"home",fab:true});
+    if(!state.homePagerData?.home?.length){
+      renderMainStable("홈",'<div class="center">타임라인을 불러오지 못했어요.<br><br>'+esc(e.message)+'<br><br><button class="primary" data-action="reload">다시 시도</button></div>',{view:"home",fab:true});
+    }
   }finally{
     state.busy=false;
     bind();
@@ -1090,41 +1021,48 @@ async function homeView({silent=false,forceFresh=false}={}){
 }
 async function loadMoreHome(){
   if(state.timelineLoadingMore)return;
-  const last=state.timelineItems[state.timelineItems.length-1];const maxId=statusId(last);
+  const last=state.timelineItems[state.timelineItems.length-1],maxId=statusId(last);
   if(!maxId){toast("더 불러올 게시물이 없어요.");return}
-  const btn=document.querySelector('[data-action="loadmorehome"]');state.timelineLoadingMore=true;if(btn){btn.disabled=true;btn.textContent="불러오는 중…"}
+  const btn=document.querySelector('[data-action="loadmorehome"]');
+  state.timelineLoadingMore=true;
+  if(btn){btn.disabled=true;btn.textContent="불러오는 중…"}
   try{
     let more=[];
     if(state.listId){
       more=await api(`/api/v1/timelines/list/${state.listId}`,{query:{limit:"40",max_id:maxId}});
     }else if(state.homeMode==="public"){
-      const following=await loadPublicFollowingAccounts(),allowed=new Set(following.map(x=>String(x?.id||"")).filter(Boolean));
-      if(state.me?.id)allowed.add(String(state.me.id));
-      const eligible=raw=>allowed.has(String(raw?.account?.id||""))&&lentonPublicStatus(raw);
-      const accounts=[...(following||[])];
-      if(state.me?.id&&!accounts.some(x=>String(x?.id||"")===String(state.me.id)))accounts.unshift(state.me);
-      const batchSize=8;
-      for(let i=0;i<accounts.length&&more.length<40;i+=batchSize){
-        const batch=accounts.slice(i,i+batchSize);
-        const pages=await Promise.all(batch.map(ac=>{
-          const id=String(ac?.id||"");if(!id)return Promise.resolve([]);
-          return api(`/api/v1/accounts/${id}/statuses`,{query:{limit:"8",max_id:maxId}}).catch(()=>[]);
-        }));
-        for(const rows of pages)for(const raw of (Array.isArray(rows)?rows:[]))if(eligible(raw))more.push(raw);
-      }
-      more=mergeNewestTimeline(more,[],40);
+      const {accounts,allowed,items:base}=await loadPublicBase({fresh:false,maxId});
+      const extra=await supplementPublicFromAccounts(accounts,allowed,{maxId,deep:false});
+      more=mergeNewestTimeline(extra,base,80);
     }else{
-      more=await api("/api/v1/timelines/home",{query:{limit:"40",max_id:maxId}});
+      more=await loadChronologicalHome({maxId,limit:40});
     }
-    const seen=new Set(state.timelineItems.map(statusId));
-    more=more.filter(x=>{const id=statusId(x);if(!id||seen.has(id))return false;seen.add(id);return true});
-    if(!more.length){if(btn)btn.textContent="더 불러올 게시물이 없어요.";return}
+    const seen=new Set(state.timelineItems.map(x=>String(statusId(x)||"")).filter(Boolean));
+    more=(more||[]).filter(x=>{
+      const id=String(statusId(x)||"");
+      if(!id||seen.has(id))return false;
+      seen.add(id);
+      return true;
+    });
+    if(!more.length){
+      if(btn){btn.disabled=false;btn.textContent="더 불러올 게시물이 없어요."}
+      return;
+    }
     state.timelineItems.push(...more);
-    if(btn){btn.insertAdjacentHTML("beforebegin",more.map(x=>statusCard(x,{replyCountOverride:visibleReplyCount(x,state.timelineItems)})).join(""));btn.disabled=false;btn.textContent="더 불러오기"}
+    if(state.homeMode==="home"&&!state.listId)state.homePagerData.home=state.timelineItems;
+    if(state.homeMode==="public"&&!state.listId)state.homePagerData.public=state.timelineItems;
+    homeSnapshotWrite(state.homePagerData);
+    if(btn){
+      btn.insertAdjacentHTML("beforebegin",more.map(x=>statusCard(x,{replyCountOverride:visibleReplyCount(x,state.timelineItems)})).join(""));
+      btn.disabled=false;btn.textContent="더 불러오기";
+    }
     bind();
-  }catch(e){toast(e.message);if(btn){btn.disabled=false;btn.textContent="다시 시도"}}
-  finally{state.timelineLoadingMore=false}
+  }catch(e){
+    toast(e.message);
+    if(btn){btn.disabled=false;btn.textContent="다시 시도"}
+  }finally{state.timelineLoadingMore=false}
 }
+
 function scrollKey(){return state.view+(state.view==="home"?":"+state.homeMode+":"+(state.listId||""):"")}
 function rememberScroll(){state.scrolls[scrollKey()]=window.scrollY||document.documentElement.scrollTop||0}
 function restoreScroll(){const y=state.scrolls[scrollKey()];if(typeof y==="number")requestAnimationFrame(()=>window.scrollTo(0,y))}
