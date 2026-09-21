@@ -782,32 +782,54 @@ async function publicAccountsAndAllowed({fresh=false}={}){
   const allowed=new Set(accounts.map(x=>String(x?.id||"")).filter(Boolean));
   return {accounts,allowed};
 }
+async function scanPublicHomePages(allowed,{maxId="",target=30}={}){
+  let cursor=maxId||"",collected=[];
+  const scans=Math.max(1,Number(ANDROID?.timeline?.public?.maxHomeScans)||6);
+  for(let scan=0;scan<scans&&collected.length<target;scan++){
+    const query={limit:"40"};if(cursor)query.max_id=cursor;
+    const page=await api("/api/v1/timelines/home",{query}).catch(()=>[]);
+    if(!Array.isArray(page)||!page.length)break;
+    collected=mergeNewestTimeline(page.filter(x=>publicOriginalStatus(x,allowed)),collected,80);
+    const next=String(page[page.length-1]?.id||"");
+    if(!next||next===cursor)break;
+    cursor=next;
+  }
+  return collected;
+}
 async function loadPublicBase({fresh=false,maxId=""}={}){
-  const [{accounts,allowed},home,serverPublic]=await Promise.all([
-    publicAccountsAndAllowed({fresh}),
-    api("/api/v1/timelines/home",{query:{limit:"40",...(maxId?{max_id:maxId}:{})}}).catch(()=>[]),
-    api("/api/v1/timelines/public",{query:{limit:"40",...(maxId?{max_id:maxId}:{})}}).catch(()=>[])
+  const {accounts,allowed}=await publicAccountsAndAllowed({fresh});
+  const [homeItems,serverPublic,selfRows]=await Promise.all([
+    scanPublicHomePages(allowed,{maxId,target:30}),
+    api("/api/v1/timelines/public",{query:{limit:"40",...(maxId?{max_id:maxId}:{})}}).catch(()=>[]),
+    state.me?.id?api(`/api/v1/accounts/${state.me.id}/statuses`,{query:{
+      limit:"20",exclude_reblogs:"true",exclude_replies:"true",...(maxId?{max_id:maxId}:{})
+    }}).catch(()=>[]):Promise.resolve([])
   ]);
   const base=[
-    ...(Array.isArray(home)?home:[]),
-    ...(Array.isArray(serverPublic)?serverPublic:[])
+    ...homeItems,
+    ...(Array.isArray(serverPublic)?serverPublic:[]),
+    ...(Array.isArray(selfRows)?selfRows:[])
   ].filter(x=>publicOriginalStatus(x,allowed));
   return {accounts,allowed,items:mergeNewestTimeline(base,[],80)};
 }
 async function supplementPublicFromAccounts(accounts,allowed,{maxId="",deep=false,onBatch=null}={}){
   let collected=[];
-  const source=(accounts||[]).slice(0,81),batchSize=10;
+  const source=(accounts||[]).slice(0,81),batchSize=4;
   for(let i=0;i<source.length;i+=batchSize){
     const batch=source.slice(i,i+batchSize);
-    const pages=await Promise.all(batch.map(ac=>{
-      const id=String(ac?.id||"");if(!id)return Promise.resolve([]);
+    const pages=await Promise.all(batch.map(async ac=>{
+      const id=String(ac?.id||"");if(!id)return [];
       const query={
-        limit:deep?"20":"10",
+        limit:deep?"24":"16",
         exclude_reblogs:"true",
         exclude_replies:"true",
         ...(maxId?{max_id:maxId}:{})
       };
-      return api(`/api/v1/accounts/${id}/statuses`,{query}).catch(()=>[]);
+      try{return await api(`/api/v1/accounts/${id}/statuses`,{query})}
+      catch{
+        await new Promise(resolve=>setTimeout(resolve,120));
+        return api(`/api/v1/accounts/${id}/statuses`,{query}).catch(()=>[]);
+      }
     }));
     const extra=[];
     for(const rows of pages){
@@ -819,13 +841,13 @@ async function supplementPublicFromAccounts(accounts,allowed,{maxId="",deep=fals
       collected=mergeNewestTimeline(extra,collected,80);
       onBatch?.(extra);
     }
-    if(i+batchSize<source.length)await new Promise(resolve=>setTimeout(resolve,20));
+    if(i+batchSize<source.length)await new Promise(resolve=>setTimeout(resolve,70));
   }
   return collected;
 }
 
 function homeSnapshotRead(){
-  const snap=store.get(scopedKey("home_snapshot_v4"),null);
+  const snap=store.get(scopedKey("home_snapshot_v5"),null);
   if(!snap?.at||Date.now()-Number(snap.at)>10*60*1000)return null;
   const data=snap.data;
   return data&&Array.isArray(data.home)&&Array.isArray(data.public)?data:null;
@@ -833,7 +855,7 @@ function homeSnapshotRead(){
 function homeSnapshotWrite(data){
   try{
     if(data&&Array.isArray(data.home)&&Array.isArray(data.public)){
-      store.set(scopedKey("home_snapshot_v4"),{at:Date.now(),data});
+      store.set(scopedKey("home_snapshot_v5"),{at:Date.now(),data});
     }
   }catch{}
 }
@@ -963,7 +985,7 @@ function setHomePagerMode(mode,animate=true){
   syncHomePagerUi(mode,animate);
   if(mode==="public"){
     const stale=!state.publicFilledAt||Date.now()-Number(state.publicFilledAt)>60000;
-    if(changed&&(stale||!state.timelineItems.length)){
+    if(changed&&(stale||state.timelineItems.length<20)){
       setTimeout(()=>ensurePublicTimelineFilled({fresh:false,forceFullScan:false}).catch(()=>{}),0);
     }
   }
@@ -1006,7 +1028,7 @@ async function homeView({silent=false,forceFresh=false}={}){
 
     if(state.homeMode==="public"){
       const stale=!state.publicFilledAt||Date.now()-Number(state.publicFilledAt)>60000;
-      if(stale||!(state.homePagerData?.public||[]).length){
+      if(stale||(state.homePagerData?.public||[]).length<20){
         setTimeout(()=>ensurePublicTimelineFilled({fresh:false,forceFullScan:false}).catch(()=>{}),0);
       }
     }
