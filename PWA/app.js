@@ -180,8 +180,10 @@ function applyAndroidSpecMetrics(){
 applyAndroidSpecMetrics();
 
 function toast(msg){ state.toast=msg; renderToast(); setTimeout(()=>{state.toast="";renderToast()},2600) }
-function renderToast(){ const old=$(".toast"); if(old) old.remove(); if(state.toast){const x=document.createElement("div");x.className="toast";x.textContent=state.toast;document.body.append(x)}}
+function renderToast(){ const old=$(".toast"); if(old) old.remove(); if(state.toast){const x=document.createElement("div");x.className="toast";x.setAttribute("role","status");x.setAttribute("aria-live","polite");x.textContent=state.toast;document.body.append(x)}}
 function normalizeHost(v){ return v.trim().replace(/^https?:\/\//i,"").split("/")[0].replace(/\/+$/,""); }
+function loginHostLooksValid(host){return !!host&&host.includes(".")&&!/\\s/.test(host)&&host.length<=253}
+function loginFailureText(error){const msg=String(error?.message||"").trim();if(!msg||/failed to fetch|networkerror|load failed|network request failed|internet connection appears to be offline/i.test(msg))return "해당 서버에 연결할 수 없습니다. 서버 주소를 확인해주세요.";if(/^HTTP (400|404|405|410|422)\\b/i.test(msg))return "해당 주소에서 Mastodon 서버를 확인할 수 없습니다.";return "로그인 준비에 실패했습니다. 서버 주소를 확인해주세요."}
 function randB64(bytes=32){ const a=new Uint8Array(bytes);crypto.getRandomValues(a);return btoa(String.fromCharCode(...a)).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); }
 async function sha256b64(s){ const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(s));return btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); }
 
@@ -209,7 +211,8 @@ async function beginLogin(){
 }
 async function beginLoginForHost(rawHost){
   const host=normalizeHost(rawHost||"");
-  if(!host||!host.includes(".")){toast("서버 주소를 확인해주세요.");return}
+  if(!host){toast("서버 주소를 입력해주세요.");return}
+  if(!loginHostLooksValid(host)){toast("올바른 Mastodon 서버 주소를 입력해주세요.");return}
   state.busy=true;if(!document.querySelector(".drawer-shade")&&!document.querySelector(".account-add-page"))render();
   try{
     const scopes="read write push";
@@ -228,7 +231,8 @@ async function beginLoginForHost(rawHost){
     if(verifier){u.searchParams.set("code_challenge",await sha256b64(verifier));u.searchParams.set("code_challenge_method","S256")}
     location.href=u.toString();
   }catch(e){
-    toast("로그인 준비 실패: "+e.message);state.busy=false;
+    console.warn("[Lenton login] failed to prepare OAuth",host,e);
+    toast(loginFailureText(e));state.busy=false;
     if(document.querySelector(".account-add-page"))accountAddScreen();else render();
   }
 }
