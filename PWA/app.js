@@ -519,7 +519,7 @@ function shell(title,body,opts={}){
   if(view==="home"){
     right="";
   }else if(view==="search"){
-    right=`<button class="top-icon" data-action="searchMenu" aria-label="검색 메뉴">${lentonIcon("more")}</button>`;
+    right="";
   }else if(view==="settings"){
     right="";
   }else if(view==="notifications"){
@@ -1871,9 +1871,18 @@ async function showProfileListManager(){
 }
 
 
-function searchTabsMarkup(){
+function searchFilterBarMarkup(){
   const modes=[["posts","게시물"],["people","사람"],["media","미디어"]];
-  return '<div class="search-tabs">'+modes.map(([id,label])=>'<button type="button" data-search-mode="'+id+'" class="'+(state.searchMode===id?"active":"")+'">'+label+'</button>').join("")+'</div>';
+  const following=searchFollowingOnlyEnabled();
+  return '<div class="search-filter-bar">'+
+    modes.map(([id,label])=>'<button type="button" data-search-mode="'+id+'" class="'+(state.searchMode===id?"active":"")+'">'+label+'</button>').join("")+
+    '<button type="button" data-search-following-toggle class="'+(following?"active":"")+'">'+(following?"✓ ":"")+'팔로잉만</button>'+
+  '</div>';
+}
+function syncSearchFilterBar(){
+  document.querySelectorAll("[data-search-mode]").forEach(b=>b.classList.toggle("active",b.dataset.searchMode===state.searchMode));
+  const follow=document.querySelector("[data-search-following-toggle]");
+  if(follow){const on=searchFollowingOnlyEnabled();follow.classList.toggle("active",on);follow.textContent=(on?"✓ ":"")+"팔로잉만"}
 }
 function searchFollowingOnlyEnabled(){return !!store.get(scopedKey("search_following_only"),false)}
 async function ensureSearchFollowingIds({fresh=false}={}){
@@ -1910,7 +1919,8 @@ function renderSearchResults(){
     const statuses=searchStatusesForMode(mode);
     body=statuses.length?statuses.map(statusCard).join(""):'<div class="center">'+(mode==="media"?"미디어가 포함된 게시물이 없어요.":"게시물 검색 결과가 없어요.")+'</div>';
   }
-  box.innerHTML=searchTabsMarkup()+'<div class="search-tab-body">'+body+'</div>';
+  box.innerHTML='<div class="search-tab-body">'+body+'</div>';
+  syncSearchFilterBar();
   bind();
 }
 function setSearchMode(mode){
@@ -1943,7 +1953,11 @@ function openSearchMenu(){
 }
 async function searchView(){
   const q=state.searchQuery||"";
-  $("#app").innerHTML=shell("검색",'<div class="search-box"><input id="searchInput" class="field" placeholder="사람, 게시물, 해시태그 검색" value="'+esc(q)+'"><button class="primary" data-action="runsearch">검색</button></div><div id="searchResults" class="'+(state.searchResults?"":"center")+'"></div>');
+  $("#app").innerHTML=shell("검색",
+    '<div class="search-box"><input id="searchInput" class="field" placeholder="사람, 게시물, 해시태그 검색" value="'+esc(q)+'"><button class="primary" data-action="runsearch">검색</button></div>'+
+    searchFilterBarMarkup()+
+    '<div id="searchResults" class="'+(state.searchResults?"":"center")+'"></div>'
+  );
   bind();
   if(searchFollowingOnlyEnabled()&&!(state.searchFollowingIds instanceof Set)){
     ensureSearchFollowingIds().then(renderSearchResults).catch(()=>renderSearchResults());
@@ -3883,6 +3897,15 @@ function bind(){
     else if(a==="followProfile")toggleFollowProfile()
   });
   document.querySelectorAll("[data-search-mode]").forEach(b=>b.onclick=()=>setSearchMode(b.dataset.searchMode));
+  document.querySelectorAll("[data-search-following-toggle]").forEach(b=>b.onclick=async()=>{
+    const next=!searchFollowingOnlyEnabled();
+    store.set(scopedKey("search_following_only"),next);
+    if(next){
+      try{await ensureSearchFollowingIds()}catch(e){toast(e.message)}
+    }
+    renderSearchResults();
+    syncSearchFilterBar();
+  });
   document.querySelectorAll(".private-note-card[data-action='editPrivateNote']").forEach(b=>b.onclick=e=>{e.preventDefault();e.stopPropagation();editPrivateNote()});
   document.querySelectorAll("[data-account-choice]").forEach(b=>b.onclick=()=>applyAccountChoice(b.dataset.accountChoice,b.dataset.value||""));
     document.querySelectorAll("[data-home-mode]").forEach(b=>b.onclick=()=>{if(document.querySelector("[data-home-pager]"))setHomePagerMode(b.dataset.homeMode,true);else{state.homeMode=b.dataset.homeMode;state.listId=null;render()}});
