@@ -1472,6 +1472,22 @@ async function notificationsView(mentionsOnly=false,silent=false){
         if(!mentionsOnly&&filter[n?.type]===false)continue;
         unreadIds.add(String(n?.id||""));
       }
+    }else{
+      // Some Mastodon servers can leave the notifications marker unavailable even
+      // though push metadata already knows there are unread notifications.
+      // Keep the existing new-notification UI and recover the exact visible rows
+      // from the unread badge count instead of showing no emphasis at all.
+      const sharedUnread=accountNotificationUnreadFor({key:currentAccountKey()});
+      const fallbackUnread=Math.max(0,Number(state.notificationUnread)||0,Number(sharedUnread)||0);
+      if(fallbackUnread>0){
+        for(const n of rawItems){
+          if(n?.status?.visibility==="direct")continue;
+          if(!mentionsOnly&&filter[n?.type]===false)continue;
+          const id=String(n?.id||"");if(!id)continue;
+          unreadIds.add(id);
+          if(unreadIds.size>=fallbackUnread)break;
+        }
+      }
     }
     if(!continuingSession||!(state.notificationNewIds instanceof Set)){
       state.notificationNewIds=unreadIds;
