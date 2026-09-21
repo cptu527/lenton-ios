@@ -792,21 +792,41 @@ function publicFromHome(items=[]){
   // 작성자/멘션 대상/공개글 여부에는 예외를 두지 않는다.
   return (Array.isArray(items)?items:[]).filter(publicHomeStatus);
 }
-async function loadPublicFromHome({maxId="",limit=40,maxScans=8,target=40}={}){
+function mergeTimelineUnlimited(fresh=[],existing=[]){
+  const out=[],seen=new Set();
+  for(const raw of [...fresh,...existing]){
+    if(!raw)continue;
+    const id=String(statusId(raw)||"");
+    if(id&&seen.has(id))continue;
+    if(id)seen.add(id);
+    out.push(raw);
+  }
+  out.sort((a,b)=>statusCreatedAtMs(b)-statusCreatedAtMs(a));
+  return out;
+}
+async function loadPublicFromHome({maxId="",limit=40,onPage=null}={}){
   let cursor=maxId||"",items=[];
-  const scans=Math.max(1,Number(maxScans)||1);
-  for(let scan=0;scan<scans&&items.length<target;scan++){
+  for(;;){
     const query={limit:String(limit)};
     if(cursor)query.max_id=cursor;
-    const page=scan===0
-      ? await api("/api/v1/timelines/home",{query})
-      : await settleWithin(api("/api/v1/timelines/home",{query}),8000,[]);
+
+    // 게시물 개수/페이지 수 제한 없이 Mastodon Home을 끝까지 읽는다.
+    const page=await api("/api/v1/timelines/home",{query});
     if(!Array.isArray(page)||!page.length)break;
+
     const visible=page.filter(publicHomeStatus);
-    items=mergeNewestTimeline(visible,items,160);
+    items=mergeTimelineUnlimited(visible,items);
+
+    if(typeof onPage==="function"){
+      try{onPage(items,visible,page)}catch{}
+    }
+
     const next=String(page[page.length-1]?.id||"");
     if(!next||next===cursor||page.length<Number(limit))break;
     cursor=next;
+
+    // 서버를 과도하게 몰아치지 않으면서도 전체 홈을 계속 이어서 가져온다.
+    await new Promise(resolve=>setTimeout(resolve,25));
   }
   return items;
 }
@@ -824,8 +844,16 @@ async function expandHomeTimelineInBackground(){
 async function expandPublicTimelineInBackground(){
   if(state.publicBackgroundFillPromise)return state.publicBackgroundFillPromise;
   state.publicBackgroundFillPromise=(async()=>{
-    const items=await loadPublicFromHome({limit:40,maxScans:8,target:40});
-    if(!items.length)return;
+    let lastPaint=0;
+    const items=await loadPublicFromHome({
+      limit:40,
+      onPage:all=>{
+        const now=Date.now();
+        if(now-lastPaint<120)return;
+        lastPaint=now;
+        updatePublicTimelinePage(all,{preserveScroll:true});
+      }
+    });
     updatePublicTimelinePage(items,{preserveScroll:true});
     state.publicFilledAt=Date.now();
   })().finally(()=>{state.publicBackgroundFillPromise=null});
@@ -833,7 +861,7 @@ async function expandPublicTimelineInBackground(){
 }
 
 function homeSnapshotRead(){
-  const snap=store.get(scopedKey("home_snapshot_v14"),null);
+  const snap=store.get(scopedKey("home_snapshot_v15"),null);
   if(!snap?.at||Date.now()-Number(snap.at)>10*60*1000)return null;
   const data=snap.data;
   return data&&Array.isArray(data.home)&&Array.isArray(data.public)?data:null;
@@ -841,7 +869,7 @@ function homeSnapshotRead(){
 function homeSnapshotWrite(data){
   try{
     if(data&&Array.isArray(data.home)&&Array.isArray(data.public)){
-      store.set(scopedKey("home_snapshot_v14"),{at:Date.now(),data});
+      store.set(scopedKey("home_snapshot_v15"),{at:Date.now(),data});
     }
   }catch{}
 }
@@ -913,7 +941,10 @@ async function ensurePublicTimelineFilled({fresh=false}={}){
 async function refreshPublicTimeline(){
   if(state.publicRefreshPromise)return state.publicRefreshPromise;
   state.publicRefreshPromise=(async()=>{
-    const items=await loadPublicFromHome({limit:40,maxScans:8,target:40});
+    const items=await loadPublicFromHome({
+      limit:40,
+      onPage:all=>updatePublicTimelinePage(all,{preserveScroll:true})
+    });
     updatePublicTimelinePage(items,{preserveScroll:true});
     state.publicFilledAt=Date.now();
     return items;
@@ -1063,7 +1094,7 @@ async function loadMoreHome(){
     if(state.listId){
       more=await api(`/api/v1/timelines/list/${state.listId}`,{query:{limit:"40",max_id:maxId}});
     }else if(state.homeMode==="public"){
-      more=await loadPublicFromHome({maxId,limit:40,maxScans:8,target:40});
+      more=await loadPublicFromHome({maxId,limit:40});
     }else{
       more=await loadChronologicalHome({maxId,limit:40,maxScans:2});
     }
