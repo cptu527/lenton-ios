@@ -1863,6 +1863,22 @@ img{display:block}
   overflow:hidden;
 }
 .android-notify-card.has-status{cursor:pointer}
+.android-notify-card.is-new{
+  background:color-mix(in srgb,var(--accent) 9%,var(--bg));
+  box-shadow:inset 3px 0 0 var(--accent);
+}
+.android-notify-card.is-new .android-notify-person b{
+  color:var(--fg);
+  font-weight:800;
+}
+.notify-new-dot{
+  width:8px;
+  height:8px;
+  flex:0 0 8px;
+  margin-left:auto;
+  border-radius:50%;
+  background:var(--accent);
+}
 
 
 /* APK DM previous-thread control */
