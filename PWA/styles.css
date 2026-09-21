@@ -877,6 +877,19 @@ img{display:block}
   white-space:nowrap;
 }
 .topbar-actions{margin-left:auto;display:flex;align-items:center}
+.topbar-back{
+  width:var(--android-topbar-more,44px);
+  height:var(--android-topbar,50px);
+  flex:0 0 var(--android-topbar-more,44px);
+  border:0;
+  padding:0;
+  background:none;
+  color:var(--fg);
+  display:grid;
+  place-items:center;
+  touch-action:manipulation;
+}
+.topbar-back .lenton-icon{width:26px;height:26px}
 .lenton-fab{
   width:64px;height:64px;border-radius:50%;
   right:28px;bottom:calc(var(--android-bottom,64px) + env(safe-area-inset-bottom) + 18px);
@@ -980,12 +993,17 @@ img{display:block}
 .lenton-drawer .drawer-name{margin-top:22px;font-size:28px;font-weight:700}
 .lenton-drawer .drawer-handle{font-size:17px;line-height:1.5;margin-top:8px}
 .lenton-drawer .drawer-counts{height:auto;margin-top:22px;margin-bottom:18px;font-size:15px}
-.lenton-drawer .drawer-divider{margin:0;border-top:1px solid var(--line)}
+.lenton-drawer .drawer-divider{
+  margin:8px 0 10px;
+  border-top:1px solid var(--line);
+}
 .lenton-drawer .drawer-row{
-  height:var(--android-drawer-row);
+  min-height:var(--android-drawer-row);
+  height:auto;
+  margin:3px 0;
+  padding:4px 8px;
   font-size:var(--android-drawer-text);
   font-weight:600;
-  padding:0 8px;
 }
 .lenton-drawer .drawer-row .glyph{
   width:52px;
@@ -993,7 +1011,7 @@ img{display:block}
   display:inline-grid;
   place-items:center;
 }
-.drawer-spacer{min-height:190px}
+.drawer-spacer{min-height:clamp(96px,14vh,180px)}
 .drawer-list-row{font-size:var(--android-drawer-text,19px)!important;font-weight:700!important}
 .drawer-list-row .glyph{width:56px!important}
 
