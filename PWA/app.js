@@ -3685,3 +3685,4 @@ window.addEventListener("beforeunload",e=>{
   if(notificationId&&state.session)setTimeout(()=>openNotificationDeepLink(notificationId),0);
   applyAutomaticUpdate();
 })();
+// QA branch CI trigger; removed before merge.
