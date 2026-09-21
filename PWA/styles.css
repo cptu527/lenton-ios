@@ -4415,3 +4415,76 @@ img{display:block}
   border-radius:50%!important;
   object-fit:cover!important;
 }
+
+
+/* QA 6: compact server emoji picker that keeps the reply keyboard available. */
+.compose-bottom-dock .emoji-picker,
+.compose-modal.keyboard-open .compose-bottom-dock .emoji-picker{
+  max-height:min(30vh,240px)!important;
+  padding:0!important;
+  overflow:hidden!important;
+  display:flex!important;
+  flex-direction:column;
+  border-radius:16px!important;
+}
+.compose-bottom-dock .emoji-picker[hidden]{
+  display:none!important;
+}
+.emoji-picker-head{
+  flex:0 0 44px;
+  min-height:44px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:0 8px 0 14px;
+  border-bottom:1px solid var(--line);
+  background:var(--bg);
+}
+.emoji-picker-head b{
+  font-size:14px;
+  font-weight:800;
+}
+.emoji-picker-close{
+  width:40px!important;
+  height:40px!important;
+  display:grid!important;
+  place-items:center!important;
+  border:0!important;
+  padding:0!important;
+  background:transparent!important;
+  color:var(--fg)!important;
+  font-size:28px!important;
+  line-height:1!important;
+}
+.emoji-picker-grid{
+  min-height:0;
+  overflow:auto;
+  -webkit-overflow-scrolling:touch;
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(42px,1fr));
+  gap:4px;
+  padding:8px 10px 10px;
+}
+.emoji-picker-grid button{
+  border:0;
+  background:none;
+  height:42px;
+  padding:4px;
+}
+.emoji-picker-grid img{
+  max-width:100%;
+  max-height:100%;
+  margin:auto;
+}
+.emoji-picker-loading,
+.emoji-picker-empty{
+  min-height:72px;
+  display:grid;
+  place-items:center;
+  padding:12px;
+  color:var(--sub);
+  font-size:14px;
+}
+.emoji-picker-empty{
+  grid-column:1/-1;
+}
