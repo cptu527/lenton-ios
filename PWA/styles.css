@@ -1088,7 +1088,7 @@ img{display:block}
   white-space:nowrap;
 }
 .list-open b{font-size:17px}.list-open span{font-size:13px;color:var(--sub)}
-.list-eye,.list-more{
+.list-eye,.list-edit{
   flex:0 0 auto;
   border:0;
   background:none;
@@ -1101,10 +1101,16 @@ img{display:block}
   margin-left:auto;
   font-size:14px;
 }
-.list-more{
+.list-edit{
   width:44px;
   min-width:44px;
-  font-size:26px;
+  display:grid;
+  place-items:center;
+}
+.list-edit .lenton-icon{
+  width:22px;
+  height:22px;
+  display:block;
 }
 .list-eye.off{opacity:.55}
 .list-editor{padding:18px;display:flex;flex-direction:column;gap:16px;border-bottom:1px solid var(--line)}
