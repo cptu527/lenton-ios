@@ -4542,3 +4542,109 @@ img{display:block}
 .emoji-picker-empty{
   grid-column:1/-1;
 }
+
+
+/* QA 12: list member addition */
+.list-members-head{
+  min-height:56px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding-right:18px;
+  border-bottom:1px solid var(--line);
+}
+.list-members-head .section-title{
+  flex:1;
+  padding-top:12px;
+  padding-bottom:12px;
+}
+.list-member-add-open{
+  flex:0 0 auto;
+  min-height:38px;
+  border:0;
+  border-radius:19px;
+  padding:0 14px;
+  background:var(--accent);
+  color:#fff;
+  font-size:14px;
+  font-weight:800;
+}
+.list-member-add-page{
+  padding-bottom:calc(24px + env(safe-area-inset-bottom));
+}
+.list-member-add-note{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  padding:16px 18px 8px;
+}
+.list-member-add-note b{font-size:16px}
+.list-member-add-note span{font-size:13px;color:var(--sub)}
+.list-member-search{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:8px;
+  padding:8px 18px 14px;
+  border-bottom:1px solid var(--line);
+}
+.list-member-search .field{
+  min-width:0;
+  height:46px;
+  margin:0;
+}
+.list-member-search .primary{
+  min-width:72px;
+  height:46px;
+  padding:0 14px;
+}
+.list-member-candidate{
+  min-height:76px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:8px 14px 8px 18px;
+  border-bottom:1px solid var(--line);
+}
+.list-member-person{
+  flex:1;
+  min-width:0;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  border:0;
+  background:transparent;
+  color:var(--fg);
+  padding:0;
+  text-align:left;
+}
+.list-member-person img{
+  width:50px;
+  height:50px;
+  flex:0 0 50px;
+  border-radius:50%;
+  object-fit:cover;
+  background:var(--surface);
+}
+.list-member-person span{min-width:0}
+.list-member-person b,
+.list-member-person small{
+  display:block;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.list-member-person b{font-size:16px}
+.list-member-person small{margin-top:4px;color:var(--sub);font-size:13px}
+.list-member-add-button{
+  flex:0 0 auto;
+  min-width:64px;
+  height:40px;
+  border:0;
+  border-radius:20px;
+  padding:0 14px;
+  background:var(--accent);
+  color:#fff;
+  font-size:14px;
+  font-weight:800;
+}
+.list-member-add-button:disabled{opacity:.55}
