@@ -2094,7 +2094,7 @@ async function listsScreen(){
     const rows=lists.map(x=>`<div class="list-manage-row">
       <button class="list-open grow" data-open-list="${esc(x.id)}"><b>${esc(x.title||"리스트")}</b><span>${esc(x.replies_policy||"list")}</span></button>
       <button class="list-eye ${hidden.has(x.id)?"off":""}" data-list-visible="${esc(x.id)}">${hidden.has(x.id)?"숨김":"표시"}</button>
-      <button class="list-more" data-list-manage="${esc(x.id)}">⋮</button>
+      <button class="list-edit" data-list-manage="${esc(x.id)}" aria-label="리스트 수정" title="리스트 수정">${lentonIcon("edit")}</button>
     </div>`).join("");
     const body=`<div class="list-toolbar"><button class="primary" data-action="newlist">＋ 새 리스트</button></div>${rows||'<div class="center">리스트가 없어요.</div>'}`;
     $("#app").innerHTML=standaloneShell("리스트",body);bind();
