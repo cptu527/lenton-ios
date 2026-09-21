@@ -295,6 +295,17 @@ img{display:block}
   overflow:hidden;
   text-overflow:ellipsis;
 }
+.author-name-button{
+  border:0;
+  background:none;
+  color:var(--fg);
+  padding:0;
+  margin:0;
+  text-align:left;
+  line-height:inherit;
+  white-space:nowrap;
+  flex:0 1 auto;
+}
 .acctline{
   color:var(--sub);
   font-size:15px;
