@@ -628,7 +628,18 @@ img{display:block}
 .home-tabs button{position:relative}
 .home-tabs button::after{content:"";position:absolute;width:36px;height:3px;left:50%;bottom:0;transform:translateX(-50%) scaleX(0);border-radius:2px;background:var(--accent);transition:transform 170ms cubic-bezier(.2,.75,.25,1);transform-origin:center}
 .home-tabs button.active::after{transform:translateX(-50%) scaleX(1)}
-.notify-tabs button.active::after{display:none}
+.notify-tabs button::after{
+  width:36px;
+  height:3px;
+  border-radius:2px;
+  transform:translateX(-50%) scaleX(0);
+  transition:transform 170ms cubic-bezier(.2,.75,.25,1);
+  transform-origin:center;
+}
+.notify-tabs button.active::after{
+  display:block;
+  transform:translateX(-50%) scaleX(1);
+}
 .chips{
   min-height:50px;
   gap:7px;
