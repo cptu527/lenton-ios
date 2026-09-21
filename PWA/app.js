@@ -653,7 +653,7 @@ function statusCard(raw,opts={}){
       <button class="avatar-button" data-profile="${esc(a.id||"")}"><img class="avatar" src="${esc(a.avatar_static||a.avatar||"")}" alt=""></button>
       <div class="status-main">
         <div class="lenton-status-top">
-          <div class="author-line"><span class="name">${renderEmojiText(a.display_name||a.username||"",a.emojis||[])}</span><span class="acctline">&nbsp;@${esc(a.acct||"")} · ${fmtTime(st.created_at)}</span></div>
+          <div class="author-line"><button class="name author-name-button" data-profile="${esc(a.id||"")}">${renderEmojiText(a.display_name||a.username||"",a.emojis||[])}</button><span class="acctline">&nbsp;@${esc(a.acct||"")} · ${fmtTime(st.created_at)}</span></div>
           <button class="status-more" data-action="statusmenu" data-id="${st.id}" aria-label="더보기">${lentonIcon("more")}</button>
         </div>
         ${cw}<div class="content"${hidden}>${renderRichText(st.content||"")}</div>
