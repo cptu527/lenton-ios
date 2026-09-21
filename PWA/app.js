@@ -763,91 +763,55 @@ async function loadChronologicalHome({maxId="",limit=40}={}){
     80
   );
 }
-function publicOriginalStatus(raw,allowed){
-  if(!raw||!raw.account)return false;
-  const author=String(raw.account.id||"");
-  if(!author||!allowed.has(author))return false;
-  if(String(raw.visibility||"")!=="public")return false;
-  if(raw.reblog)return false;
-  const reply=raw.in_reply_to_id;
-  if(reply!==null&&reply!==undefined&&String(reply)!=="")return false;
+function statusMentionsMe(raw){
+  const st=raw?.reblog||raw;
+  const mentions=Array.isArray(st?.mentions)?st.mentions:[];
+  const myId=String(state.me?.id||"");
+  const myAcct=String(state.me?.acct||state.me?.username||"").replace(/^@+/,"").toLowerCase();
+  return mentions.some(m=>{
+    if(myId&&String(m?.id||"")===myId)return true;
+    const acct=String(m?.acct||m?.username||"").replace(/^@+/,"").toLowerCase();
+    if(!acct||!myAcct)return false;
+    return acct===myAcct||acct.split("@")[0]===myAcct.split("@")[0];
+  });
+}
+function publicHomeStatus(raw){
+  if(!raw||!nonDirect(raw))return false;
+  const st=raw?.reblog||raw;
+  if(!st)return false;
+  const reply=st.in_reply_to_id;
+  const isReply=reply!==null&&reply!==undefined&&String(reply)!=="";
+  // 퍼블릭 탭은 시간순 홈과 같은 소스를 사용한다.
+  // 차이는 실제 답글만 숨기고, 나를 향한 멘션 답글은 예외로 보여주는 것뿐이다.
+  if(isReply&&!statusMentionsMe(raw))return false;
   return true;
 }
-async function publicAccountsAndAllowed({fresh=false}={}){
-  if(!state.me)state.me=await api("/api/v1/accounts/verify_credentials");
-  const following=await loadAllFollowing({fresh});
-  const accounts=[...(following||[])];
-  const meId=String(state.me?.id||"");
-  if(meId&&!accounts.some(x=>String(x?.id||"")===meId))accounts.unshift(state.me);
-  const allowed=new Set(accounts.map(x=>String(x?.id||"")).filter(Boolean));
-  return {accounts,allowed};
-}
-async function scanPublicHomePages(allowed,{maxId="",target=30}={}){
+async function loadPublicFromHome({maxId="",limit=40,maxScans=6}={}){
   let cursor=maxId||"",collected=[];
-  const scans=Math.max(1,Number(ANDROID?.timeline?.public?.maxHomeScans)||6);
-  for(let scan=0;scan<scans&&collected.length<target;scan++){
-    const query={limit:"40"};if(cursor)query.max_id=cursor;
-    const page=await api("/api/v1/timelines/home",{query}).catch(()=>[]);
-    if(!Array.isArray(page)||!page.length)break;
-    collected=mergeNewestTimeline(page.filter(x=>publicOriginalStatus(x,allowed)),collected,80);
-    const next=String(page[page.length-1]?.id||"");
-    if(!next||next===cursor)break;
+  const firstPage=!maxId;
+  for(let scan=0;scan<Math.max(1,maxScans)&&collected.length<80;scan++){
+    const query={limit:String(limit)};
+    if(cursor)query.max_id=cursor;
+    const [home,mentions]=await Promise.all([
+      api("/api/v1/timelines/home",{query}).catch(()=>[]),
+      firstPage&&scan===0?loadRecentMentionStatuses():Promise.resolve([])
+    ]);
+    const merged=mergeNewestTimeline(
+      (Array.isArray(home)?home:[]).filter(nonDirect),
+      (Array.isArray(mentions)?mentions:[]).filter(nonDirect),
+      80
+    );
+    const filtered=merged.filter(publicHomeStatus);
+    collected=mergeNewestTimeline(filtered,collected,80);
+    const next=String((Array.isArray(home)?home:[]).at(-1)?.id||"");
+    if(!next||next===cursor||(Array.isArray(home)&&home.length===0))break;
     cursor=next;
-  }
-  return collected;
-}
-async function loadPublicBase({fresh=false,maxId=""}={}){
-  const {accounts,allowed}=await publicAccountsAndAllowed({fresh});
-  const [homeItems,serverPublic,selfRows]=await Promise.all([
-    scanPublicHomePages(allowed,{maxId,target:30}),
-    api("/api/v1/timelines/public",{query:{limit:"40",...(maxId?{max_id:maxId}:{})}}).catch(()=>[]),
-    state.me?.id?api(`/api/v1/accounts/${state.me.id}/statuses`,{query:{
-      limit:"20",exclude_reblogs:"true",exclude_replies:"true",...(maxId?{max_id:maxId}:{})
-    }}).catch(()=>[]):Promise.resolve([])
-  ]);
-  const base=[
-    ...homeItems,
-    ...(Array.isArray(serverPublic)?serverPublic:[]),
-    ...(Array.isArray(selfRows)?selfRows:[])
-  ].filter(x=>publicOriginalStatus(x,allowed));
-  return {accounts,allowed,items:mergeNewestTimeline(base,[],80)};
-}
-async function supplementPublicFromAccounts(accounts,allowed,{maxId="",deep=false,onBatch=null}={}){
-  let collected=[];
-  const source=(accounts||[]).slice(0,81),batchSize=4;
-  for(let i=0;i<source.length;i+=batchSize){
-    const batch=source.slice(i,i+batchSize);
-    const pages=await Promise.all(batch.map(async ac=>{
-      const id=String(ac?.id||"");if(!id)return [];
-      const query={
-        limit:deep?"24":"16",
-        exclude_reblogs:"true",
-        exclude_replies:"true",
-        ...(maxId?{max_id:maxId}:{})
-      };
-      try{return await api(`/api/v1/accounts/${id}/statuses`,{query})}
-      catch{
-        await new Promise(resolve=>setTimeout(resolve,120));
-        return api(`/api/v1/accounts/${id}/statuses`,{query}).catch(()=>[]);
-      }
-    }));
-    const extra=[];
-    for(const rows of pages){
-      for(const raw of Array.isArray(rows)?rows:[]){
-        if(publicOriginalStatus(raw,allowed))extra.push(raw);
-      }
-    }
-    if(extra.length){
-      collected=mergeNewestTimeline(extra,collected,80);
-      onBatch?.(extra);
-    }
-    if(i+batchSize<source.length)await new Promise(resolve=>setTimeout(resolve,70));
   }
   return collected;
 }
 
 function homeSnapshotRead(){
-  const snap=store.get(scopedKey("home_snapshot_v5"),null);
+  const snap=store.get(scopedKey("home_snapshot_v6"),null);
   if(!snap?.at||Date.now()-Number(snap.at)>10*60*1000)return null;
   const data=snap.data;
   return data&&Array.isArray(data.home)&&Array.isArray(data.public)?data:null;
@@ -855,7 +819,7 @@ function homeSnapshotRead(){
 function homeSnapshotWrite(data){
   try{
     if(data&&Array.isArray(data.home)&&Array.isArray(data.public)){
-      store.set(scopedKey("home_snapshot_v5"),{at:Date.now(),data});
+      store.set(scopedKey("home_snapshot_v6"),{at:Date.now(),data});
     }
   }catch{}
 }
@@ -924,20 +888,13 @@ async function ensurePublicTimelineFilled({fresh=false,forceFullScan=false}={}){
     try{await state.publicFillPromise}catch{}
   }
   state.publicFillPromise=(async()=>{
-    const {accounts,allowed,items:baseItems}=await loadPublicBase({fresh});
-    let collected=baseItems;
-    updatePublicTimelinePage(collected,{preserveScroll:true});
-    const extra=await supplementPublicFromAccounts(accounts,allowed,{
-      deep:!!forceFullScan,
-      onBatch:rows=>{
-        collected=mergeNewestTimeline(rows,collected,80);
-        updatePublicTimelinePage(collected,{preserveScroll:true});
-      }
+    const items=await loadPublicFromHome({
+      limit:40,
+      maxScans:forceFullScan?8:6
     });
-    collected=mergeNewestTimeline(extra,collected,80);
-    updatePublicTimelinePage(collected,{preserveScroll:true});
+    updatePublicTimelinePage(items,{preserveScroll:true});
     state.publicFilledAt=Date.now();
-    return collected;
+    return items;
   })().finally(()=>{state.publicFillPromise=null});
   return state.publicFillPromise;
 }
@@ -1053,9 +1010,7 @@ async function loadMoreHome(){
     if(state.listId){
       more=await api(`/api/v1/timelines/list/${state.listId}`,{query:{limit:"40",max_id:maxId}});
     }else if(state.homeMode==="public"){
-      const {accounts,allowed,items:base}=await loadPublicBase({fresh:false,maxId});
-      const extra=await supplementPublicFromAccounts(accounts,allowed,{maxId,deep:false});
-      more=mergeNewestTimeline(extra,base,80);
+      more=await loadPublicFromHome({maxId,limit:40,maxScans:4});
     }else{
       more=await loadChronologicalHome({maxId,limit:40});
     }
