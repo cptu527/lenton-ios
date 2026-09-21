@@ -975,7 +975,7 @@ async function homeView({silent=false,forceFresh=false}={}){
       const visibleLists=state.lists.filter(x=>!hiddenListIds().has(x.id));
       const chips=(visibleLists.length||state.lists.length)?'<div class="chips">'+visibleLists.map(x=>'<button class="chip '+(state.listId===x.id?"active":"")+'" data-list="'+x.id+'">'+esc(x.title)+'</button>').join("")+'<button class="chip" data-action="newlist">＋ 리스트</button></div>':"";
       state.timelineItems=data;
-      renderMainStable(state.lists.find(x=>x.id===state.listId)?.title||"리스트",chips+homePageHtml(data,"list"),{view:"home",fab:true});
+      renderMainStable(state.lists.find(x=>x.id===state.listId)?.title||"리스트",chips+homePageHtml(data,"list"),{view:"home",fab:false});
       return;
     }
 
@@ -2129,50 +2129,60 @@ async function listManageScreen(id){
   }catch(e){toast(e.message)}
 }
 async function listMemberAddScreen(id){
-  $("#app").innerHTML=standaloneShell("멤버 추가",'<div class="center">불러오는 중…</div>');bind();
+  $("#app").innerHTML=standaloneShell("멤버 추가",'<div class="center">팔로잉 목록을 불러오는 중…</div>');bind();
   try{
-    const [list,members]=await Promise.all([
+    if(!state.me)state.me=await api("/api/v1/accounts/verify_credentials");
+    const [list,members,followingRaw]=await Promise.all([
       api(`/api/v1/lists/${id}`),
-      api(`/api/v1/lists/${id}/accounts`,{query:{limit:"80"}})
+      api(`/api/v1/lists/${id}/accounts`,{query:{limit:"80"}}),
+      api("/api/v1/accounts/"+encodeURIComponent(state.me.id)+"/following",{query:{limit:"80"}})
     ]);
     const existing=new Set((members||[]).map(a=>String(a.id||"")).filter(Boolean));
+    const mine=String(state.me?.id||"");
+    const following=(followingRaw||[]).filter(a=>a?.id&&String(a.id)!==mine&&!existing.has(String(a.id)));
     const body=`<div class="list-member-add-page">
-      <div class="list-member-add-note"><b>${esc(list.title||"리스트")}</b><span>에 추가할 팔로우 중인 계정을 검색하세요.</span></div>
+      <div class="list-member-add-note"><b>${esc(list.title||"리스트")}</b><span>팔로우 중인 계정에서 멤버를 선택하세요.</span></div>
       <div class="list-member-search">
-        <input id="listMemberSearchInput" class="field" type="search" inputmode="search" autocomplete="off" autocapitalize="none" placeholder="이름 또는 @아이디">
-        <button type="button" class="primary" id="listMemberSearchButton">검색</button>
+        <input id="listMemberSearchInput" class="field" type="search" inputmode="search" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="이름 또는 @아이디로 필터">
       </div>
-      <div id="listMemberSearchResults" class="list-member-search-results"><div class="center">검색어를 입력해 주세요.</div></div>
+      <div class="list-member-list-heading" id="listMemberListHeading">팔로잉</div>
+      <div id="listMemberSearchResults" class="list-member-search-results"></div>
     </div>`;
     $("#app").innerHTML=standaloneShell("멤버 추가",body);bind();
-    const input=$("#listMemberSearchInput"),results=$("#listMemberSearchResults"),button=$("#listMemberSearchButton");
-    let seq=0,timer=null;
-    const run=async()=>{
-      const q=String(input?.value||"").trim(),mine=String(state.me?.id||"");
-      if(!q){results.innerHTML='<div class="center">검색어를 입력해 주세요.</div>';return}
-      const token=++seq;
-      results.innerHTML='<div class="center">검색 중…</div>';
-      try{
-        const found=await api("/api/v2/search",{query:{q,type:"accounts",resolve:"true",following:"true",limit:"30"}});
-        if(token!==seq)return;
-        const accounts=(found?.accounts||[]).filter(a=>a?.id&&String(a.id)!==mine&&!existing.has(String(a.id)));
-        results.innerHTML=accounts.length?accounts.map(a=>`<div class="list-member-candidate">
-          <button type="button" class="list-member-person" data-profile="${esc(a.id)}">
-            <img src="${esc(a.avatar_static||a.avatar||"")}" alt="">
-            <span><b>${renderEmojiText(a.display_name||a.username||a.acct||"",a.emojis||[])}</b><small>@${esc(a.acct||"")}</small></span>
-          </button>
-          <button type="button" class="list-member-add-button" data-list-member-add="${esc(a.id)}" data-list-member-id="${esc(id)}">추가</button>
-        </div>`).join(""):'<div class="center">추가할 수 있는 팔로우 계정을 찾지 못했어요.</div>';
-        bind();
-      }catch(e){
-        if(token===seq)results.innerHTML='<div class="center">검색하지 못했어요. 다시 시도해 주세요.</div>';
-      }
+    const input=$("#listMemberSearchInput"),results=$("#listMemberSearchResults"),heading=$("#listMemberListHeading");
+    const renderRows=items=>{
+      const rows=(items||[]);
+      results.innerHTML=rows.length?rows.map(a=>`<div class="list-member-candidate">
+        <button type="button" class="list-member-person" data-profile="${esc(a.id)}">
+          <img src="${esc(a.avatar_static||a.avatar||"")}" alt="">
+          <span><b>${renderEmojiText(a.display_name||a.username||a.acct||"",a.emojis||[])}</b><small>@${esc(a.acct||"")}</small></span>
+        </button>
+        <button type="button" class="list-member-add-button" data-list-member-add="${esc(a.id)}" data-list-member-id="${esc(id)}">추가</button>
+      </div>`).join(""):'<div class="center">추가할 수 있는 팔로우 계정이 없어요.</div>';
+      bind();
     };
-    button.onclick=run;
-    input.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();clearTimeout(timer);run()}});
-    input.addEventListener("input",()=>{clearTimeout(timer);timer=setTimeout(run,300)});
-    setTimeout(()=>input.focus(),50);
-  }catch(e){toast(e.message)}
+    const filterRows=()=>{
+      const q=String(input?.value||"").trim().toLocaleLowerCase();
+      if(!q){
+        if(heading)heading.textContent="팔로잉";
+        renderRows(following);
+        return;
+      }
+      if(heading)heading.textContent="검색 결과";
+      const matched=following.filter(a=>{
+        const name=String(a.display_name||"").toLocaleLowerCase();
+        const username=String(a.username||"").toLocaleLowerCase();
+        const acct=String(a.acct||"").toLocaleLowerCase();
+        return name.includes(q)||username.includes(q)||acct.includes(q)||("@"+acct).includes(q);
+      });
+      renderRows(matched);
+    };
+    input.addEventListener("input",filterRows);
+    input.addEventListener("keydown",e=>{if(e.key==="Enter")e.preventDefault()});
+    renderRows(following);
+  }catch(e){
+    $("#app").innerHTML=standaloneShell("멤버 추가",'<div class="center">'+esc(e.message)+'</div>');bind();
+  }
 }
 async function addListMember(id,accountId,button=null){
   if(!id||!accountId)return;
