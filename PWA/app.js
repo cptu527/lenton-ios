@@ -348,7 +348,7 @@ async function saveCurrentAccount(){
   await syncSavedAccountsToPushMeta();
 }
 function resetAccountState(){
-  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.listOrderDirty=false;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];state.searchResults=null;state.searchQuery="";state.searchMode="posts";state.notificationUnread=0;state.notificationUnreadOverflow=false;state.dmUnread=0;
+  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.listOrderDirty=false;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];state.searchResults=null;state.searchQuery="";state.searchMode="posts";state.searchFollowingIds=null;state.notificationUnread=0;state.notificationUnreadOverflow=false;state.dmUnread=0;
 }
 async function switchSavedAccount(index){
   const list=savedAccounts(),entry=list[index];if(!entry?.session)return;
@@ -1875,12 +1875,24 @@ function searchTabsMarkup(){
   const modes=[["posts","게시물"],["people","사람"],["media","미디어"]];
   return '<div class="search-tabs">'+modes.map(([id,label])=>'<button type="button" data-search-mode="'+id+'" class="'+(state.searchMode===id?"active":"")+'">'+label+'</button>').join("")+'</div>';
 }
+function searchFollowingOnlyEnabled(){return !!store.get(scopedKey("search_following_only"),false)}
+async function ensureSearchFollowingIds({fresh=false}={}){
+  const following=await loadAllFollowing({fresh});
+  state.searchFollowingIds=new Set((following||[]).map(a=>String(a?.id||"")).filter(Boolean));
+  return state.searchFollowingIds;
+}
+function searchAllowedByFollowing(accountId){
+  if(!searchFollowingOnlyEnabled())return true;
+  return state.searchFollowingIds instanceof Set&&state.searchFollowingIds.has(String(accountId||""));
+}
 function searchPeopleMarkup(items=[]){
-  return items.length?items.map(a=>'<button class="row search-person-row" data-profile="'+esc(a.id||"")+'"><img class="avatar search-person-avatar" src="'+esc(a.avatar_static||a.avatar||"")+'" alt=""><div class="grow"><b>'+renderEmojiText(a.display_name||a.username,a.emojis||[])+'</b><div class="muted">@'+esc(a.acct||"")+'</div><div class="search-person-note">'+esc(plain(a.note||""))+'</div></div></button>').join(""):'<div class="center">사람 검색 결과가 없어요.</div>';
+  const filtered=(items||[]).filter(a=>searchAllowedByFollowing(a?.id));
+  return filtered.length?filtered.map(a=>'<button class="row search-person-row" data-profile="'+esc(a.id||"")+'"><img class="avatar search-person-avatar" src="'+esc(a.avatar_static||a.avatar||"")+'" alt=""><div class="grow"><b>'+renderEmojiText(a.display_name||a.username,a.emojis||[])+'</b><div class="muted">@'+esc(a.acct||"")+'</div><div class="search-person-note">'+esc(plain(a.note||""))+'</div></div></button>').join(""):'<div class="center">'+(searchFollowingOnlyEnabled()?"팔로잉 중인 사람의 검색 결과가 없어요.":"사람 검색 결과가 없어요.")+'</div>';
 }
 function searchStatusesForMode(mode){
-  const statuses=Array.isArray(state.searchResults?.statuses)?state.searchResults.statuses:[];
-  if(mode==="media")return statuses.filter(x=>(x?.media_attachments||[]).length>0);
+  let statuses=Array.isArray(state.searchResults?.statuses)?state.searchResults.statuses:[];
+  statuses=statuses.filter(x=>searchAllowedByFollowing((x?.reblog||x)?.account?.id||x?.account?.id));
+  if(mode==="media")return statuses.filter(x=>(x?.reblog||x)?.media_attachments?.length>0);
   return statuses;
 }
 function renderSearchResults(){
@@ -1909,28 +1921,42 @@ function closeSearchMenu(){document.querySelector(".android-popup-shade.search-p
 function openSearchMenu(){
   closeSearchMenu();
   const shade=document.createElement("div");shade.className="android-popup-shade search-popup";
-  const items=[["posts","게시물"],["people","사람"],["media","미디어"],["clear","검색 초기화"]];
-  shade.innerHTML='<div class="android-popup search-popup-menu">'+items.map(([id,label])=>'<button type="button" data-search-menu="'+id+'" class="'+(state.searchMode===id?"active":"")+'">'+esc(label)+'</button>').join("")+'</div>';
+  const followingOnly=searchFollowingOnlyEnabled();
+  const items=[["posts","게시물"],["people","사람"],["media","미디어"],["followingOnly",(followingOnly?"✓ ":"")+"팔로잉만 검색"],["clear","검색 초기화"]];
+  shade.innerHTML='<div class="android-popup search-popup-menu">'+items.map(([id,label])=>'<button type="button" data-search-menu="'+id+'" class="'+((state.searchMode===id||(id==="followingOnly"&&followingOnly))?"active":"")+'">'+esc(label)+'</button>').join("")+'</div>';
   document.body.append(shade);
   shade.onclick=e=>{if(e.target===shade)closeSearchMenu()};
-  shade.querySelectorAll("[data-search-menu]").forEach(b=>b.onclick=()=>{
+  shade.querySelectorAll("[data-search-menu]").forEach(b=>b.onclick=async()=>{
     const mode=b.dataset.searchMenu;
     closeSearchMenu();
     if(mode==="clear"){
       state.searchResults=null;state.searchQuery="";state.searchMode="posts";searchView();
+    }else if(mode==="followingOnly"){
+      const next=!searchFollowingOnlyEnabled();
+      store.set(scopedKey("search_following_only"),next);
+      if(next){
+        try{await ensureSearchFollowingIds()}catch(e){toast(e.message)}
+      }
+      renderSearchResults();
     }else setSearchMode(mode);
   });
 }
 async function searchView(){
   const q=state.searchQuery||"";
   $("#app").innerHTML=shell("검색",'<div class="search-box"><input id="searchInput" class="field" placeholder="사람, 게시물, 해시태그 검색" value="'+esc(q)+'"><button class="primary" data-action="runsearch">검색</button></div><div id="searchResults" class="'+(state.searchResults?"":"center")+'"></div>');
-  bind();renderSearchResults();
+  bind();
+  if(searchFollowingOnlyEnabled()&&!(state.searchFollowingIds instanceof Set)){
+    ensureSearchFollowingIds().then(renderSearchResults).catch(()=>renderSearchResults());
+  }else renderSearchResults();
 }
 async function runSearch(){
   const q=$("#searchInput")?.value.trim(); if(!q)return;
   const box=$("#searchResults"); box.className="center"; box.textContent="검색 중…";
   try{
-    const r=await api("/api/v2/search",{query:{q,resolve:"true",limit:"40"}});
+    const [r]=await Promise.all([
+      api("/api/v2/search",{query:{q,resolve:"true",limit:"40"}}),
+      searchFollowingOnlyEnabled()?ensureSearchFollowingIds():Promise.resolve(null)
+    ]);
     state.searchQuery=q;state.searchResults=r||{accounts:[],statuses:[],hashtags:[]};
     if(!["posts","people","media"].includes(state.searchMode))state.searchMode="posts";
     renderSearchResults();
