@@ -739,9 +739,19 @@ function recentMentionStatus(raw,days=30){
   const t=statusCreatedAtMs(raw);
   return !!t&&t>=Date.now()-days*86400000;
 }
+function settleWithin(promise,ms,fallback){
+  return Promise.race([
+    Promise.resolve(promise).catch(()=>fallback),
+    new Promise(resolve=>setTimeout(()=>resolve(fallback),ms))
+  ]);
+}
 async function loadRecentMentionStatuses(){
   try{
-    const notes=await api("/api/v1/notifications",{query:{limit:"80","types[]":"mention"}});
+    const notes=await settleWithin(
+      api("/api/v1/notifications",{query:{limit:"80","types[]":"mention"}}),
+      3500,
+      []
+    );
     const out=[];
     for(const n of Array.isArray(notes)?notes:[]){
       const st=n?.status;
@@ -750,25 +760,41 @@ async function loadRecentMentionStatuses(){
     return out;
   }catch{return[]}
 }
-async function loadChronologicalHome({maxId="",limit=40,maxScans=3}={}){
+async function loadChronologicalHome({maxId="",limit=40,maxScans=1,includeMentions=true}={}){
   let cursor=maxId||"",homeItems=[];
   const scans=Math.max(1,Number(maxScans)||1);
   for(let scan=0;scan<scans;scan++){
     const query={limit:String(limit)};
     if(cursor)query.max_id=cursor;
-    const page=await api("/api/v1/timelines/home",{query}).catch(()=>[]);
+    const page=await settleWithin(
+      api("/api/v1/timelines/home",{query}),
+      5000,
+      []
+    );
     if(!Array.isArray(page)||!page.length)break;
     homeItems=mergeNewestTimeline(page.filter(nonDirect),homeItems,160);
     const next=String(page[page.length-1]?.id||"");
     if(!next||next===cursor||page.length<Number(limit))break;
     cursor=next;
   }
-  const mentions=maxId?[]:await loadRecentMentionStatuses();
+  const mentions=(!maxId&&includeMentions)?await loadRecentMentionStatuses():[];
   return mergeNewestTimeline(
     homeItems,
     (Array.isArray(mentions)?mentions:[]).filter(nonDirect),
     160
   );
+}
+async function expandHomeTimelineInBackground(){
+  if(state.homeBackgroundFillPromise)return state.homeBackgroundFillPromise;
+  state.homeBackgroundFillPromise=(async()=>{
+    const items=await loadChronologicalHome({limit:40,maxScans:3,includeMentions:true});
+    if(!items.length)return;
+    const pub=publicFromHome(items);
+    updateHomeTimelinePage(items,{preserveScroll:true});
+    updatePublicTimelinePage(pub,{preserveScroll:true});
+    state.publicFilledAt=Date.now();
+  })().finally(()=>{state.homeBackgroundFillPromise=null});
+  return state.homeBackgroundFillPromise;
 }
 function publicHomeStatus(raw){
   if(!raw||!nonDirect(raw))return false;
@@ -849,11 +875,15 @@ function updatePublicTimelinePage(items,{preserveScroll=true}={}){
 async function refreshHomeIncremental(){
   if(state.homeRefreshPromise)return state.homeRefreshPromise;
   state.homeRefreshPromise=(async()=>{
-    const items=await loadChronologicalHome({limit:40,maxScans:3});
-    const pub=publicFromHome(items);
-    updateHomeTimelinePage(items,{preserveScroll:true});
-    updatePublicTimelinePage(pub,{preserveScroll:true});
-    state.publicFilledAt=Date.now();
+    // 새로고침은 첫 페이지를 먼저 빠르게 보여주고, 나머지는 뒤에서 보강한다.
+    const items=await loadChronologicalHome({limit:40,maxScans:1,includeMentions:false});
+    if(items.length){
+      const pub=publicFromHome(items);
+      updateHomeTimelinePage(items,{preserveScroll:true});
+      updatePublicTimelinePage(pub,{preserveScroll:true});
+      state.publicFilledAt=Date.now();
+    }
+    setTimeout(()=>expandHomeTimelineInBackground().catch(()=>{}),0);
     return items;
   })().finally(()=>{state.homeRefreshPromise=null});
   return state.homeRefreshPromise;
@@ -977,16 +1007,20 @@ async function homeView({silent=false,forceFresh=false}={}){
     }
 
     if(!cached){
-      const home=await loadChronologicalHome({limit:40,maxScans:3});
+      const home=await loadChronologicalHome({limit:40,maxScans:1,includeMentions:false});
       const data={home,public:publicFromHome(home)};
       renderHomePagerData(data);
       homeSnapshotWrite(data);
       state.publicFilledAt=Date.now();
-    }else if(state.homeMode==="public"){
-      const derived=publicFromHome(cached.home);
-      if((cached.public||[]).length!==derived.length){
-        updatePublicTimelinePage(derived,{preserveScroll:true});
+      setTimeout(()=>expandHomeTimelineInBackground().catch(()=>{}),0);
+    }else{
+      if(state.homeMode==="public"){
+        const derived=publicFromHome(cached.home);
+        if((cached.public||[]).length!==derived.length){
+          updatePublicTimelinePage(derived,{preserveScroll:true});
+        }
       }
+      setTimeout(()=>expandHomeTimelineInBackground().catch(()=>{}),0);
     }
   }catch(e){
     if(!state.homePagerData?.home?.length){
