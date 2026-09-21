@@ -1668,8 +1668,8 @@ function accentTextColor(){
   const r=parseInt(h.slice(0,2),16)||0,g=parseInt(h.slice(2,4),16)||0,b=parseInt(h.slice(4,6),16)||0;
   return ((r*299+g*587+b*114)/1000)>=160?"#000":"#fff";
 }
-function standaloneShell(title,body,right=""){
-  return `<div class="standalone-page"><header class="standalone-top"><button class="back" data-action="backScreen" aria-label="뒤로가기">${lentonIcon("back")}</button><h1>${esc(title)}</h1>${right}</header><main class="main">${body}</main></div>`;
+function standaloneShell(title,body,right="",backAction="backScreen"){
+  return `<div class="standalone-page"><header class="standalone-top"><button class="back" data-action="${esc(backAction)}" aria-label="뒤로가기">${lentonIcon("back")}</button><h1>${esc(title)}</h1>${right}</header><main class="main">${body}</main></div>`;
 }
 function normalizeProfileMode(mode){return ["posts","replies","pinned","media"].includes(mode)?mode:"posts"}
 function profileQuery(mode){
@@ -2598,7 +2598,7 @@ async function checkPwaUpdate(){
     const body='<div class="settings pwa-release-screen"><div class="section current-release">'+
       '<div class="update-head"><b>PWA '+esc(pwaRevisionLabel(remote))+'</b><span>현재 최신 빌드</span></div>'+
       '</div><div class="section pwa-changelog-list">'+pwaChangelogMarkup(entries,{latestOnly:true})+'</div></div>';
-    $("#app").innerHTML=standaloneShell("업데이트 확인",body);bind();
+    $("#app").innerHTML=standaloneShell("업데이트 확인",body,"","backToUpdateHistory");bind();
   }catch(e){toast(e.message||"업데이트 확인에 실패했어요.")}
 }
 async function updateHistoryScreen(){
@@ -3830,6 +3830,11 @@ function bind(){
     else if(a==="compose")compose()
     else if(a==="newdm"){pushNavSnapshot();newDmScreen()}
     else if(a==="backScreen"||a==="backMain")goBackScreen()
+    else if(a==="backToUpdateHistory"){
+      const last=state.navStack[state.navStack.length-1];
+      if(last?.html?.includes("update-settings-screen"))state.navStack.pop();
+      updateHistoryScreen();
+    }
     else if(a==="accountManager"){pushNavSnapshot();accountManagerScreen()}
     else if(a==="accountSettings"){pushNavSnapshot();accountSettingsScreen()}
     else if(a==="accountNotificationSettings"){pushNavSnapshot();accountNotificationSettingsScreen()}
