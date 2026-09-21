@@ -1327,14 +1327,35 @@ function showForegroundPushBanner(payload={}){
 }
 
 async function notificationsView(mentionsOnly=false,silent=false){
+  const continuingSession=!!document.querySelector(".lenton-view-notifications .lenton-notify-tabs");
   if(!silent)renderLoadingShell("알림");
   try{
     const query={limit:"40"};if(mentionsOnly)query["types[]"]="mention";
-    let items=await api("/api/v1/notifications",{query});
-    const rawItems=items||[];
-    if(!mentionsOnly&&rawItems?.[0]?.id)await markNotificationsRead(rawItems[0].id);
+    const [loaded,serverMarker]=await Promise.all([
+      api("/api/v1/notifications",{query}),
+      serverNotificationReadId().catch(()=>"")
+    ]);
+    const rawItems=loaded||[];
     const filter=notificationFilterPrefs();
-    items=rawItems.filter(n=>n?.status?.visibility!=="direct"&&(mentionsOnly?n.type==="mention":filter[n.type]!==false));
+    const markerBefore=String(serverMarker||localNotificationReadId()||"");
+    const unreadIds=new Set();
+    if(markerBefore){
+      for(const n of rawItems){
+        if(String(n?.id||"")===markerBefore)break;
+        if(n?.status?.visibility==="direct")continue;
+        if(!mentionsOnly&&filter[n?.type]===false)continue;
+        unreadIds.add(String(n?.id||""));
+      }
+    }
+    if(!continuingSession||!(state.notificationNewIds instanceof Set)){
+      state.notificationNewIds=unreadIds;
+    }else{
+      for(const id of unreadIds)state.notificationNewIds.add(id);
+    }
+
+    if(!mentionsOnly&&rawItems?.[0]?.id)await markNotificationsRead(rawItems[0].id);
+
+    const items=rawItems.filter(n=>n?.status?.visibility!=="direct"&&(mentionsOnly?n.type==="mention":filter[n.type]!==false));
     const tabLabels=ANDROID?.renderer?.notificationTabs||["전체","멘션"];
     const tabs='<div class="notify-tabs lenton-notify-tabs"><button data-notify="all" class="'+(mentionsOnly?"":"active")+'">'+esc(tabLabels[0]||"전체")+'</button><button data-notify="mention" class="'+(mentionsOnly?"active":"")+'">'+esc(tabLabels[1]||"멘션")+'</button></div>';
     const labels=ANDROID?.renderer?.notificationLabels||{};
@@ -1345,10 +1366,11 @@ async function notificationsView(mentionsOnly=false,silent=false){
       const label=labels[type]||type||"새 알림",glyph=glyphs[type]||glyphs.default||"♢";
       const body=st?'<div class="notify-content">'+renderRichText(st.content||"")+'</div>':"";
       const tone=type==="mention"?"notify-mention":type==="status"?"notify-passive":"notify-neutral";
-      return '<article class="android-notify-card '+tone+' '+(st?"has-status":"")+'" '+(st?'data-notify-status="'+esc(st.id||"")+'"':"")+'>'+
+      const isNew=state.notificationNewIds instanceof Set&&state.notificationNewIds.has(String(n?.id||""));
+      return '<article class="android-notify-card '+tone+' '+(isNew?"is-new ":"")+(st?"has-status":"")+'" '+(st?'data-notify-status="'+esc(st.id||"")+'"':"")+'>'+
         '<div class="android-notify-glyph '+(colors[type]||"default")+'">'+esc(glyph)+'</div>'+
         '<div class="android-notify-main">'+
-          '<div class="android-notify-person"><button type="button" class="android-notify-avatar" data-profile="'+esc(a.id||"")+'" aria-label="프로필 열기"><img src="'+esc(a.avatar_static||a.avatar||"")+'" alt=""></button><b>'+renderEmojiText(a.display_name||a.username||"알림",a.emojis||[])+' · '+esc(label)+'</b></div>'+
+          '<div class="android-notify-person"><button type="button" class="android-notify-avatar" data-profile="'+esc(a.id||"")+'" aria-label="프로필 열기"><img src="'+esc(a.avatar_static||a.avatar||"")+'" alt=""></button><b>'+renderEmojiText(a.display_name||a.username||"알림",a.emojis||[])+' · '+esc(label)+'</b>'+(isNew?'<span class="notify-new-dot" aria-label="새 알림"></span>':"")+'</div>'+
           body+
         '</div></article>';
     }).join(""):'<div class="center">새 알림이 없어요.</div>';
