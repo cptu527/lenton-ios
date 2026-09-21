@@ -2159,16 +2159,18 @@ async function listMemberAddScreen(id){
   $("#app").innerHTML=standaloneShell("멤버 추가",'<div class="center">팔로잉 목록을 불러오는 중…</div>');bind();
   try{
     if(!state.me)state.me=await api("/api/v1/accounts/verify_credentials");
-    const [list,members,followingRaw]=await Promise.all([
+    const cacheKey=scopedKey("following_cache_v1"),cached=store.get(cacheKey,null);
+    const firstFollowingPromise=api("/api/v1/accounts/"+encodeURIComponent(state.me.id)+"/following",{query:{limit:"80"}}).catch(()=>[]);
+    const [list,members]=await Promise.all([
       api(`/api/v1/lists/${id}`),
-      api(`/api/v1/lists/${id}/accounts`,{query:{limit:"80"}}),
-      loadAllFollowing({fresh:true})
+      api(`/api/v1/lists/${id}/accounts`,{query:{limit:"80"}})
     ]);
     const existing=new Set((members||[]).map(a=>String(a.id||"")).filter(Boolean));
     const mine=String(state.me?.id||"");
-    const following=(followingRaw||[]).filter(a=>a?.id&&String(a.id)!==mine&&!existing.has(String(a.id)));
+    const eligible=items=>(items||[]).filter(a=>a?.id&&String(a.id)!==mine&&!existing.has(String(a.id)));
+    let following=eligible(Array.isArray(cached?.items)?cached.items:[]);
     const selected=new Map();
-    let shown=[...following];
+    let shown=[...following],loadingMore=true;
 
     const body=`<div class="list-member-add-page list-member-add-multi">
       <div class="list-member-add-note"><b>${esc(list.title||"리스트")}</b><span>팔로우 중인 계정을 여러 명 선택한 뒤 한 번에 추가할 수 있어요.</span></div>
@@ -2176,17 +2178,24 @@ async function listMemberAddScreen(id){
         <input id="listMemberSearchInput" class="field" type="search" inputmode="search" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="이름 또는 @아이디로 필터">
       </div>
       <div id="listMemberSelected" class="dm-selected dm-selected-lenton"></div>
-      <div class="list-member-list-heading" id="listMemberListHeading">팔로잉</div>
-      <div id="listMemberSearchResults" class="dm-results dm-results-lenton"></div>
-      <div class="list-member-add-dock"><button type="button" class="primary list-member-confirm" id="listMemberConfirm" disabled>선택한 멤버 추가</button></div>
+      <div class="list-member-list-heading">
+        <span id="listMemberListHeading">팔로잉</span>
+        <button type="button" class="primary list-member-confirm" id="listMemberConfirm" disabled>추가</button>
+      </div>
+      <div id="listMemberSearchResults" class="dm-results dm-results-lenton">${following.length?"":'<div class="center">팔로잉 목록을 불러오는 중…</div>'}</div>
     </div>`;
     $("#app").innerHTML=standaloneShell("멤버 추가",body);bind();
 
     const input=$("#listMemberSearchInput"),results=$("#listMemberSearchResults"),heading=$("#listMemberListHeading"),selectedBox=$("#listMemberSelected"),confirm=$("#listMemberConfirm");
+    const updateHeading=q=>{
+      if(!heading)return;
+      const base=q?"검색 결과":"팔로잉";
+      heading.textContent=loadingMore?base+" · 불러오는 중…":base;
+    };
     const updateConfirm=()=>{
       if(!confirm)return;
       confirm.disabled=selected.size===0;
-      confirm.textContent=selected.size?selected.size+"명 추가":"선택한 멤버 추가";
+      confirm.textContent=selected.size?selected.size+"명 추가":"추가";
     };
     const drawSelected=()=>{
       if(!selectedBox)return;
@@ -2212,7 +2221,7 @@ async function listMemberAddScreen(id){
           <span class="dm-person-copy"><b>${renderEmojiText(a.display_name||a.username||a.acct||"",a.emojis||[])}</b><small>@${esc(a.acct||"")}</small></span>
           <span class="dm-person-plus" aria-hidden="true">${picked?"✓":"＋"}</span>
         </button>`;
-      }).join(""):'<div class="center dm-empty-results">추가할 수 있는 팔로우 계정이 없어요.</div>';
+      }).join(""):(loadingMore?'<div class="center">팔로잉 목록을 불러오는 중…</div>':'<div class="center dm-empty-results">추가할 수 있는 팔로우 계정이 없어요.</div>');
       results.querySelectorAll("[data-list-member-toggle]").forEach(b=>b.onclick=()=>{
         const a=shown.find(x=>String(x.id)===String(b.dataset.listMemberToggle));if(!a)return;
         const key=String(a.id);
@@ -2222,12 +2231,8 @@ async function listMemberAddScreen(id){
     };
     const filterRows=()=>{
       const q=String(input?.value||"").trim().toLocaleLowerCase();
-      if(!q){
-        if(heading)heading.textContent="팔로잉";
-        renderRows(following);
-        return;
-      }
-      if(heading)heading.textContent="검색 결과";
+      updateHeading(q);
+      if(!q){renderRows(following);return}
       renderRows(following.filter(a=>{
         const name=String(a.display_name||"").toLocaleLowerCase();
         const username=String(a.username||"").toLocaleLowerCase();
@@ -2250,8 +2255,35 @@ async function listMemberAddScreen(id){
         confirm.disabled=false;updateConfirm();toast("멤버 추가 실패: "+e.message);
       }
     };
+
     drawSelected();
-    renderRows(following);
+    if(following.length)filterRows();
+
+    const first=eligible(await firstFollowingPromise);
+    if(!results.isConnected)return;
+    following=first;
+    loadingMore=first.length>=80;
+    filterRows();
+    if(first.length<80){
+      loadingMore=false;
+      store.set(cacheKey,{at:Date.now(),items:first});
+      filterRows();
+      return;
+    }
+
+    setTimeout(async()=>{
+      try{
+        const all=eligible(await loadAllFollowing({fresh:true}));
+        if(!results.isConnected)return;
+        following=all;
+        loadingMore=false;
+        filterRows();
+      }catch{
+        if(!results.isConnected)return;
+        loadingMore=false;
+        filterRows();
+      }
+    },0);
   }catch(e){
     $("#app").innerHTML=standaloneShell("멤버 추가",'<div class="center">'+esc(e.message)+'</div>');bind();
   }
