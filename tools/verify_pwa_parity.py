@@ -52,8 +52,13 @@ if 'data-drawer="profile"' not in app or "drawer-profile-avatar-button" not in a
     fail.append("drawer profile identity is not clickable")
 if features.get("dmPreviousConversation") and "data-dm-previous" not in app:
     fail.append("DM previous conversation is not wired")
-if "showCurrentReleaseNotes" in app and "build?.notes" not in app:
-    fail.append("update details must use current release notes only")
+if "showCurrentReleaseNotes" in app:
+    pwa_owned_updates=("loadPwaChangelog" in app and "PWA 업데이트 내역" in app)
+    if pwa_owned_updates:
+        if "build?.notes" in app or "remote?.notes" in app:
+            fail.append("PWA update details must not use Android release notes")
+    elif "build?.notes" not in app:
+        fail.append("update details must use current release notes only")
 
 renderer=spec.get("renderer") or {}
 compose=renderer.get("compose") or {}
