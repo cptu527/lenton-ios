@@ -2787,9 +2787,10 @@ async function openThread(id,showAllAncestors=false){
     const nodes=[...visibleAnc,st,...desc],allNodes=[...ancestors,st,...desc];
     const body=older+nodes.map((raw,i)=>{
       const cur=raw.reblog||raw,idNow=String(cur.id||""),parentId=String(cur.in_reply_to_id||"");
-      const earlierIds=new Set(nodes.slice(0,i).map(statusId).filter(Boolean).map(String));
-      const connectTop=!!parentId&&earlierIds.has(parentId);
-      const connectBottom=nodes.slice(i+1).some(x=>String((x.reblog||x)?.in_reply_to_id||"")===idNow);
+      const prev=nodes[i-1]?.reblog||nodes[i-1]||null,next=nodes[i+1]?.reblog||nodes[i+1]||null;
+      const prevId=String(prev?.id||""),nextParentId=String(next?.in_reply_to_id||"");
+      const connectTop=!!parentId&&parentId===prevId;
+      const connectBottom=!!idNow&&nextParentId===idNow;
       const derivedReplies=allNodes.filter(x=>String((x.reblog||x)?.in_reply_to_id||"")===idNow).length;
       const replyCountOverride=Math.max(Number(cur.replies_count||0),derivedReplies);
       return threadStatusCard(raw,{connectTop,connectBottom,current:idNow===String(st.id||""),replyCountOverride});
