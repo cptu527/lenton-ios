@@ -874,16 +874,16 @@ async function loadPublicFollowingAccounts({fresh=false}={}){
   store.set(key,{at:Date.now(),items});
   return items;
 }
-async function ensurePublicTimelineFilled(){
+async function ensurePublicTimelineFilled({fresh=false,forceFullScan=false}={}){
   if(state.publicFillPromise)return state.publicFillPromise;
   state.publicFillPromise=(async()=>{
     const cfg=ANDROID?.timeline?.public||{},target=Math.max(10,Number(cfg.targetInitialItems)||30);
     const base=state.homePagerData||{home:[],public:[]};
 
-    // Public must always start from CURRENT home data, not a stale snapshot.
-    // This catches newly-posted followed-account originals immediately.
+    // Public refresh must use current server data. A forced refresh also
+    // refreshes the following list so newly-followed accounts are included.
     const freshHomePromise=api("/api/v1/timelines/home",{query:{limit:"40"}}).catch(()=>[]);
-    const followingPromise=loadPublicFollowingAccounts();
+    const followingPromise=loadPublicFollowingAccounts({fresh});
     const [freshHome,following]=await Promise.all([freshHomePromise,followingPromise]);
     const allowed=new Set((following||[]).map(x=>String(x?.id||"")).filter(Boolean));
     const eligible=raw=>allowed.has(String(raw?.account?.id||""))&&lentonPublicStatus(raw);
@@ -903,7 +903,7 @@ async function ensurePublicTimelineFilled(){
 
     // If the fresh home page already filled the target, stop here. Otherwise
     // supplement from every followed account, progressively.
-    if(collected.length>=target){state.publicFilledAt=Date.now();return collected}
+    if(collected.length>=target&&!forceFullScan){state.publicFilledAt=Date.now();return collected}
     const maxAccounts=following.length,batchSize=10;
     for(let i=0;i<maxAccounts;i+=batchSize){
       const batch=following.slice(i,i+batchSize);
@@ -926,6 +926,17 @@ async function ensurePublicTimelineFilled(){
   })().finally(()=>{state.publicFillPromise=null});
   return state.publicFillPromise;
 }
+async function refreshPublicTimeline(){
+  // If an on-demand fill is already running, let it finish first, then run a
+  // real forced refresh so the user's gesture is never swallowed by deduping.
+  if(state.publicFillPromise){
+    try{await state.publicFillPromise}catch{}
+  }
+  state.publicFilledAt=0;
+  try{await refreshHomeIncremental()}catch{}
+  return ensurePublicTimelineFilled({fresh:true,forceFullScan:true});
+}
+
 async function refreshHomeIncremental(){
   if(state.homeRefreshPromise)return state.homeRefreshPromise;
   state.homeRefreshPromise=(async()=>{
@@ -3763,7 +3774,10 @@ function attachHomePullToRefresh(){
     main.style.transition="transform 160ms ease";main.style.transform="translate3d(0,0,0)";
     if(should){
       if(indicator)indicator.classList.add("loading");
-      try{await homeView({silent:true,forceFresh:true})}finally{setTimeout(cleanup,120)}
+      try{
+        if(state.homeMode==="public"&&!state.listId)await refreshPublicTimeline();
+        else await homeView({silent:true,forceFresh:true});
+      }finally{setTimeout(cleanup,120)}
     }else setTimeout(cleanup,170);
   },{passive:true});
   main.addEventListener("touchcancel",cleanup,{passive:true});
@@ -3805,7 +3819,10 @@ function bind(){
     if(target==="home"&&wasCurrent){
       state.listId=null;
       window.scrollTo({top:0,left:0,behavior:"auto"});
-      setTimeout(()=>homeView({silent:true,forceFresh:true}),0);
+      setTimeout(()=>{
+        if(state.homeMode==="public")refreshPublicTimeline().catch(()=>{});
+        else homeView({silent:true,forceFresh:true});
+      },0);
       return;
     }
     state.view=target;state.listId=null;
