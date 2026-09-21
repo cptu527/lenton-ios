@@ -2692,8 +2692,32 @@ async function statusAction(id,kind){
     toast(e.message);
   }
 }
-function closeStatusPopup(){document.querySelector(".android-popup-shade.status-popup")?.remove()}
-async function openStatusMenu(id){
+function closeStatusPopup(){
+  const shade=document.querySelector(".android-popup-shade.status-popup");
+  if(!shade)return;
+  try{shade._lentonCleanup?.()}catch{}
+  shade.remove();
+}
+function positionStatusPopup(shade,anchor){
+  const popup=shade?.querySelector(".android-popup");
+  if(!popup||!anchor?.getBoundingClientRect)return;
+  const rect=anchor.getBoundingClientRect(),vv=window.visualViewport;
+  const viewLeft=Number(vv?.offsetLeft||0),viewTop=Number(vv?.offsetTop||0);
+  const viewWidth=Number(vv?.width||window.innerWidth||document.documentElement.clientWidth||0);
+  const viewHeight=Number(vv?.height||window.innerHeight||document.documentElement.clientHeight||0);
+  const gap=6,edge=8,pw=popup.offsetWidth||210,ph=popup.offsetHeight||0;
+  const viewRight=viewLeft+viewWidth,viewBottom=viewTop+viewHeight;
+  let left=rect.right-pw;
+  left=Math.max(viewLeft+edge,Math.min(left,viewRight-pw-edge));
+  const below=rect.bottom+gap,above=rect.top-ph-gap;
+  const top=below+ph<=viewBottom-edge?below:Math.max(viewTop+edge,above);
+  popup.style.position="fixed";
+  popup.style.left=Math.round(left)+"px";
+  popup.style.right="auto";
+  popup.style.top=Math.round(top)+"px";
+  popup.style.transform="none";
+}
+async function openStatusMenu(id,anchor){
   closeStatusPopup();
   try{
     const st=await api(`/api/v1/statuses/${id}`);
@@ -2716,6 +2740,19 @@ async function openStatusMenu(id){
     ];
     shade.innerHTML=`<div class="android-popup">${items.map(x=>`<button data-status-menu="${x[0]}">${esc(x[1])}</button>`).join("")}</div>`;
     document.body.append(shade);
+    positionStatusPopup(shade,anchor);
+    const closeOnScroll=()=>closeStatusPopup();
+    const closeOnViewportChange=()=>closeStatusPopup();
+    window.addEventListener("scroll",closeOnScroll,{passive:true,capture:true});
+    document.addEventListener("scroll",closeOnScroll,{passive:true,capture:true});
+    window.visualViewport?.addEventListener("scroll",closeOnViewportChange,{passive:true});
+    window.visualViewport?.addEventListener("resize",closeOnViewportChange,{passive:true});
+    shade._lentonCleanup=()=>{
+      window.removeEventListener("scroll",closeOnScroll,true);
+      document.removeEventListener("scroll",closeOnScroll,true);
+      window.visualViewport?.removeEventListener("scroll",closeOnViewportChange);
+      window.visualViewport?.removeEventListener("resize",closeOnViewportChange);
+    };
     shade.onclick=e=>{if(e.target===shade)closeStatusPopup()};
     shade.querySelectorAll("[data-status-menu]").forEach(b=>b.onclick=async()=>{
       const action=b.dataset.statusMenu;closeStatusPopup();
@@ -3502,7 +3539,7 @@ function bind(){
     else if(a==="topmenu")openDrawer()
     else if(a==="notificationMenu")openNotificationMenu()
     else if(a==="searchMenu")openSearchMenu()
-    else if(a==="statusmenu")openStatusMenu(b.dataset.id)
+    else if(a==="statusmenu")openStatusMenu(b.dataset.id,b)
     else if(a==="newlist")newList()
     else if(a==="resetLayout")resetMainTabLayout()
     else if(a==="loadmorehome"){const m=b.dataset.homeLoadMode;if(m&&homeModes().includes(m))setHomePagerMode(m,false);loadMoreHome()}
