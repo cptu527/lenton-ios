@@ -782,26 +782,33 @@ async function loadHomeFeed({maxId="",limit=40,maxScans=1}={}){
 async function loadChronologicalHome(opts={}){
   return loadHomeFeed(opts);
 }
-function mastodonHomeRepliesOffStatus(raw){
+function publicHomeStatus(raw){
   if(!raw||!nonDirect(raw))return false;
-  const meId=String(state.me?.id||"");
-  const authorId=String(raw?.account?.id||"");
-
-  // Mastodon web's actual Home "Show replies = off" behavior:
-  // 1) my own statuses always stay visible
-  // 2) a reply stays visible only when it replies to me
-  // 3) all other replies are hidden
-  if(meId&&authorId===meId)return true;
-
   const replyId=raw?.in_reply_to_id;
-  const isReply=replyId!==null&&replyId!==undefined&&String(replyId)!=="";
-  if(!isReply)return true;
-
-  const replyToAccount=String(raw?.in_reply_to_account_id||"");
-  return !!meId&&replyToAccount===meId;
+  return replyId===null||replyId===undefined||String(replyId)==="";
 }
 function publicFromHome(items=[]){
-  return (Array.isArray(items)?items:[]).filter(mastodonHomeRepliesOffStatus);
+  // 퍼블릭 = 시간순 홈 원본 그대로 + 실제 답글만 전부 숨김.
+  // 작성자/멘션 대상/공개글 여부에는 예외를 두지 않는다.
+  return (Array.isArray(items)?items:[]).filter(publicHomeStatus);
+}
+async function loadPublicFromHome({maxId="",limit=40,maxScans=8,target=40}={}){
+  let cursor=maxId||"",items=[];
+  const scans=Math.max(1,Number(maxScans)||1);
+  for(let scan=0;scan<scans&&items.length<target;scan++){
+    const query={limit:String(limit)};
+    if(cursor)query.max_id=cursor;
+    const page=scan===0
+      ? await api("/api/v1/timelines/home",{query})
+      : await settleWithin(api("/api/v1/timelines/home",{query}),8000,[]);
+    if(!Array.isArray(page)||!page.length)break;
+    const visible=page.filter(publicHomeStatus);
+    items=mergeNewestTimeline(visible,items,160);
+    const next=String(page[page.length-1]?.id||"");
+    if(!next||next===cursor||page.length<Number(limit))break;
+    cursor=next;
+  }
+  return items;
 }
 async function expandHomeTimelineInBackground(){
   if(state.homeBackgroundFillPromise)return state.homeBackgroundFillPromise;
@@ -811,14 +818,22 @@ async function expandHomeTimelineInBackground(){
     const current=state.homePagerData?.home||[];
     const merged=mergeNewestTimeline(items,current,160);
     updateHomeTimelinePage(merged,{preserveScroll:true});
-    updatePublicTimelinePage(publicFromHome(merged),{preserveScroll:true});
-    state.publicFilledAt=Date.now();
   })().finally(()=>{state.homeBackgroundFillPromise=null});
   return state.homeBackgroundFillPromise;
 }
+async function expandPublicTimelineInBackground(){
+  if(state.publicBackgroundFillPromise)return state.publicBackgroundFillPromise;
+  state.publicBackgroundFillPromise=(async()=>{
+    const items=await loadPublicFromHome({limit:40,maxScans:8,target:40});
+    if(!items.length)return;
+    updatePublicTimelinePage(items,{preserveScroll:true});
+    state.publicFilledAt=Date.now();
+  })().finally(()=>{state.publicBackgroundFillPromise=null});
+  return state.publicBackgroundFillPromise;
+}
 
 function homeSnapshotRead(){
-  const snap=store.get(scopedKey("home_snapshot_v13"),null);
+  const snap=store.get(scopedKey("home_snapshot_v14"),null);
   if(!snap?.at||Date.now()-Number(snap.at)>10*60*1000)return null;
   const data=snap.data;
   return data&&Array.isArray(data.home)&&Array.isArray(data.public)?data:null;
@@ -826,7 +841,7 @@ function homeSnapshotRead(){
 function homeSnapshotWrite(data){
   try{
     if(data&&Array.isArray(data.home)&&Array.isArray(data.public)){
-      store.set(scopedKey("home_snapshot_v13"),{at:Date.now(),data});
+      store.set(scopedKey("home_snapshot_v14"),{at:Date.now(),data});
     }
   }catch{}
 }
@@ -884,29 +899,26 @@ async function refreshHomeIncremental(){
   if(state.homeRefreshPromise)return state.homeRefreshPromise;
   state.homeRefreshPromise=(async()=>{
     const items=await loadChronologicalHome({limit:40,maxScans:1});
-    if(items.length){
-      updateHomeTimelinePage(items,{preserveScroll:true});
-      updatePublicTimelinePage(publicFromHome(items),{preserveScroll:true});
-      state.publicFilledAt=Date.now();
-    }
+    if(items.length)updateHomeTimelinePage(items,{preserveScroll:true});
     setTimeout(()=>expandHomeTimelineInBackground().catch(()=>{}),0);
     return items;
   })().finally(()=>{state.homeRefreshPromise=null});
   return state.homeRefreshPromise;
 }
 async function ensurePublicTimelineFilled({fresh=false}={}){
-  if(fresh||!state.homePagerData?.home?.length){
-    await refreshHomeIncremental();
-  }else{
-    updatePublicTimelinePage(publicFromHome(state.homePagerData.home),{preserveScroll:true});
-    state.publicFilledAt=Date.now();
-  }
-  return state.homePagerData?.public||[];
+  const stale=!state.publicFilledAt||Date.now()-Number(state.publicFilledAt)>60000;
+  if(!fresh&&!stale&&(state.homePagerData?.public||[]).length>=20)return state.homePagerData.public;
+  return refreshPublicTimeline();
 }
 async function refreshPublicTimeline(){
-  state.publicFilledAt=0;
-  await refreshHomeIncremental();
-  return state.homePagerData?.public||[];
+  if(state.publicRefreshPromise)return state.publicRefreshPromise;
+  state.publicRefreshPromise=(async()=>{
+    const items=await loadPublicFromHome({limit:40,maxScans:8,target:40});
+    updatePublicTimelinePage(items,{preserveScroll:true});
+    state.publicFilledAt=Date.now();
+    return items;
+  })().finally(()=>{state.publicRefreshPromise=null});
+  return state.publicRefreshPromise;
 }
 async function refreshHomeAfterPost(){
   try{await refreshHomeIncremental()}catch{}
@@ -976,10 +988,11 @@ function setHomePagerMode(mode,animate=true){
   state.timelineItems=state.homePagerData?.[mode]||[];
   syncHomePagerUi(mode,animate);
   if(mode==="public"&&changed){
-    const pub=publicFromHome(state.homePagerData?.home||[]);
-    state.homePagerData.public=pub;
-    state.timelineItems=pub;
-    updatePublicTimelinePage(pub,{preserveScroll:true});
+    const immediate=publicFromHome(state.homePagerData?.home||[]);
+    state.homePagerData.public=immediate;
+    state.timelineItems=immediate;
+    updatePublicTimelinePage(immediate,{preserveScroll:true});
+    setTimeout(()=>expandPublicTimelineInBackground().catch(()=>{}),0);
   }
 }
 async function homeView({silent=false,forceFresh=false}={}){
@@ -1017,14 +1030,15 @@ async function homeView({silent=false,forceFresh=false}={}){
       const data={home,public:publicFromHome(home)};
       renderHomePagerData(data);
       homeSnapshotWrite(data);
-      state.publicFilledAt=Date.now();
       setTimeout(()=>expandHomeTimelineInBackground().catch(()=>{}),0);
+      setTimeout(()=>expandPublicTimelineInBackground().catch(()=>{}),0);
     }else{
       const derived=publicFromHome(cached.home);
-      if((cached.public||[]).map(statusId).join(",")!==derived.map(statusId).join(",")){
+      if(!(cached.public||[]).length){
         updatePublicTimelinePage(derived,{preserveScroll:true});
       }
       setTimeout(()=>expandHomeTimelineInBackground().catch(()=>{}),0);
+      setTimeout(()=>expandPublicTimelineInBackground().catch(()=>{}),0);
     }
   }catch(e){
     if(!state.homePagerData?.home?.length){
@@ -1049,8 +1063,7 @@ async function loadMoreHome(){
     if(state.listId){
       more=await api(`/api/v1/timelines/list/${state.listId}`,{query:{limit:"40",max_id:maxId}});
     }else if(state.homeMode==="public"){
-      const olderHome=await loadChronologicalHome({maxId,limit:40,maxScans:2});
-      more=publicFromHome(olderHome);
+      more=await loadPublicFromHome({maxId,limit:40,maxScans:8,target:40});
     }else{
       more=await loadChronologicalHome({maxId,limit:40,maxScans:2});
     }
