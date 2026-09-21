@@ -785,8 +785,17 @@ async function loadHomeFeed({maxId="",limit=40,maxScans=1,excludeReplies=false}=
 async function loadChronologicalHome(opts={}){
   return loadHomeFeed({...opts,excludeReplies:false});
 }
+function isActualReply(raw){
+  const st=raw?.reblog||raw;
+  if(!st)return false;
+  const reply=st.in_reply_to_id;
+  return reply!==null&&reply!==undefined&&String(reply)!=="";
+}
 async function loadPublicHome(opts={}){
-  return loadHomeFeed({...opts,excludeReplies:true});
+  // 서버에 exclude_replies=true를 요청해서 '답글 숨김' 홈 피드를 받는다.
+  // 일부 서버/버전에서 답글이 섞여 내려오는 경우가 있어 실제 in_reply_to_id도 한 번 더 검사한다.
+  const rows=await loadHomeFeed({...opts,excludeReplies:true});
+  return (Array.isArray(rows)?rows:[]).filter(raw=>!isActualReply(raw));
 }
 async function expandHomeTimelineInBackground(){
   if(state.homeBackgroundFillPromise)return state.homeBackgroundFillPromise;
@@ -813,7 +822,7 @@ async function expandPublicTimelineInBackground(){
 }
 
 function homeSnapshotRead(){
-  const snap=store.get(scopedKey("home_snapshot_v11"),null);
+  const snap=store.get(scopedKey("home_snapshot_v12"),null);
   if(!snap?.at||Date.now()-Number(snap.at)>10*60*1000)return null;
   const data=snap.data;
   return data&&Array.isArray(data.home)&&Array.isArray(data.public)?data:null;
@@ -821,7 +830,7 @@ function homeSnapshotRead(){
 function homeSnapshotWrite(data){
   try{
     if(data&&Array.isArray(data.home)&&Array.isArray(data.public)){
-      store.set(scopedKey("home_snapshot_v11"),{at:Date.now(),data});
+      store.set(scopedKey("home_snapshot_v12"),{at:Date.now(),data});
     }
   }catch{}
 }
