@@ -675,7 +675,27 @@ function setListHidden(id,hidden){
   if(hidden)set.add(id);else set.delete(id);
   store.set(scopedKey("hidden_lists"),[...set]);
 }
-async function loadLists(){try{state.lists=await api("/api/v1/lists")}catch{state.lists=[]}}
+function listOrderIds(){return (store.get(scopedKey("list_order_v1"),[])||[]).map(String)}
+function orderedLists(items=[]){
+  const source=(Array.isArray(items)?items:[]).filter(x=>x?.id);
+  const map=new Map(source.map(x=>[String(x.id),x])),serverIds=source.map(x=>String(x.id));
+  const saved=listOrderIds().filter(id=>map.has(id)),seen=new Set(saved);
+  const order=[...saved,...serverIds.filter(id=>!seen.has(id))];
+  if(JSON.stringify(order)!==JSON.stringify(listOrderIds()))store.set(scopedKey("list_order_v1"),order);
+  return order.map(id=>map.get(id)).filter(Boolean);
+}
+function saveListOrder(ids=[]){
+  const available=new Map((state.lists||[]).filter(x=>x?.id).map(x=>[String(x.id),x]));
+  const order=[],seen=new Set();
+  for(const raw of ids||[]){const id=String(raw||"");if(id&&available.has(id)&&!seen.has(id)){seen.add(id);order.push(id)}}
+  for(const x of state.lists||[]){const id=String(x?.id||"");if(id&&!seen.has(id)){seen.add(id);order.push(id)}}
+  store.set(scopedKey("list_order_v1"),order);
+  state.lists=order.map(id=>available.get(id)).filter(Boolean);
+  state.listOrderDirty=true;
+  if(state.pageCache)state.pageCache.home="";
+  state.homeCache={};
+}
+async function loadLists(){try{state.lists=orderedLists(await api("/api/v1/lists"))}catch{state.lists=[]}}
 async function loadAllFollowing({fresh=false}={}){
   if(!state.me) state.me=await api("/api/v1/accounts/verify_credentials");
   const cacheKey=scopedKey("following_cache_v1"),cached=store.get(cacheKey,null);
@@ -1079,6 +1099,12 @@ function goBackScreen(){
     state.view=snap.view;state.homeMode=snap.homeMode;state.listId=snap.listId;
     state.profileAccount=snap.profileAccount;state.profileRelationship=snap.profileRelationship;
     state.profileReplies=snap.profileReplies;state.profileMode=snap.profileMode||"posts";state.currentConversation=snap.currentConversation;
+    if(state.listOrderDirty&&snap.view==="home"){
+      state.listOrderDirty=false;
+      render();
+      requestAnimationFrame(()=>window.scrollTo(0,snap.scrollY||0));
+      return;
+    }
     $("#app").innerHTML=snap.html;
     clearGestureBindingMarks($("#app"));
     bind();
@@ -2089,14 +2115,15 @@ async function favouritesView(){
 async function listsScreen(){
   closeDrawer();$("#app").innerHTML=standaloneShell("리스트",'<div class="center">불러오는 중…</div>');bind();
   try{
-    const lists=await api("/api/v1/lists");state.lists=lists;
+    const lists=orderedLists(await api("/api/v1/lists"));state.lists=lists;
     const hidden=hiddenListIds();
-    const rows=lists.map(x=>`<div class="list-manage-row">
+    const rows=lists.map(x=>`<div class="list-manage-row" data-list-row="${esc(x.id)}">
+      <span class="list-order-grip" data-list-order-grip="${esc(x.id)}" role="button" tabindex="0" aria-label="${esc(x.title||"리스트")} 순서 변경">☰</span>
       <button class="list-open grow" data-open-list="${esc(x.id)}"><b>${esc(x.title||"리스트")}</b><span>${esc(x.replies_policy||"list")}</span></button>
       <button class="list-eye ${hidden.has(x.id)?"off":""}" data-list-visible="${esc(x.id)}">${hidden.has(x.id)?"숨김":"표시"}</button>
       <button class="list-edit" data-list-manage="${esc(x.id)}" aria-label="리스트 수정" title="리스트 수정">${lentonIcon("edit")}</button>
     </div>`).join("");
-    const body=`<div class="list-toolbar"><button class="primary" data-action="newlist">＋ 새 리스트</button></div>${rows||'<div class="center">리스트가 없어요.</div>'}`;
+    const body=`<div class="list-toolbar"><button class="primary" data-action="newlist">＋ 새 리스트</button><span class="list-order-hint">☰ 를 잡아 순서를 바꿀 수 있어요.</span></div><div class="list-order-container">${rows||'<div class="center">리스트가 없어요.</div>'}</div>`;
     $("#app").innerHTML=standaloneShell("리스트",body);bind();
   }catch(e){toast(e.message)}
 }
@@ -2240,6 +2267,52 @@ async function deleteList(id){
 }
 
 function tabLabel(id){return id==="home"?"홈":id==="search"?"검색":id==="notifications"?"알림":"DM"}
+function attachListOrderDrag(){
+  const container=document.querySelector(".list-order-container");if(!container||container.dataset.dragReady==="1")return;
+  container.dataset.dragReady="1";
+  let row=null,timer=null,dragging=false,startY=0,pointerId=null;
+  const finish=()=>{
+    clearTimeout(timer);timer=null;
+    if(!row){dragging=false;pointerId=null;return}
+    if(dragging){
+      row.classList.remove("dragging");
+      saveListOrder([...container.querySelectorAll(".list-manage-row[data-list-row]")].map(x=>x.dataset.listRow));
+      toast("리스트 순서를 저장했어요.");
+    }
+    row=null;dragging=false;pointerId=null;
+  };
+  container.querySelectorAll("[data-list-order-grip]").forEach(grip=>{
+    grip.addEventListener("pointerdown",e=>{
+      if(e.button!==undefined&&e.button!==0)return;
+      row=grip.closest(".list-manage-row");if(!row)return;
+      startY=e.clientY;dragging=false;pointerId=e.pointerId;
+      try{grip.setPointerCapture(e.pointerId)}catch{}
+      timer=setTimeout(()=>{if(!row)return;dragging=true;row.classList.add("dragging")},140);
+    });
+    grip.addEventListener("pointermove",e=>{
+      if(!row||pointerId!==e.pointerId)return;
+      if(!dragging&&Math.abs(e.clientY-startY)>8){clearTimeout(timer);timer=null;row=null;return}
+      if(!dragging)return;
+      e.preventDefault();
+      const rows=[...container.querySelectorAll(".list-manage-row")].filter(x=>x!==row);
+      const target=rows.find(x=>e.clientY<x.getBoundingClientRect().top+x.getBoundingClientRect().height/2);
+      if(target)container.insertBefore(row,target);else container.appendChild(row);
+    });
+    grip.addEventListener("pointerup",finish);
+    grip.addEventListener("pointercancel",finish);
+    grip.addEventListener("keydown",e=>{
+      if(e.key!=="ArrowUp"&&e.key!=="ArrowDown")return;
+      e.preventDefault();
+      const current=grip.closest(".list-manage-row");if(!current)return;
+      const rows=[...container.querySelectorAll(".list-manage-row")],index=rows.indexOf(current);
+      const targetIndex=e.key==="ArrowUp"?index-1:index+1;if(targetIndex<0||targetIndex>=rows.length)return;
+      if(e.key==="ArrowUp")container.insertBefore(current,rows[targetIndex]);
+      else container.insertBefore(rows[targetIndex],current);
+      saveListOrder([...container.querySelectorAll(".list-manage-row[data-list-row]")].map(x=>x.dataset.listRow));
+      grip.focus();
+    });
+  });
+}
 function attachLayoutEditorDrag(){
   const container=document.querySelector(".layout-tab-rows");if(!container||container.dataset.dragReady==="1")return;
   container.dataset.dragReady="1";
@@ -3728,6 +3801,7 @@ function bind(){
   }
   attachLentonGestures();
   restoreScroll();
+  attachListOrderDrag();
   attachLayoutEditorDrag();
 }
 
