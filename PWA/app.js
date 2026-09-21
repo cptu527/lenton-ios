@@ -15,7 +15,7 @@ const state = {
   me:null, view:"home", homeMode:"home", listId:null, lists:[], busy:false,
   theme:store.get("lenton_theme","system"), accent:store.get("lenton_accent",ANDROID?.theme?.accent||"#1d9bf0"),
   uiScale:Math.max(.6,Math.min(1.2,Number(store.get("lenton_ui_scale",1))||1)),
-  pushError:"", toast:"", notificationUnread:0, notificationUnreadOverflow:false, dmUnread:0, accountUnread:{}, accountNotificationUnread:{}, accountDmUnread:{}, currentConversation:null, profileReplies:false, profileMode:"posts", profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, profilePagerData:{}, homePagerData:{}, navStack:[], dmDraftRecipients:[], searchResults:null, searchQuery:"", searchMode:"posts", updateAvailable:null, buildInfo:null
+  pushError:"", toast:"", notificationUnread:0, notificationUnreadOverflow:false, dmUnread:0, accountUnread:{}, accountNotificationUnread:{}, accountDmUnread:{}, currentConversation:null, profileReplies:false, profileMode:"posts", profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, profilePagerData:{}, homePagerData:{}, navStack:[], dmDraftRecipients:[], searchResults:null, searchQuery:"", searchMode:"posts", notificationMode:"all", replyNeededItems:[], updateAvailable:null, buildInfo:null
 };
 
 function accountScope(){
@@ -348,7 +348,7 @@ async function saveCurrentAccount(){
   await syncSavedAccountsToPushMeta();
 }
 function resetAccountState(){
-  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.listOrderDirty=false;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];state.searchResults=null;state.searchQuery="";state.searchMode="posts";state.searchFollowingIds=null;state.notificationUnread=0;state.notificationUnreadOverflow=false;state.dmUnread=0;
+  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.listOrderDirty=false;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];state.searchResults=null;state.searchQuery="";state.searchMode="posts";state.searchFollowingIds=null;state.notificationUnread=0;state.notificationUnreadOverflow=false;state.dmUnread=0;state.notificationMode="all";state.replyNeededItems=[];
 }
 async function switchSavedAccount(index){
   const list=savedAccounts(),entry=list[index];if(!entry?.session)return;
@@ -1163,8 +1163,8 @@ function pushNavSnapshot(){
   state.navStack.push(snap);if(state.navStack.length>30)state.navStack.shift();
 }
 function clearGestureBindingMarks(root=document){
-  const marks=["interactiveSwipe","homeSwipe","lentonSwipe","edgeDrawerSwipe","closeSwipe","profileSwipe","backSwipe","pullRefresh"];
-  root.querySelectorAll?.("[data-interactive-swipe],[data-home-swipe],[data-lenton-swipe],[data-edge-drawer-swipe],[data-close-swipe],[data-profile-swipe],[data-back-swipe],[data-pull-refresh]").forEach(el=>{
+  const marks=["interactiveSwipe","homeSwipe","lentonSwipe","edgeDrawerSwipe","closeSwipe","profileSwipe","backSwipe","pullRefresh","notificationSwipe"];
+  root.querySelectorAll?.("[data-interactive-swipe],[data-home-swipe],[data-lenton-swipe],[data-edge-drawer-swipe],[data-close-swipe],[data-profile-swipe],[data-back-swipe],[data-pull-refresh],[data-notification-swipe]").forEach(el=>{
     for(const k of marks)if(k in el.dataset)delete el.dataset[k];
   });
 }
@@ -1452,11 +1452,146 @@ function showForegroundPushBanner(payload={}){
   setTimeout(()=>{if(b.isConnected){b.classList.remove("show");setTimeout(()=>b.remove(),180)}},5200);
 }
 
+function replyNeededHandledKey(){return scopedKey("reply_needed_handled_v1")}
+function replyNeededHandledIds(){
+  const raw=store.get(replyNeededHandledKey(),[])||[];
+  return new Set((Array.isArray(raw)?raw:[]).map(String).filter(Boolean));
+}
+function saveReplyNeededHandledIds(ids){
+  const all=[...ids].map(String).filter(Boolean);
+  store.set(replyNeededHandledKey(),all.slice(Math.max(0,all.length-500)));
+}
+function ensureReplyNeededEmptyState(){
+  if(state.view!=="notifications"||state.notificationMode!=="replyNeeded")return;
+  const main=document.querySelector(".app.lenton-view-notifications .main");
+  if(!main||main.querySelector(".android-notify-card")||main.querySelector(".reply-needed-empty"))return;
+  const tabs=main.querySelector(".lenton-notify-tabs");
+  if(tabs)tabs.insertAdjacentHTML("afterend",'<div class="center reply-needed-empty">답장할 멘션이 없어요.</div>');
+}
+function markReplyNeededHandledMany(statusIds,{removeDom=true}={}){
+  const handled=replyNeededHandledIds();
+  let changed=false;
+  for(const raw of statusIds||[]){
+    const id=String(raw||"");if(!id)continue;
+    if(!handled.has(id)){handled.add(id);changed=true}
+  }
+  if(changed)saveReplyNeededHandledIds(handled);
+  if(Array.isArray(state.replyNeededItems)&&state.replyNeededItems.length){
+    const done=new Set([...handled]);
+    state.replyNeededItems=state.replyNeededItems.filter(n=>!done.has(String(n?.status?.id||"")));
+  }
+  state.pageCache.notifications="";
+  if(removeDom&&state.view==="notifications"&&state.notificationMode==="replyNeeded"){
+    const done=new Set((statusIds||[]).map(x=>String(x||"")).filter(Boolean));
+    document.querySelectorAll(".android-notify-card[data-notify-status]").forEach(card=>{
+      if(!done.has(String(card.dataset.notifyStatus||"")))return;
+      card.classList.add("reply-needed-resolved");
+      setTimeout(()=>{card.remove();ensureReplyNeededEmptyState()},150);
+    });
+  }
+}
+function replyNeededCandidates(rawItems=[]){
+  const handled=replyNeededHandledIds(),seenStatus=new Set(),out=[];
+  for(const n of Array.isArray(rawItems)?rawItems:[]){
+    const st=n?.status,sid=String(st?.id||"");
+    if(!n||n.type!=="mention"||!st||st.visibility==="direct"||!sid)continue;
+    if(handled.has(sid)||seenStatus.has(sid))continue;
+    seenStatus.add(sid);
+    out.push(n);
+  }
+  return out;
+}
+async function reconcileReplyNeededAcrossClients(pending=[]){
+  if(!Array.isArray(pending)||!pending.length||!state.me?.id)return pending||[];
+  const targets=new Set(),answered=new Set();
+  let oldestPendingMs=Infinity;
+  for(const n of pending){
+    const st=n?.status,sid=String(st?.id||"");if(!sid)continue;
+    targets.add(sid);
+    const t=Date.parse(st?.created_at||"");if(Number.isFinite(t))oldestPendingMs=Math.min(oldestPendingMs,t);
+  }
+  if(!targets.size)return [];
+  let maxId="";
+  try{
+    for(let pageNo=0;pageNo<20&&targets.size;pageNo++){
+      const query={limit:"40",exclude_reblogs:"true",exclude_replies:"false"};
+      if(maxId)query.max_id=maxId;
+      const mine=await api("/api/v1/accounts/"+encodeURIComponent(state.me.id)+"/statuses",{query});
+      if(!Array.isArray(mine)||!mine.length)break;
+      let nextMax="",oldestPageMs=Infinity;
+      for(const raw of mine){
+        const st=raw?.reblog||raw||{},id=String(st.id||"");
+        if(id)nextMax=id;
+        const t=Date.parse(st.created_at||"");if(Number.isFinite(t))oldestPageMs=Math.min(oldestPageMs,t);
+        const parentId=String(st.in_reply_to_id||"");
+        if(parentId&&targets.has(parentId)){
+          targets.delete(parentId);
+          answered.add(parentId);
+        }
+      }
+      if(!nextMax||nextMax===maxId)break;
+      maxId=nextMax;
+      if(Number.isFinite(oldestPendingMs)&&Number.isFinite(oldestPageMs)&&oldestPageMs<oldestPendingMs)break;
+      if(mine.length<40)break;
+    }
+  }catch{
+    return pending;
+  }
+  if(answered.size)markReplyNeededHandledMany([...answered],{removeDom:false});
+  return pending.filter(n=>!answered.has(String(n?.status?.id||"")));
+}
+function notificationRowsHtml(items=[],replyNeededMode=false){
+  const labels=ANDROID?.renderer?.notificationLabels||{};
+  const glyphs=ANDROID?.renderer?.notificationGlyphs||{};
+  const colors={favourite:"fav",reblog:"boost",mention:"mention",follow:"follow",follow_request:"follow"};
+  if(!items.length)return '<div class="center '+(replyNeededMode?"reply-needed-empty":"")+'">'+(replyNeededMode?"답장할 멘션이 없어요.":"새 알림이 없어요.")+'</div>';
+  return items.map(n=>{
+    const a=n.account||{},st=n.status||null,type=n.type||"";
+    const label=labels[type]||type||"새 알림",glyph=glyphs[type]||glyphs.default||"♢";
+    const body=st?'<div class="notify-content">'+renderRichText(st.content||"")+'</div>':"";
+    const tone=type==="mention"?"notify-mention":type==="status"?"notify-passive":"notify-neutral";
+    const isNew=state.notificationNewIds instanceof Set&&state.notificationNewIds.has(String(n?.id||""));
+    return '<article class="android-notify-card '+tone+' '+(isNew?"is-new ":"")+(st?"has-status":"")+'" '+(st?'data-notify-status="'+esc(st.id||"")+'"':"")+'>'+
+      '<div class="android-notify-glyph '+(colors[type]||"default")+'">'+esc(glyph)+'</div>'+
+      '<div class="android-notify-main">'+
+        '<div class="android-notify-person"><button type="button" class="android-notify-avatar" data-profile="'+esc(a.id||"")+'" aria-label="프로필 열기"><img src="'+esc(a.avatar_static||a.avatar||"")+'" alt=""></button><b>'+renderEmojiText(a.display_name||a.username||"알림",a.emojis||[])+' · '+esc(label)+'</b>'+(isNew?'<span class="notify-new-dot" aria-label="새 알림"></span>':"")+'</div>'+
+        body+
+      '</div></article>';
+  }).join("");
+}
+function renderNotificationsData(items=[],replyNeededMode=false){
+  state.notificationMode=replyNeededMode?"replyNeeded":"all";
+  if(replyNeededMode)state.replyNeededItems=Array.isArray(items)?items:[];
+  const tabLabels=ANDROID?.renderer?.notificationTabs||["전체","멘션"];
+  const tabs='<div class="notify-tabs lenton-notify-tabs"><button data-notify="all" class="'+(replyNeededMode?"":"active")+'">'+esc(tabLabels[0]||"전체")+'</button><button data-notify="mention" class="'+(replyNeededMode?"active":"")+'">답장할 멘션</button></div>';
+  renderMainStable("알림",tabs+notificationRowsHtml(items,replyNeededMode),{view:"notifications",fab:true});
+}
+function applyReplyNeededReconciliation(before=[],after=[]){
+  state.replyNeededItems=after;
+  if(state.view!=="notifications"||state.notificationMode!=="replyNeeded")return;
+  const keep=new Set(after.map(n=>String(n?.status?.id||"")).filter(Boolean));
+  const removed=[];
+  for(const n of before){
+    const sid=String(n?.status?.id||"");
+    if(sid&&!keep.has(sid))removed.push(sid);
+  }
+  if(removed.length){
+    const removeSet=new Set(removed);
+    document.querySelectorAll(".android-notify-card[data-notify-status]").forEach(card=>{
+      if(!removeSet.has(String(card.dataset.notifyStatus||"")))return;
+      card.classList.add("reply-needed-resolved");
+      setTimeout(()=>{card.remove();ensureReplyNeededEmptyState()},150);
+    });
+  }else if(!after.length)ensureReplyNeededEmptyState();
+  state.pageCache.notifications="";
+}
 async function notificationsView(mentionsOnly=false,silent=false){
+  const replyNeededMode=!!mentionsOnly;
   const continuingSession=!!document.querySelector(".lenton-view-notifications .lenton-notify-tabs");
   if(!silent)renderLoadingShell("알림");
+  state.notificationMode=replyNeededMode?"replyNeeded":"all";
   try{
-    const query={limit:"40"};if(mentionsOnly)query["types[]"]="mention";
+    const query={limit:"80"};if(replyNeededMode)query["types[]"]="mention";
     const [loaded,serverMarker]=await Promise.all([
       api("/api/v1/notifications",{query}),
       serverNotificationReadId().catch(()=>"")
@@ -1469,20 +1604,16 @@ async function notificationsView(mentionsOnly=false,silent=false){
       for(const n of rawItems){
         if(String(n?.id||"")===markerBefore)break;
         if(n?.status?.visibility==="direct")continue;
-        if(!mentionsOnly&&filter[n?.type]===false)continue;
+        if(!replyNeededMode&&filter[n?.type]===false)continue;
         unreadIds.add(String(n?.id||""));
       }
     }else{
-      // Some Mastodon servers can leave the notifications marker unavailable even
-      // though push metadata already knows there are unread notifications.
-      // Keep the existing new-notification UI and recover the exact visible rows
-      // from the unread badge count instead of showing no emphasis at all.
       const sharedUnread=accountNotificationUnreadFor({key:currentAccountKey()});
       const fallbackUnread=Math.max(0,Number(state.notificationUnread)||0,Number(sharedUnread)||0);
       if(fallbackUnread>0){
         for(const n of rawItems){
           if(n?.status?.visibility==="direct")continue;
-          if(!mentionsOnly&&filter[n?.type]===false)continue;
+          if(!replyNeededMode&&filter[n?.type]===false)continue;
           const id=String(n?.id||"");if(!id)continue;
           unreadIds.add(id);
           if(unreadIds.size>=fallbackUnread)break;
@@ -1495,30 +1626,20 @@ async function notificationsView(mentionsOnly=false,silent=false){
       for(const id of unreadIds)state.notificationNewIds.add(id);
     }
 
-    if(!mentionsOnly&&rawItems?.[0]?.id)await markNotificationsRead(rawItems[0].id);
+    if(replyNeededMode){
+      const pending=replyNeededCandidates(rawItems);
+      renderNotificationsData(pending,true);
+      const reconciled=await reconcileReplyNeededAcrossClients(pending);
+      applyReplyNeededReconciliation(pending,reconciled);
+      return;
+    }
 
-    const items=rawItems.filter(n=>n?.status?.visibility!=="direct"&&(mentionsOnly?n.type==="mention":filter[n.type]!==false));
-    const tabLabels=ANDROID?.renderer?.notificationTabs||["전체","멘션"];
-    const tabs='<div class="notify-tabs lenton-notify-tabs"><button data-notify="all" class="'+(mentionsOnly?"":"active")+'">'+esc(tabLabels[0]||"전체")+'</button><button data-notify="mention" class="'+(mentionsOnly?"active":"")+'">'+esc(tabLabels[1]||"멘션")+'</button></div>';
-    const labels=ANDROID?.renderer?.notificationLabels||{};
-    const glyphs=ANDROID?.renderer?.notificationGlyphs||{};
-    const colors={favourite:"fav",reblog:"boost",mention:"mention",follow:"follow",follow_request:"follow"};
-    const rows=items.length?items.map(n=>{
-      const a=n.account||{},st=n.status||null,type=n.type||"";
-      const label=labels[type]||type||"새 알림",glyph=glyphs[type]||glyphs.default||"♢";
-      const body=st?'<div class="notify-content">'+renderRichText(st.content||"")+'</div>':"";
-      const tone=type==="mention"?"notify-mention":type==="status"?"notify-passive":"notify-neutral";
-      const isNew=state.notificationNewIds instanceof Set&&state.notificationNewIds.has(String(n?.id||""));
-      return '<article class="android-notify-card '+tone+' '+(isNew?"is-new ":"")+(st?"has-status":"")+'" '+(st?'data-notify-status="'+esc(st.id||"")+'"':"")+'>'+
-        '<div class="android-notify-glyph '+(colors[type]||"default")+'">'+esc(glyph)+'</div>'+
-        '<div class="android-notify-main">'+
-          '<div class="android-notify-person"><button type="button" class="android-notify-avatar" data-profile="'+esc(a.id||"")+'" aria-label="프로필 열기"><img src="'+esc(a.avatar_static||a.avatar||"")+'" alt=""></button><b>'+renderEmojiText(a.display_name||a.username||"알림",a.emojis||[])+' · '+esc(label)+'</b>'+(isNew?'<span class="notify-new-dot" aria-label="새 알림"></span>':"")+'</div>'+
-          body+
-        '</div></article>';
-    }).join(""):'<div class="center">새 알림이 없어요.</div>';
-    renderMainStable("알림",tabs+rows,{view:"notifications",fab:true});
+    if(rawItems?.[0]?.id)await markNotificationsRead(rawItems[0].id);
+    const items=rawItems.filter(n=>n?.status?.visibility!=="direct"&&filter[n.type]!==false);
+    renderNotificationsData(items,false);
   }catch(e){renderMainStable("알림",'<div class="center">'+esc(e.message)+'</div>',{view:"notifications",fab:true})}
 }
+
 function dmConversationKey(c){
   const ids=(c?.accounts||[]).map(a=>String(a.id||a.acct||"")).filter(Boolean).sort();
   return ids.join("|")||String(c?.id||"");
@@ -3584,7 +3705,12 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
             form.append("poll[expires_in]",String(p.poll.expires||86400));
             form.append("poll[multiple]",p.poll.multiple?"true":"false");
           }
-          const posted=await api("/api/v1/statuses",{method:"POST",form});replyId=posted.id;
+          const posted=await api("/api/v1/statuses",{method:"POST",form});
+          if(i===0&&reply){
+            const directParent=String(posted?.in_reply_to_id||reply?.id||"");
+            if(directParent)markReplyNeededHandledMany([directParent],{removeDom:true});
+          }
+          replyId=posted.id;
         }
         window.__lentonComposeClose?.();if(historyPushed){window.__lentonComposeBypass=true;history.back()}toast(visibility==="direct"?"DM을 보냈어요.":"게시했어요.");if(visibility==="direct"){state.dmDraftRecipients=[];if(state.currentConversation?.id)openConversation(state.currentConversation.id);else{state.view="dm";render()}}else{setTimeout(()=>refreshHomeAfterPost(),120)}
       }catch(e){toast(e.message);btn.disabled=false;btn.textContent=reply?"답글":"게시"}
@@ -3939,6 +4065,45 @@ function attachHomePullToRefresh(){
   },{passive:true});
   main.addEventListener("touchcancel",cleanup,{passive:true});
 }
+function attachNotificationTabSwipe(){
+  const main=document.querySelector(".app.lenton-view-notifications .main");
+  if(!main||main.dataset.notificationSwipe==="1")return;
+  main.dataset.notificationSwipe="1";
+  let start=null,active=false,lastDx=0,width=0;
+  const reset=()=>{start=null;active=false;lastDx=0};
+  main.addEventListener("touchstart",e=>{
+    if(e.touches?.length!==1)return;
+    const t=e.touches[0];
+    if(t.clientX<26)return;
+    start={x:t.clientX,y:t.clientY,time:performance.now()};
+    active=false;lastDx=0;width=Math.max(1,main.clientWidth||window.innerWidth||1);
+  },{passive:true});
+  main.addEventListener("touchmove",e=>{
+    if(!start||e.touches?.length!==1)return;
+    const t=e.touches[0],dx=t.clientX-start.x,dy=t.clientY-start.y;
+    if(!active){
+      if(Math.abs(dy)>14&&Math.abs(dy)>=Math.abs(dx)){reset();return}
+      if(Math.abs(dx)<8||Math.abs(dx)<=Math.abs(dy)*1.12)return;
+      active=true;
+    }
+    lastDx=dx;
+    e.preventDefault();
+  },{passive:false});
+  main.addEventListener("touchend",e=>{
+    if(!start){reset();return}
+    const touch=e.changedTouches?.[0],dx=touch?touch.clientX-start.x:lastDx;
+    const dt=Math.max(1,performance.now()-start.time),vx=dx/dt;
+    const threshold=Math.max(34,width*.08);
+    const current=state.notificationMode||"all";
+    let target=current;
+    if(current==="all"&&dx<0&&(Math.abs(dx)>=threshold||vx<-.35))target="replyNeeded";
+    else if(current==="replyNeeded"&&dx>0&&(Math.abs(dx)>=threshold||vx>.35))target="all";
+    reset();
+    if(target!==current)notificationsView(target==="replyNeeded",true);
+  },{passive:true});
+  main.addEventListener("touchcancel",reset,{passive:true});
+}
+
 function attachLentonGestures(){
   const bottom=document.querySelector(".bottom");
   attachInteractiveMainSwipe(bottom);
@@ -3950,6 +4115,7 @@ function attachLentonGestures(){
   attachDrawerCloseSwipe(drawer);
 
   if(state.view==="home"){attachInteractiveHomeSwipe(document.querySelector("[data-home-pager]"));attachHomePullToRefresh()}
+  if(state.view==="notifications")attachNotificationTabSwipe();
 
   attachStandaloneBackSwipe(document.querySelector(".standalone-page"));
   const profilePager=document.querySelector("[data-profile-pager]");

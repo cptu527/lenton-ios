@@ -4859,3 +4859,12 @@ img{display:block}
   font-size:24px;
   line-height:1;
 }
+
+
+/* 2026-09-22 reply-needed mentions */
+.android-notify-card.reply-needed-resolved{
+  opacity:0;
+  transform:translateX(14px);
+  transition:opacity 130ms ease,transform 130ms ease;
+}
+.reply-needed-empty{padding-top:34px;padding-bottom:34px}
