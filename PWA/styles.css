@@ -27,7 +27,7 @@ img{display:block}
 .app{
   min-height:100dvh;
   background:var(--bg);
-  padding-top:env(safe-area-inset-top);
+  padding-top:calc(env(safe-area-inset-top) + var(--android-topbar));
   padding-bottom:calc(var(--android-bottom) + env(safe-area-inset-bottom));
 }
 .main{
@@ -38,8 +38,10 @@ img{display:block}
   min-height:calc(100dvh - 126px);
 }
 .topbar{
-  position:sticky;
+  position:fixed;
   top:env(safe-area-inset-top);
+  left:0;
+  right:0;
   z-index:30;
   height:var(--android-topbar);
   display:flex;
