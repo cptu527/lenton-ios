@@ -1540,6 +1540,26 @@ async function reconcileReplyNeededAcrossClients(pending=[]){
   if(answered.size)markReplyNeededHandledMany([...answered],{removeDom:false});
   return pending.filter(n=>!answered.has(String(n?.status?.id||"")));
 }
+function notificationMentionRowHtml(n,isNew=false){
+  const a=n?.account||{},st=n?.status||{};
+  const reply=!!String(st.in_reply_to_id||"");
+  const boostAllowed=st?.rebloggable!==false&&!["private","direct"].includes(String(st?.visibility||""));
+  const replyCount=Number(st.replies_count||0);
+  const actions=st?.id?'<div class="actions lenton-actions notify-mention-actions">'+
+    '<button data-action="reply" data-id="'+esc(st.id)+'" aria-label="답글">'+lentonIcon("reply")+' <span class="count">'+(replyCount>0?replyCount:"")+'</span></button>'+
+    '<button class="boost '+(st.reblogged?"on ":"")+(boostAllowed?"":"unavailable")+'" data-action="boost" data-id="'+esc(st.id)+'" aria-label="'+(boostAllowed?"부스트":"부스트할 수 없는 게시물")+'" '+(boostAllowed?"":"disabled")+'>'+((boostAllowed)?lentonIcon("boost"):'<span class="boost-unavailable-mark">×</span>')+' <span class="count">'+(boostAllowed?(st.reblogs_count||""):"")+'</span></button>'+
+    '<button class="fav '+(st.favourited?"on":"")+'" data-action="fav" data-id="'+esc(st.id)+'" aria-label="좋아요">'+lentonIcon(st.favourited?"heartFill":"heart")+' <span class="count">'+(st.favourites_count||"")+'</span></button>'+
+    '<button class="bookmark '+(st.bookmarked?"on":"")+'" data-action="bookmark" data-id="'+esc(st.id)+'" aria-label="북마크">'+lentonIcon(st.bookmarked?"bookmarkFill":"bookmark")+'</button>'+
+    '</div>':"";
+  return '<article class="android-notify-card notify-mention mention-post-card '+(isNew?"is-new ":"")+'has-status" data-notify-status="'+esc(st.id||"")+'">'+
+    '<button type="button" class="mention-card-avatar" data-profile="'+esc(a.id||"")+'" aria-label="프로필 열기"><img src="'+esc(a.avatar_static||a.avatar||"")+'" alt=""></button>'+
+    '<div class="android-notify-main mention-card-main">'+
+      '<div class="mention-card-author"><b>'+renderEmojiText(a.display_name||a.username||"알림",a.emojis||[])+'</b><span>@'+esc(a.acct||a.username||"")+' · '+esc(fmtTime(st.created_at))+'</span>'+(isNew?'<i class="notify-new-dot" aria-label="새 알림"></i>':"")+'</div>'+
+      '<div class="mention-card-kind">'+(reply?"↳ 답글을 보냈어요":"@ 나를 멘션했어요")+'</div>'+
+      '<div class="notify-content">'+renderRichText(st.content||"")+'</div>'+
+      actions+
+    '</div></article>';
+}
 function notificationRowsHtml(items=[],replyNeededMode=false){
   const labels=ANDROID?.renderer?.notificationLabels||{};
   const glyphs=ANDROID?.renderer?.notificationGlyphs||{};
@@ -1547,10 +1567,11 @@ function notificationRowsHtml(items=[],replyNeededMode=false){
   if(!items.length)return '<div class="center '+(replyNeededMode?"reply-needed-empty":"")+'">'+(replyNeededMode?"답장할 멘션이 없어요.":"새 알림이 없어요.")+'</div>';
   return items.map(n=>{
     const a=n.account||{},st=n.status||null,type=n.type||"";
+    const isNew=state.notificationNewIds instanceof Set&&state.notificationNewIds.has(String(n?.id||""));
+    if(type==="mention"&&st)return notificationMentionRowHtml(n,isNew);
     const label=labels[type]||type||"새 알림",glyph=glyphs[type]||glyphs.default||"♢";
     const body=st?'<div class="notify-content">'+renderRichText(st.content||"")+'</div>':"";
-    const tone=type==="mention"?"notify-mention":type==="status"?"notify-passive":"notify-neutral";
-    const isNew=state.notificationNewIds instanceof Set&&state.notificationNewIds.has(String(n?.id||""));
+    const tone=type==="status"?"notify-passive":"notify-neutral";
     return '<article class="android-notify-card '+tone+' '+(isNew?"is-new ":"")+(st?"has-status":"")+'" '+(st?'data-notify-status="'+esc(st.id||"")+'"':"")+'>'+
       '<div class="android-notify-glyph '+(colors[type]||"default")+'">'+esc(glyph)+'</div>'+
       '<div class="android-notify-main">'+
