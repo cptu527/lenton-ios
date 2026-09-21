@@ -150,13 +150,12 @@ jobs:
           manifest.write_text(json.dumps(data,ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
 
           Path("dist-pwa/build.json").write_text(json.dumps({
-              "source":"published-android-apk",
-              "versionCode":latest["versionCode"],
-              "versionName":latest["versionName"],
-              "apkSha256":latest["sha256"],
-              "notes":latest.get("notes",""),
+              "source":"lenton-ios-pwa",
               "pwaRevision":revision,
               "cacheToken":token,
+              "androidSpecVersionCode":latest["versionCode"],
+              "androidSpecVersionName":latest["versionName"],
+              "androidSpecSha256":latest["sha256"],
           },ensure_ascii=False,indent=2)+"\n",encoding="utf-8")
           PY
 
@@ -180,8 +179,12 @@ jobs:
               raise SystemExit("generated PWA versionCode does not match Android")
           if str(generated["apkSha256"]).lower() != str(latest["sha256"]).lower():
               raise SystemExit("generated PWA APK SHA does not match Android")
-          if built["versionName"] != latest["versionName"]:
-              raise SystemExit("built PWA versionName does not match Android")
+          if int(built["androidSpecVersionCode"]) != int(latest["versionCode"]):
+              raise SystemExit("built PWA Android spec versionCode does not match Android")
+          if built["androidSpecVersionName"] != latest["versionName"]:
+              raise SystemExit("built PWA Android spec versionName does not match Android")
+          if str(built["androidSpecSha256"]).lower() != str(latest["sha256"]).lower():
+              raise SystemExit("built PWA Android spec SHA does not match Android")
           for size in (192,512,1024):
               p=Path(f"dist-pwa/icon-{size}.png")
               data=p.read_bytes()
