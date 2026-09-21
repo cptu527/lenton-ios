@@ -1063,8 +1063,36 @@ img{display:block}
   display:flex;
   align-items:center;
   gap:8px;
-  padding:8px 12px 8px 18px;
+  padding:8px 12px 8px 8px;
   border-bottom:1px solid var(--line);
+  transition:background 120ms ease,opacity 120ms ease,transform 120ms ease;
+}
+.list-manage-row.dragging{
+  background:var(--surface);
+  opacity:.92;
+  transform:scale(.995);
+  z-index:2;
+}
+.list-order-grip{
+  width:36px;
+  min-width:36px;
+  height:44px;
+  display:grid;
+  place-items:center;
+  color:var(--sub);
+  font-size:21px;
+  line-height:1;
+  touch-action:none;
+  user-select:none;
+  -webkit-user-select:none;
+  cursor:grab;
+}
+.list-order-grip:active{cursor:grabbing}
+.list-order-hint{
+  margin-left:auto;
+  color:var(--sub);
+  font-size:12px;
+  white-space:nowrap;
 }
 .list-open{
   flex:1 1 auto;
