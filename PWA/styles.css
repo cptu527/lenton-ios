@@ -4581,21 +4581,25 @@ img{display:block}
 .list-member-add-note b{font-size:16px}
 .list-member-add-note span{font-size:13px;color:var(--sub)}
 .list-member-search{
-  display:grid;
-  grid-template-columns:minmax(0,1fr) auto;
-  gap:8px;
-  padding:8px 18px 14px;
-  border-bottom:1px solid var(--line);
+  display:block;
+  padding:8px 18px 12px;
 }
 .list-member-search .field{
+  width:100%;
   min-width:0;
   height:46px;
   margin:0;
 }
-.list-member-search .primary{
-  min-width:72px;
-  height:46px;
-  padding:0 14px;
+.list-member-list-heading{
+  min-height:42px;
+  display:flex;
+  align-items:center;
+  padding:0 18px;
+  border-top:1px solid var(--line);
+  border-bottom:1px solid var(--line);
+  color:var(--sub);
+  font-size:14px;
+  font-weight:800;
 }
 .list-member-candidate{
   min-height:76px;
