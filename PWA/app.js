@@ -772,7 +772,7 @@ async function loadHomeFeed({maxId="",limit=40,maxScans=1}={}){
       : await settleWithin(api("/api/v1/timelines/home",{query}),8000,[]);
 
     if(!Array.isArray(page)||!page.length)break;
-    items=mergeNewestTimeline(page.filter(nonDirect),items,160);
+    items=mergeNewestTimeline(page,items,160);
     const next=String(page[page.length-1]?.id||"");
     if(!next||next===cursor||page.length<Number(limit))break;
     cursor=next;
@@ -783,8 +783,9 @@ async function loadChronologicalHome(opts={}){
   return loadHomeFeed(opts);
 }
 function publicHomeStatus(raw){
-  if(!raw||!nonDirect(raw))return false;
-  const replyId=raw?.in_reply_to_id;
+  if(!raw)return false;
+  const status=raw?.reblog||raw;
+  const replyId=status?.in_reply_to_id;
   return replyId===null||replyId===undefined||String(replyId)==="";
 }
 function publicFromHome(items=[]){
@@ -842,26 +843,32 @@ async function expandHomeTimelineInBackground(){
   return state.homeBackgroundFillPromise;
 }
 async function expandPublicTimelineInBackground(){
+  if(state.publicRefreshPromise)return state.publicRefreshPromise;
   if(state.publicBackgroundFillPromise)return state.publicBackgroundFillPromise;
+  const generation=Number(state.publicLoadGeneration||0)+1;
+  state.publicLoadGeneration=generation;
   state.publicBackgroundFillPromise=(async()=>{
     let lastPaint=0;
     const items=await loadPublicFromHome({
       limit:40,
       onPage:all=>{
+        if(Number(state.publicLoadGeneration||0)!==generation)return;
         const now=Date.now();
         if(now-lastPaint<120)return;
         lastPaint=now;
         updatePublicTimelinePage(all,{preserveScroll:true});
       }
     });
+    if(Number(state.publicLoadGeneration||0)!==generation)return items;
     updatePublicTimelinePage(items,{preserveScroll:true});
     state.publicFilledAt=Date.now();
+    return items;
   })().finally(()=>{state.publicBackgroundFillPromise=null});
   return state.publicBackgroundFillPromise;
 }
 
 function homeSnapshotRead(){
-  const snap=store.get(scopedKey("home_snapshot_v15"),null);
+  const snap=store.get(scopedKey("home_snapshot_v16"),null);
   if(!snap?.at||Date.now()-Number(snap.at)>10*60*1000)return null;
   const data=snap.data;
   return data&&Array.isArray(data.home)&&Array.isArray(data.public)?data:null;
@@ -869,7 +876,7 @@ function homeSnapshotRead(){
 function homeSnapshotWrite(data){
   try{
     if(data&&Array.isArray(data.home)&&Array.isArray(data.public)){
-      store.set(scopedKey("home_snapshot_v15"),{at:Date.now(),data});
+      store.set(scopedKey("home_snapshot_v16"),{at:Date.now(),data});
     }
   }catch{}
 }
@@ -940,11 +947,16 @@ async function ensurePublicTimelineFilled({fresh=false}={}){
 }
 async function refreshPublicTimeline(){
   if(state.publicRefreshPromise)return state.publicRefreshPromise;
+  const generation=Number(state.publicLoadGeneration||0)+1;
+  state.publicLoadGeneration=generation;
   state.publicRefreshPromise=(async()=>{
     const items=await loadPublicFromHome({
       limit:40,
-      onPage:all=>updatePublicTimelinePage(all,{preserveScroll:true})
+      onPage:all=>{
+        if(Number(state.publicLoadGeneration||0)===generation)updatePublicTimelinePage(all,{preserveScroll:true});
+      }
     });
+    if(Number(state.publicLoadGeneration||0)!==generation)return items;
     updatePublicTimelinePage(items,{preserveScroll:true});
     state.publicFilledAt=Date.now();
     return items;
@@ -1020,9 +1032,11 @@ function setHomePagerMode(mode,animate=true){
   syncHomePagerUi(mode,animate);
   if(mode==="public"&&changed){
     const immediate=publicFromHome(state.homePagerData?.home||[]);
-    state.homePagerData.public=immediate;
-    state.timelineItems=immediate;
-    updatePublicTimelinePage(immediate,{preserveScroll:true});
+    const existing=Array.isArray(state.homePagerData?.public)?state.homePagerData.public:[];
+    const visible=existing.length?mergeTimelineUnlimited(immediate,existing):immediate;
+    state.homePagerData.public=visible;
+    state.timelineItems=visible;
+    updatePublicTimelinePage(visible,{preserveScroll:true});
     setTimeout(()=>expandPublicTimelineInBackground().catch(()=>{}),0);
   }
 }
