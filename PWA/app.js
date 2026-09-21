@@ -521,13 +521,16 @@ function shell(title,body,opts={}){
   }else if(view==="search"){
     right=`<button class="top-icon" data-action="searchMenu" aria-label="검색 메뉴">${lentonIcon("more")}</button>`;
   }else if(view==="settings"){
-    right=`<button class="top-icon" data-action="topmenu" aria-label="더보기">${lentonIcon("more")}</button>`;
+    right="";
   }else if(view==="notifications"){
     right=`<button class="top-icon" data-action="notificationMenu" aria-label="알림 메뉴">${lentonIcon("more")}</button>`;
   }
+  const left=view==="settings"
+    ?`<button class="topbar-back" data-action="backMain" aria-label="뒤로가기">${lentonIcon("back")}</button>`
+    :`<button class="topbar-avatar" data-action="drawer">${avatar}</button>`;
   return `<div class="app lenton-view-${esc(view)}">
     <header class="topbar lenton-topbar">
-      <button class="topbar-avatar" data-action="drawer">${avatar}</button>
+      ${left}
       <h1>${esc(title)}</h1>
       <div class="topbar-actions">${right}</div>
     </header>
@@ -2022,8 +2025,9 @@ function drawerMenuRows(){
 }
 function drawerMenuMarkup(){
   return drawerMenuRows().map((x,i)=>{
-    const divider=(x.id==="lists"||x.id==="settings"||x.id==="history")?'<div class="drawer-divider"></div>':"";
-    return divider+'<button class="drawer-row '+(x.id==="lists"?"drawer-list-row":"")+'" data-drawer="'+esc(x.id)+'"><span class="glyph">'+lentonIcon(x.icon)+'</span>'+esc(x.label)+'</button>';
+    const spacer=x.id==="lists"?'<div class="drawer-spacer" aria-hidden="true"></div>':"";
+    const divider=(x.id==="settings"||x.id==="history")?'<div class="drawer-divider"></div>':"";
+    return spacer+divider+'<button class="drawer-row '+(x.id==="lists"?"drawer-list-row":"")+'" data-drawer="'+esc(x.id)+'"><span class="glyph">'+lentonIcon(x.icon)+'</span>'+esc(x.label)+'</button>';
   }).join("");
 }
 function buildDrawerElement(){
@@ -2060,7 +2064,7 @@ function buildDrawerElement(){
     else if(v==="favourites"){pushNavSnapshot();favouritesView()}
     else if(v==="followrequests"){pushNavSnapshot();closeDrawer();followRequestsScreen()}
     else if(v==="lists"){pushNavSnapshot();closeDrawer();listsScreen()}
-    else if(v==="settings"){closeDrawer();state.view="settings";render()}
+    else if(v==="settings"){pushNavSnapshot();closeDrawer();state.view="settings";render()}
     else if(v==="profileedit"){pushNavSnapshot();closeDrawer();profileEditScreen()}
     else if(v==="layoutedit"){pushNavSnapshot();closeDrawer();screenLayoutEditor()}
     else if(v==="history"){pushNavSnapshot();closeDrawer();updateHistoryScreen()}
@@ -3821,7 +3825,7 @@ function bind(){
   document.querySelectorAll("[data-action]").forEach(b=>b.onclick=async e=>{
     if(b.closest(".lenton-actions,.status-more,.cw,.compose-tools"))e.stopPropagation();
     const a=b.dataset.action;
-    if(a==="settings"){state.view="settings";render()}
+    if(a==="settings"){if(state.view!=="settings")pushNavSnapshot();state.view="settings";render()}
     else if(a==="drawer")openDrawer()
     else if(a==="compose")compose()
     else if(a==="newdm"){pushNavSnapshot();newDmScreen()}
