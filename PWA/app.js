@@ -718,6 +718,29 @@ async function loadAllFollowing({fresh=false}={}){
 }
 function statusId(raw){return raw?.id||raw?.reblog?.id||""}
 function nonDirect(raw){return raw&&raw.visibility!=="direct"}
+function statusCreatedAtMs(raw){
+  const v=raw?.created_at||raw?.reblog?.created_at||"";
+  const t=Date.parse(v);return Number.isFinite(t)?t:0;
+}
+function recentMentionStatus(raw,days=30){
+  if(!raw||!nonDirect(raw))return false;
+  const t=statusCreatedAtMs(raw);
+  return !!t&&t>=Date.now()-days*86400000;
+}
+function mergeRecentMentionStatuses(base=[],notifications=[]){
+  const mentions=[];
+  for(const n of notifications||[]){
+    if(String(n?.type||"")!=="mention")continue;
+    const st=n?.status;if(st&&recentMentionStatus(st))mentions.push(st);
+  }
+  return mergeNewestTimeline(mentions,base,80);
+}
+async function loadRecentMentionStatuses(){
+  try{
+    const notes=await api("/api/v1/notifications",{query:{limit:"80","types[]":"mention"}});
+    return Array.isArray(notes)?notes:[];
+  }catch{return[]}
+}
 function lentonPublicStatus(raw){
   if(!raw||!raw.account)return false;
   const cfg=ANDROID?.timeline?.public||{};
@@ -821,9 +844,12 @@ function homeSnapshotWrite(data){
   try{if(data&&Array.isArray(data.home)&&Array.isArray(data.public))store.set(scopedKey("home_snapshot_v3"),{at:Date.now(),data})}catch{}
 }
 async function loadHomeQuickPair(limit=20){
-  const home=await api("/api/v1/timelines/home",{query:{limit:String(limit)}});
-  const clean=(home||[]).filter(nonDirect);
-  const pub=clean.filter(lentonPublicStatus).slice(0,ANDROID?.timeline?.public?.targetInitialItems||30);
+  const [home,notes]=await Promise.all([
+    api("/api/v1/timelines/home",{query:{limit:String(limit)}}),
+    loadRecentMentionStatuses()
+  ]);
+  const clean=mergeRecentMentionStatuses((home||[]).filter(nonDirect),notes);
+  const pub=(home||[]).filter(lentonPublicStatus).slice(0,ANDROID?.timeline?.public?.targetInitialItems||30);
   return {data:{home:clean,public:pub},rawHome:home||[]};
 }
 function renderHomePagerData(data,{preserveScroll=false}={}){
@@ -877,19 +903,24 @@ async function loadPublicFollowingAccounts({fresh=false}={}){
 async function ensurePublicTimelineFilled({fresh=false,forceFullScan=false}={}){
   if(state.publicFillPromise)return state.publicFillPromise;
   state.publicFillPromise=(async()=>{
-    const cfg=ANDROID?.timeline?.public||{},target=Math.max(10,Number(cfg.targetInitialItems)||30);
+    const cfg=ANDROID?.timeline?.public||{},target=Math.max(10,Number(cfg.targetInitialItems)||30),supplementTarget=Math.max(40,target);
     const base=state.homePagerData||{home:[],public:[]};
 
-    // Public refresh must use current server data. A forced refresh also
-    // refreshes the following list so newly-followed accounts are included.
+    // Public needs both the authenticated home source and the server public
+    // source. Some Mastodon servers omit a few followed-account originals from
+    // /timelines/home, so relying on Home alone leaves visible gaps.
     const freshHomePromise=api("/api/v1/timelines/home",{query:{limit:"40"}}).catch(()=>[]);
+    const publicPromise=api("/api/v1/timelines/public",{query:{limit:"40"}}).catch(()=>[]);
     const followingPromise=loadPublicFollowingAccounts({fresh});
-    const [freshHome,following]=await Promise.all([freshHomePromise,followingPromise]);
+    const [freshHome,serverPublic,following]=await Promise.all([freshHomePromise,publicPromise,followingPromise]);
     const allowed=new Set((following||[]).map(x=>String(x?.id||"")).filter(Boolean));
     const eligible=raw=>allowed.has(String(raw?.account?.id||""))&&lentonPublicStatus(raw);
 
     let collected=mergeNewestTimeline(
-      (Array.isArray(freshHome)?freshHome:[]).filter(eligible),
+      [
+        ...(Array.isArray(freshHome)?freshHome:[]),
+        ...(Array.isArray(serverPublic)?serverPublic:[])
+      ].filter(eligible),
       mergeNewestTimeline((base.public||[]).filter(eligible),(base.home||[]).filter(eligible),80),
       80
     );
@@ -903,13 +934,13 @@ async function ensurePublicTimelineFilled({fresh=false,forceFullScan=false}={}){
 
     // If the fresh home page already filled the target, stop here. Otherwise
     // supplement from every followed account, progressively.
-    if(collected.length>=target&&!forceFullScan){state.publicFilledAt=Date.now();return collected}
-    const maxAccounts=following.length,batchSize=10;
+    if(collected.length>=supplementTarget&&!forceFullScan){state.publicFilledAt=Date.now();return collected}
+    const maxAccounts=Math.min(following.length,80),batchSize=10;
     for(let i=0;i<maxAccounts;i+=batchSize){
       const batch=following.slice(i,i+batchSize);
       const pages=await Promise.all(batch.map(ac=>{
         const id=String(ac?.id||"");if(!id)return Promise.resolve([]);
-        return api(`/api/v1/accounts/${id}/statuses`,{query:{limit:"8"}}).catch(()=>[]);
+        return api(`/api/v1/accounts/${id}/statuses`,{query:{limit:forceFullScan?"20":"12"}}).catch(()=>[]);
       }));
       const extra=[];
       for(const rows of pages)for(const raw of (Array.isArray(rows)?rows:[]))if(eligible(raw))extra.push(raw);
@@ -949,12 +980,14 @@ async function refreshHomeIncremental(){
     }
     const newest=statusId(base.home[0]),query={limit:"20"};
     if(newest)query.since_id=newest;
-    const raw=await api("/api/v1/timelines/home",{query});
+    const [raw,notes]=await Promise.all([
+      api("/api/v1/timelines/home",{query}).catch(()=>[]),
+      loadRecentMentionStatuses()
+    ]);
     const freshHome=(raw||[]).filter(nonDirect);
-    if(!freshHome.length)return base;
     const freshPublic=freshHome.filter(lentonPublicStatus);
     const data={
-      home:mergeNewestTimeline(freshHome,base.home),
+      home:mergeRecentMentionStatuses(mergeNewestTimeline(freshHome,base.home),notes),
       public:mergeNewestTimeline(freshPublic,base.public)
     };
     state.homePagerData=data;homeSnapshotWrite(data);
@@ -3640,6 +3673,21 @@ function attachSwipe(el,{onLeft,onRight,edgeOnly=false,threshold=40,ratio=1.25,s
   },{passive:true});
   el.addEventListener("touchcancel",()=>{start=null;tracking=false},{passive:true});
 }
+function scrollHomeToTop({smooth=false}={}){
+  const behavior=smooth?"smooth":"auto";
+  const apply=()=>{
+    try{window.scrollTo({top:0,left:0,behavior})}catch{window.scrollTo(0,0)}
+    document.documentElement.scrollTop=0;
+    document.body.scrollTop=0;
+    const main=document.querySelector(".app.lenton-view-home .main");
+    if(main)main.scrollTop=0;
+    const page=document.querySelector('[data-home-page="'+state.homeMode+'"]');
+    if(page)page.scrollTop=0;
+  };
+  apply();
+  requestAnimationFrame(apply);
+  setTimeout(apply,smooth?180:40);
+}
 function moveMainView(dir){
   rememberScroll();
   const order=visibleNavItems().map(x=>x.id);
@@ -3818,11 +3866,15 @@ function bind(){
     rememberScroll();
     if(target==="home"&&wasCurrent){
       state.listId=null;
-      window.scrollTo({top:0,left:0,behavior:"auto"});
-      setTimeout(()=>{
-        if(state.homeMode==="public")refreshPublicTimeline().catch(()=>{});
-        else homeView({silent:true,forceFresh:true});
-      },0);
+      scrollHomeToTop({smooth:true});
+      setTimeout(async()=>{
+        try{
+          if(state.homeMode==="public")await refreshPublicTimeline();
+          else await homeView({silent:true,forceFresh:true});
+        }finally{
+          scrollHomeToTop();
+        }
+      },120);
       return;
     }
     state.view=target;state.listId=null;
