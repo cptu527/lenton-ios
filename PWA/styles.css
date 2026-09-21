@@ -4868,3 +4868,42 @@ img{display:block}
   transition:opacity 130ms ease,transform 130ms ease;
 }
 .reply-needed-empty{padding-top:34px;padding-bottom:34px}
+
+
+/* 2026-09-22 notification true ViewPager */
+.lenton-notify-tabs{position:relative;overflow:hidden}
+.lenton-notify-tabs button::after{display:none!important}
+.notify-tab-indicator{
+  position:absolute;
+  left:0;
+  bottom:0;
+  width:36px;
+  height:3px;
+  border-radius:2px;
+  background:var(--accent);
+  transform:translate3d(0,0,0);
+  will-change:transform;
+  pointer-events:none;
+}
+.notification-pager{
+  position:relative;
+  width:100%;
+  overflow:hidden;
+  touch-action:pan-y;
+  transition:height 150ms ease;
+}
+.notification-pager-track{
+  display:flex;
+  width:100%;
+  align-items:flex-start;
+  will-change:transform;
+  backface-visibility:hidden;
+  -webkit-backface-visibility:hidden;
+}
+.notification-pager-page{
+  flex:0 0 100%;
+  width:100%;
+  min-width:100%;
+  box-sizing:border-box;
+  overflow:hidden;
+}

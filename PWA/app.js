@@ -15,7 +15,7 @@ const state = {
   me:null, view:"home", homeMode:"home", listId:null, lists:[], busy:false,
   theme:store.get("lenton_theme","system"), accent:store.get("lenton_accent",ANDROID?.theme?.accent||"#1d9bf0"),
   uiScale:Math.max(.6,Math.min(1.2,Number(store.get("lenton_ui_scale",1))||1)),
-  pushError:"", toast:"", notificationUnread:0, notificationUnreadOverflow:false, dmUnread:0, accountUnread:{}, accountNotificationUnread:{}, accountDmUnread:{}, currentConversation:null, profileReplies:false, profileMode:"posts", profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, profilePagerData:{}, homePagerData:{}, navStack:[], dmDraftRecipients:[], searchResults:null, searchQuery:"", searchMode:"posts", notificationMode:"all", replyNeededItems:[], updateAvailable:null, buildInfo:null
+  pushError:"", toast:"", notificationUnread:0, notificationUnreadOverflow:false, dmUnread:0, accountUnread:{}, accountNotificationUnread:{}, accountDmUnread:{}, currentConversation:null, profileReplies:false, profileMode:"posts", profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, profilePagerData:{}, homePagerData:{}, navStack:[], dmDraftRecipients:[], searchResults:null, searchQuery:"", searchMode:"posts", notificationMode:"all", notificationAllItems:[], replyNeededItems:[], updateAvailable:null, buildInfo:null
 };
 
 function accountScope(){
@@ -348,7 +348,7 @@ async function saveCurrentAccount(){
   await syncSavedAccountsToPushMeta();
 }
 function resetAccountState(){
-  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.listOrderDirty=false;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];state.searchResults=null;state.searchQuery="";state.searchMode="posts";state.searchFollowingIds=null;state.notificationUnread=0;state.notificationUnreadOverflow=false;state.dmUnread=0;state.notificationMode="all";state.replyNeededItems=[];
+  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.listOrderDirty=false;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];state.searchResults=null;state.searchQuery="";state.searchMode="posts";state.searchFollowingIds=null;state.notificationUnread=0;state.notificationUnreadOverflow=false;state.dmUnread=0;state.notificationMode="all";state.notificationAllItems=[];state.replyNeededItems=[];
 }
 async function switchSavedAccount(index){
   const list=savedAccounts(),entry=list[index];if(!entry?.session)return;
@@ -1462,11 +1462,11 @@ function saveReplyNeededHandledIds(ids){
   store.set(replyNeededHandledKey(),all.slice(Math.max(0,all.length-500)));
 }
 function ensureReplyNeededEmptyState(){
-  if(state.view!=="notifications"||state.notificationMode!=="replyNeeded")return;
-  const main=document.querySelector(".app.lenton-view-notifications .main");
-  if(!main||main.querySelector(".android-notify-card")||main.querySelector(".reply-needed-empty"))return;
-  const tabs=main.querySelector(".lenton-notify-tabs");
-  if(tabs)tabs.insertAdjacentHTML("afterend",'<div class="center reply-needed-empty">답장할 멘션이 없어요.</div>');
+  if(state.view!=="notifications")return;
+  const page=document.querySelector('[data-notification-page="replyNeeded"]');
+  if(!page||page.querySelector(".android-notify-card")||page.querySelector(".reply-needed-empty"))return;
+  page.innerHTML='<div class="center reply-needed-empty">답장할 멘션이 없어요.</div>';
+  syncNotificationPagerHeight();
 }
 function markReplyNeededHandledMany(statusIds,{removeDom=true}={}){
   const handled=replyNeededHandledIds();
@@ -1481,9 +1481,9 @@ function markReplyNeededHandledMany(statusIds,{removeDom=true}={}){
     state.replyNeededItems=state.replyNeededItems.filter(n=>!done.has(String(n?.status?.id||"")));
   }
   state.pageCache.notifications="";
-  if(removeDom&&state.view==="notifications"&&state.notificationMode==="replyNeeded"){
+  if(removeDom&&state.view==="notifications"){
     const done=new Set((statusIds||[]).map(x=>String(x||"")).filter(Boolean));
-    document.querySelectorAll(".android-notify-card[data-notify-status]").forEach(card=>{
+    document.querySelectorAll('[data-notification-page="replyNeeded"] .android-notify-card[data-notify-status]').forEach(card=>{
       if(!done.has(String(card.dataset.notifyStatus||"")))return;
       card.classList.add("reply-needed-resolved");
       setTimeout(()=>{card.remove();ensureReplyNeededEmptyState()},150);
@@ -1559,13 +1559,79 @@ function notificationRowsHtml(items=[],replyNeededMode=false){
       '</div></article>';
   }).join("");
 }
-function renderNotificationsData(items=[],replyNeededMode=false){
-  state.notificationMode=replyNeededMode?"replyNeeded":"all";
-  if(replyNeededMode)state.replyNeededItems=Array.isArray(items)?items:[];
-  const tabLabels=ANDROID?.renderer?.notificationTabs||["전체","멘션"];
-  const tabs='<div class="notify-tabs lenton-notify-tabs"><button data-notify="all" class="'+(replyNeededMode?"":"active")+'">'+esc(tabLabels[0]||"전체")+'</button><button data-notify="mention" class="'+(replyNeededMode?"active":"")+'">답장할 멘션</button></div>';
-  renderMainStable("알림",tabs+notificationRowsHtml(items,replyNeededMode),{view:"notifications",fab:true});
+function notificationModes(){return ["all","replyNeeded"]}
+function notificationPageHtml(items=[],mode="all"){
+  return notificationRowsHtml(items,mode==="replyNeeded");
 }
+function buildNotificationPager(mode="all"){
+  const modes=notificationModes(),index=Math.max(0,modes.indexOf(mode));
+  const data={all:state.notificationAllItems||[],replyNeeded:state.replyNeededItems||[]};
+  return '<div class="notification-pager" data-notification-pager><div class="notification-pager-track" data-notification-track style="transform:translate3d(-'+(index*100)+'%,0,0)">'+
+    modes.map(modeKey=>'<section class="notification-pager-page" data-notification-page="'+modeKey+'">'+notificationPageHtml(data[modeKey]||[],modeKey)+'</section>').join("")+
+    '</div></div>';
+}
+function syncNotificationPagerHeight(){
+  const pager=document.querySelector("[data-notification-pager]");
+  const track=document.querySelector("[data-notification-track]");
+  if(!pager||!track)return;
+  const page=track.querySelector('[data-notification-page="'+(state.notificationMode||"all")+'"]');
+  if(!page)return;
+  const height=Math.max(1,Math.ceil(page.scrollHeight),Math.ceil(page.getBoundingClientRect().height));
+  pager.style.height=height+"px";
+}
+function watchNotificationPagerHeight(){
+  const track=document.querySelector("[data-notification-track]");
+  if(!track)return;
+  const page=track.querySelector('[data-notification-page="'+(state.notificationMode||"all")+'"]');
+  if(!page)return;
+  if(state.notificationPagerObservedPage===page)return;
+  try{state.notificationPagerResizeObserver?.disconnect()}catch{}
+  state.notificationPagerObservedPage=page;
+  if("ResizeObserver" in window){
+    state.notificationPagerResizeObserver=new ResizeObserver(()=>requestAnimationFrame(syncNotificationPagerHeight));
+    state.notificationPagerResizeObserver.observe(page);
+  }
+  page.querySelectorAll("img,video").forEach(el=>{
+    if(el.complete)return;
+    el.addEventListener("load",syncNotificationPagerHeight,{once:true});
+    el.addEventListener("loadedmetadata",syncNotificationPagerHeight,{once:true});
+  });
+}
+function syncNotificationPagerUi(mode,animate=true){
+  const modes=notificationModes(),index=Math.max(0,modes.indexOf(mode));
+  const pager=document.querySelector("[data-notification-pager]"),track=document.querySelector("[data-notification-track]"),tabs=document.querySelector("[data-notification-tabs]");
+  if(!pager||!track||!tabs)return;
+  const width=Math.max(1,pager.clientWidth);
+  track.style.transition=animate?"transform 190ms cubic-bezier(.2,.75,.25,1)":"none";
+  track.style.transform="translate3d("+(-index*width)+"px,0,0)";
+  tabs.querySelectorAll("[data-notify]").forEach(b=>b.classList.toggle("active",(b.dataset.notify==="all"?"all":"replyNeeded")===mode));
+  const indicator=tabs.querySelector(".notify-tab-indicator"),tabW=tabs.clientWidth/modes.length;
+  if(indicator){
+    indicator.style.transition=animate?"transform 190ms cubic-bezier(.2,.75,.25,1)":"none";
+    indicator.style.transform="translate3d("+(index*tabW+(tabW-36)/2)+"px,0,0)";
+  }
+  requestAnimationFrame(()=>{syncNotificationPagerHeight();watchNotificationPagerHeight()});
+}
+function setNotificationPagerMode(mode,animate=true){
+  if(!notificationModes().includes(mode))mode="all";
+  state.notificationMode=mode;
+  syncNotificationPagerUi(mode,animate);
+}
+function renderNotificationsPager(mode="all"){
+  state.notificationMode=notificationModes().includes(mode)?mode:"all";
+  const tabs='<div class="notify-tabs lenton-notify-tabs" data-notification-tabs>'+
+    '<button data-notify="all" class="'+(state.notificationMode==="all"?"active":"")+'">전체</button>'+
+    '<button data-notify="mention" class="'+(state.notificationMode==="replyNeeded"?"active":"")+'">답장할 멘션</button>'+
+    '<div class="notify-tab-indicator"></div></div>';
+  renderMainStable("알림",tabs+buildNotificationPager(state.notificationMode),{view:"notifications",fab:true});
+  requestAnimationFrame(()=>syncNotificationPagerUi(state.notificationMode,false));
+}
+function renderNotificationsData(items=[],replyNeededMode=false){
+  if(replyNeededMode)state.replyNeededItems=Array.isArray(items)?items:[];
+  else state.notificationAllItems=Array.isArray(items)?items:[];
+  renderNotificationsPager(replyNeededMode?"replyNeeded":"all");
+}
+
 function applyReplyNeededReconciliation(before=[],after=[]){
   state.replyNeededItems=after;
   if(state.view!=="notifications"||state.notificationMode!=="replyNeeded")return;
@@ -1577,7 +1643,7 @@ function applyReplyNeededReconciliation(before=[],after=[]){
   }
   if(removed.length){
     const removeSet=new Set(removed);
-    document.querySelectorAll(".android-notify-card[data-notify-status]").forEach(card=>{
+    document.querySelectorAll('[data-notification-page="replyNeeded"] .android-notify-card[data-notify-status]').forEach(card=>{
       if(!removeSet.has(String(card.dataset.notifyStatus||"")))return;
       card.classList.add("reply-needed-resolved");
       setTimeout(()=>{card.remove();ensureReplyNeededEmptyState()},150);
@@ -1586,34 +1652,33 @@ function applyReplyNeededReconciliation(before=[],after=[]){
   state.pageCache.notifications="";
 }
 async function notificationsView(mentionsOnly=false,silent=false){
-  const replyNeededMode=!!mentionsOnly;
-  const continuingSession=!!document.querySelector(".lenton-view-notifications .lenton-notify-tabs");
-  if(!silent)renderLoadingShell("알림");
-  state.notificationMode=replyNeededMode?"replyNeeded":"all";
+  const requestedMode=mentionsOnly?"replyNeeded":"all";
+  const continuingSession=!!document.querySelector(".lenton-view-notifications [data-notification-pager]");
+  if(!silent&&!continuingSession)renderLoadingShell("알림");
+  state.notificationMode=requestedMode;
   try{
-    const query={limit:"80"};if(replyNeededMode)query["types[]"]="mention";
-    const [loaded,serverMarker]=await Promise.all([
-      api("/api/v1/notifications",{query}),
+    const [allLoaded,mentionLoaded,serverMarker]=await Promise.all([
+      api("/api/v1/notifications",{query:{limit:"80"}}),
+      api("/api/v1/notifications",{query:{limit:"80","types[]":"mention"}}),
       serverNotificationReadId().catch(()=>"")
     ]);
-    const rawItems=loaded||[];
+    const rawAll=allLoaded||[],rawMentions=mentionLoaded||[];
     const filter=notificationFilterPrefs();
     const markerBefore=String(serverMarker||localNotificationReadId()||"");
     const unreadIds=new Set();
     if(markerBefore){
-      for(const n of rawItems){
+      for(const n of rawAll){
         if(String(n?.id||"")===markerBefore)break;
         if(n?.status?.visibility==="direct")continue;
-        if(!replyNeededMode&&filter[n?.type]===false)continue;
+        if(filter[n?.type]===false)continue;
         unreadIds.add(String(n?.id||""));
       }
     }else{
       const sharedUnread=accountNotificationUnreadFor({key:currentAccountKey()});
       const fallbackUnread=Math.max(0,Number(state.notificationUnread)||0,Number(sharedUnread)||0);
       if(fallbackUnread>0){
-        for(const n of rawItems){
-          if(n?.status?.visibility==="direct")continue;
-          if(!replyNeededMode&&filter[n?.type]===false)continue;
+        for(const n of rawAll){
+          if(n?.status?.visibility==="direct"||filter[n?.type]===false)continue;
           const id=String(n?.id||"");if(!id)continue;
           unreadIds.add(id);
           if(unreadIds.size>=fallbackUnread)break;
@@ -1626,18 +1691,20 @@ async function notificationsView(mentionsOnly=false,silent=false){
       for(const id of unreadIds)state.notificationNewIds.add(id);
     }
 
-    if(replyNeededMode){
-      const pending=replyNeededCandidates(rawItems);
-      renderNotificationsData(pending,true);
-      const reconciled=await reconcileReplyNeededAcrossClients(pending);
-      applyReplyNeededReconciliation(pending,reconciled);
-      return;
-    }
+    state.notificationAllItems=rawAll.filter(n=>n?.status?.visibility!=="direct"&&filter[n.type]!==false);
+    const pending=replyNeededCandidates(rawMentions);
+    state.replyNeededItems=pending;
+    renderNotificationsPager(requestedMode);
 
-    if(rawItems?.[0]?.id)await markNotificationsRead(rawItems[0].id);
-    const items=rawItems.filter(n=>n?.status?.visibility!=="direct"&&filter[n.type]!==false);
-    renderNotificationsData(items,false);
-  }catch(e){renderMainStable("알림",'<div class="center">'+esc(e.message)+'</div>',{view:"notifications",fab:true})}
+    if(requestedMode==="all"&&rawAll?.[0]?.id)await markNotificationsRead(rawAll[0].id);
+
+    const reconciled=await reconcileReplyNeededAcrossClients(pending);
+    applyReplyNeededReconciliation(pending,reconciled);
+    state.replyNeededItems=reconciled;
+    syncNotificationPagerHeight();
+  }catch(e){
+    if(!continuingSession)renderMainStable("알림",'<div class="center">'+esc(e.message)+'</div>',{view:"notifications",fab:true});
+  }
 }
 
 function dmConversationKey(c){
@@ -4066,42 +4133,48 @@ function attachHomePullToRefresh(){
   main.addEventListener("touchcancel",cleanup,{passive:true});
 }
 function attachNotificationTabSwipe(){
-  const main=document.querySelector(".app.lenton-view-notifications .main");
-  if(!main||main.dataset.notificationSwipe==="1")return;
-  main.dataset.notificationSwipe="1";
-  let start=null,active=false,lastDx=0,width=0;
-  const reset=()=>{start=null;active=false;lastDx=0};
-  main.addEventListener("touchstart",e=>{
+  const pager=document.querySelector("[data-notification-pager]");
+  if(!pager||pager.dataset.notificationSwipe==="1")return;
+  pager.dataset.notificationSwipe="1";
+  const track=pager.querySelector("[data-notification-track]"),tabs=document.querySelector("[data-notification-tabs]");
+  if(!track||!tabs)return;
+  const modes=notificationModes();let start=null,active=false,width=0,startIndex=0;
+  const indicator=tabs.querySelector(".notify-tab-indicator");
+  const settle=(index,animate=true)=>{
+    const mode=modes[Math.max(0,Math.min(modes.length-1,index))];
+    setNotificationPagerMode(mode,animate);
+  };
+  pager.addEventListener("touchstart",e=>{
     if(e.touches?.length!==1)return;
-    const t=e.touches[0];
-    if(t.clientX<26)return;
-    start={x:t.clientX,y:t.clientY,time:performance.now()};
-    active=false;lastDx=0;width=Math.max(1,main.clientWidth||window.innerWidth||1);
+    const p=gesturePoint(e);
+    start=p;active=false;width=Math.max(1,pager.clientWidth);startIndex=Math.max(0,modes.indexOf(state.notificationMode||"all"));
+    track.style.transition="none";if(indicator)indicator.style.transition="none";
   },{passive:true});
-  main.addEventListener("touchmove",e=>{
+  pager.addEventListener("touchmove",e=>{
     if(!start||e.touches?.length!==1)return;
-    const t=e.touches[0],dx=t.clientX-start.x,dy=t.clientY-start.y;
+    const p=gesturePoint(e),dx=p.x-start.x,dy=p.y-start.y;
     if(!active){
-      if(Math.abs(dy)>14&&Math.abs(dy)>=Math.abs(dx)){reset();return}
-      if(Math.abs(dx)<8||Math.abs(dx)<=Math.abs(dy)*1.12)return;
+      if(Math.abs(dy)>12&&Math.abs(dy)>=Math.abs(dx)){start=null;return}
+      if(Math.abs(dx)<6||Math.abs(dx)<=Math.abs(dy))return;
       active=true;
     }
-    lastDx=dx;
     e.preventDefault();
+    let shown=dx;
+    if((startIndex===0&&dx>0)||(startIndex===modes.length-1&&dx<0))shown=dx*.22;
+    track.style.transform="translate3d("+(-startIndex*width+shown)+"px,0,0)";
+    const frac=Math.max(0,Math.min(modes.length-1,startIndex-shown/width)),tabW=tabs.clientWidth/modes.length;
+    if(indicator)indicator.style.transform="translate3d("+(frac*tabW+(tabW-36)/2)+"px,0,0)";
   },{passive:false});
-  main.addEventListener("touchend",e=>{
-    if(!start){reset();return}
-    const touch=e.changedTouches?.[0],dx=touch?touch.clientX-start.x:lastDx;
-    const dt=Math.max(1,performance.now()-start.time),vx=dx/dt;
-    const threshold=Math.max(34,width*.08);
-    const current=state.notificationMode||"all";
-    let target=current;
-    if(current==="all"&&dx<0&&(Math.abs(dx)>=threshold||vx<-.35))target="replyNeeded";
-    else if(current==="replyNeeded"&&dx>0&&(Math.abs(dx)>=threshold||vx>.35))target="all";
-    reset();
-    if(target!==current)notificationsView(target==="replyNeeded",true);
+  pager.addEventListener("touchend",e=>{
+    if(!start)return;
+    const p=gesturePoint(e),dx=p.x-start.x,dt=Math.max(1,p.time-start.time),vx=dx/dt;
+    if(!active){start=null;return}
+    let target=startIndex;
+    if(dx<0&&startIndex<modes.length-1&&(Math.abs(dx)>width*.18||vx<-.45))target=startIndex+1;
+    else if(dx>0&&startIndex>0&&(Math.abs(dx)>width*.18||vx>.45))target=startIndex-1;
+    start=null;active=false;settle(target,true);
   },{passive:true});
-  main.addEventListener("touchcancel",reset,{passive:true});
+  pager.addEventListener("touchcancel",()=>{if(start){start=null;active=false;settle(startIndex,true)}},{passive:true});
 }
 
 function attachLentonGestures(){
@@ -4262,7 +4335,7 @@ function bind(){
   document.querySelectorAll("[data-media-thread]").forEach(b=>b.onclick=()=>{const id=b.dataset.mediaThread;pushNavSnapshot();openThread(id)});
   document.querySelectorAll(".status[data-status-id]").forEach(card=>card.onclick=e=>{if(e.target.closest("button,a,video,audio"))return;pushNavSnapshot();openThread(card.dataset.statusId)});
   document.querySelectorAll("[data-thread-older]").forEach(b=>b.onclick=()=>openThread(b.dataset.threadOlder,true));
-  document.querySelectorAll("[data-notify]").forEach(b=>b.onclick=()=>notificationsView(b.dataset.notify==="mention"));
+  document.querySelectorAll("[data-notify]").forEach(b=>b.onclick=()=>setNotificationPagerMode(b.dataset.notify==="mention"?"replyNeeded":"all",true));
   document.querySelectorAll("[data-notify-status]").forEach(card=>card.onclick=e=>{if(e.target.closest("[data-profile]"))return;pushNavSnapshot();openThread(card.dataset.notifyStatus)});
   document.querySelectorAll("[data-follow-accept]").forEach(b=>b.onclick=()=>decideFollowRequest(b.dataset.followAccept,true));
   document.querySelectorAll("[data-follow-reject]").forEach(b=>b.onclick=()=>decideFollowRequest(b.dataset.followReject,false));
