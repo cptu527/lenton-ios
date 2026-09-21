@@ -763,46 +763,26 @@ async function loadChronologicalHome({maxId="",limit=40}={}){
     80
   );
 }
-function statusMentionsMe(raw){
-  const st=raw?.reblog||raw;
-  const mentions=Array.isArray(st?.mentions)?st.mentions:[];
-  const myId=String(state.me?.id||"");
-  const myAcct=String(state.me?.acct||state.me?.username||"").replace(/^@+/,"").toLowerCase();
-  return mentions.some(m=>{
-    if(myId&&String(m?.id||"")===myId)return true;
-    const acct=String(m?.acct||m?.username||"").replace(/^@+/,"").toLowerCase();
-    if(!acct||!myAcct)return false;
-    return acct===myAcct||acct.split("@")[0]===myAcct.split("@")[0];
-  });
-}
 function publicHomeStatus(raw){
   if(!raw||!nonDirect(raw))return false;
   const st=raw?.reblog||raw;
   if(!st)return false;
+  // 퍼블릭 탭은 시간순과 같은 홈 타임라인을 사용한다.
+  // 단, 실제 답글(in_reply_to_id 있음)은 누구의 글이든 제외한다.
+  // mentions 배열은 보지 않는다: 새 글에서 @태그한 퍼블릭 글은 그대로 표시한다.
+  if(String(st.visibility||raw.visibility||"")!=="public")return false;
   const reply=st.in_reply_to_id;
-  const isReply=reply!==null&&reply!==undefined&&String(reply)!=="";
-  // 퍼블릭 탭은 시간순 홈과 같은 소스를 사용한다.
-  // 차이는 실제 답글만 숨기고, 나를 향한 멘션 답글은 예외로 보여주는 것뿐이다.
-  if(isReply&&!statusMentionsMe(raw))return false;
+  if(reply!==null&&reply!==undefined&&String(reply)!=="")return false;
   return true;
 }
 async function loadPublicFromHome({maxId="",limit=40,maxScans=6}={}){
   let cursor=maxId||"",collected=[];
-  const firstPage=!maxId;
   for(let scan=0;scan<Math.max(1,maxScans)&&collected.length<80;scan++){
     const query={limit:String(limit)};
     if(cursor)query.max_id=cursor;
-    const [home,mentions]=await Promise.all([
-      api("/api/v1/timelines/home",{query}).catch(()=>[]),
-      firstPage&&scan===0?loadRecentMentionStatuses():Promise.resolve([])
-    ]);
-    const merged=mergeNewestTimeline(
-      (Array.isArray(home)?home:[]).filter(nonDirect),
-      (Array.isArray(mentions)?mentions:[]).filter(nonDirect),
-      80
-    );
-    const filtered=merged.filter(publicHomeStatus);
-    collected=mergeNewestTimeline(filtered,collected,80);
+    const home=await api("/api/v1/timelines/home",{query}).catch(()=>[]);
+    const rows=(Array.isArray(home)?home:[]).filter(publicHomeStatus);
+    collected=mergeNewestTimeline(rows,collected,80);
     const next=String((Array.isArray(home)?home:[]).at(-1)?.id||"");
     if(!next||next===cursor||(Array.isArray(home)&&home.length===0))break;
     cursor=next;
@@ -811,7 +791,7 @@ async function loadPublicFromHome({maxId="",limit=40,maxScans=6}={}){
 }
 
 function homeSnapshotRead(){
-  const snap=store.get(scopedKey("home_snapshot_v6"),null);
+  const snap=store.get(scopedKey("home_snapshot_v7"),null);
   if(!snap?.at||Date.now()-Number(snap.at)>10*60*1000)return null;
   const data=snap.data;
   return data&&Array.isArray(data.home)&&Array.isArray(data.public)?data:null;
@@ -819,7 +799,7 @@ function homeSnapshotRead(){
 function homeSnapshotWrite(data){
   try{
     if(data&&Array.isArray(data.home)&&Array.isArray(data.public)){
-      store.set(scopedKey("home_snapshot_v6"),{at:Date.now(),data});
+      store.set(scopedKey("home_snapshot_v7"),{at:Date.now(),data});
     }
   }catch{}
 }
