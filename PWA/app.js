@@ -14,7 +14,7 @@ const state = {
   session: store.get("lenton_session"),
   me:null, view:"home", homeMode:"home", listId:null, lists:[], busy:false,
   theme:store.get("lenton_theme","system"), accent:store.get("lenton_accent",ANDROID?.theme?.accent||"#1d9bf0"),
-  uiScale:Math.max(.8,Math.min(1.2,Number(store.get("lenton_ui_scale",1))||1)),
+  uiScale:Math.max(.6,Math.min(1.2,Number(store.get("lenton_ui_scale",1))||1)),
   pushError:"", toast:"", notificationUnread:0, notificationUnreadOverflow:false, dmUnread:0, accountUnread:{}, accountNotificationUnread:{}, accountDmUnread:{}, currentConversation:null, profileReplies:false, profileMode:"posts", profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, profilePagerData:{}, homePagerData:{}, navStack:[], dmDraftRecipients:[], searchResults:null, searchQuery:"", searchMode:"posts", updateAvailable:null, buildInfo:null
 };
 
@@ -126,7 +126,7 @@ document.documentElement.style.setProperty("--accent",state.accent);
 if(state.theme!=="system") document.documentElement.dataset.theme=state.theme;
 
 function applyAndroidSpecMetrics(){
-  const ui=ANDROID?.ui||{}, root=document.documentElement,scale=Math.max(.8,Math.min(1.2,Number(state.uiScale)||1));
+  const ui=ANDROID?.ui||{}, root=document.documentElement,scale=Math.max(.6,Math.min(1.2,Number(state.uiScale)||1));
   root.style.setProperty("--lenton-ui-scale",String(scale));
   const px=(name,value,fallback)=>root.style.setProperty(name,String(Math.round(Number(value??fallback)*scale*100)/100)+"px");
   px("--android-topbar",ui.topBarDp,62);
@@ -2846,7 +2846,7 @@ async function settingsView(){
       </div>
       <div class="setting-row ui-size-row">
         <div class="setting-titleline"><div><b>UI 크기</b><small>글자·아이콘·버튼·타임라인 간격을 함께 조절합니다.</small></div><strong id="uiScaleValue">${Math.round(state.uiScale*100)}%</strong></div>
-        <div class="ui-scale-control"><span>가</span><input id="uiScaleRange" type="range" min="80" max="120" step="5" value="${Math.round(state.uiScale*100)}"><span class="large">가</span></div>
+        <div class="ui-scale-control"><span>가</span><input id="uiScaleRange" type="range" min="60" max="120" step="5" value="${Math.round(state.uiScale*100)}"><span class="large">가</span></div>
       </div>
     </div>
 
@@ -3899,7 +3899,7 @@ function bind(){
   const applyAccent=value=>{state.accent=value;store.set("lenton_accent",state.accent);document.documentElement.style.setProperty("--accent",state.accent);document.querySelectorAll("[data-accent-preset]").forEach(b=>b.classList.toggle("selected",b.dataset.accentPreset.toLowerCase()===state.accent.toLowerCase()))};
   $("#accentSel")?.addEventListener("input",e=>applyAccent(e.target.value));
   document.querySelectorAll("[data-accent-preset]").forEach(b=>b.onclick=()=>{applyAccent(b.dataset.accentPreset);const input=$("#accentSel");if(input)input.value=b.dataset.accentPreset});
-  $("#uiScaleRange")?.addEventListener("input",e=>{state.uiScale=Math.max(.8,Math.min(1.2,Number(e.target.value||100)/100));store.set("lenton_ui_scale",state.uiScale);const label=$("#uiScaleValue");if(label)label.textContent=Math.round(state.uiScale*100)+"%";applyAndroidSpecMetrics()});
+  $("#uiScaleRange")?.addEventListener("input",e=>{state.uiScale=Math.max(.6,Math.min(1.2,Number(e.target.value||100)/100));store.set("lenton_ui_scale",state.uiScale);const label=$("#uiScaleValue");if(label)label.textContent=Math.round(state.uiScale*100)+"%";applyAndroidSpecMetrics()});
   document.querySelectorAll("[data-push-pref]").forEach(x=>x.onchange=async()=>{const p=pushAlertPrefs();p[x.dataset.pushPref]=x.checked;savePushAlertPrefs(p);const ok=await syncPushPreferences({quiet:true});toast(ok?"알림 설정을 저장했어요.":"알림 종류를 저장했어요. 알림을 켜면 적용됩니다.")});
   const appRoot=document.querySelector("#app>.app");
   if(appRoot){
