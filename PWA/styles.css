@@ -1056,7 +1056,14 @@ img{display:block}
 }
 .thread-current{border-left:3px solid var(--accent)}
 
-.list-toolbar{padding:14px 18px;border-bottom:1px solid var(--line)}
+.list-toolbar{
+  width:100%;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:14px 18px;
+  border-bottom:1px solid var(--line);
+}
 .list-manage-row{
   width:100%;
   min-height:68px;
@@ -1090,6 +1097,7 @@ img{display:block}
 .list-order-grip:active{cursor:grabbing}
 .list-order-hint{
   margin-left:auto;
+  text-align:right;
   color:var(--sub);
   font-size:12px;
   white-space:nowrap;
@@ -4680,3 +4688,82 @@ img{display:block}
   font-weight:800;
 }
 .list-member-add-button:disabled{opacity:.55}
+
+
+/* List creation options + DM-style multi-member selection */
+.list-create-editor{
+  padding:18px;
+  display:flex;
+  flex-direction:column;
+  gap:16px;
+}
+.list-create-editor>label{
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+  color:var(--sub);
+  font-size:14px;
+}
+.list-create-editor .check-row{
+  flex-direction:row;
+  align-items:center;
+  min-height:42px;
+  color:var(--fg);
+}
+.list-create-editor .field{
+  width:100%;
+  margin:0;
+}
+.list-create-help{
+  padding:12px 14px;
+  border-radius:12px;
+  background:var(--surface);
+  color:var(--sub);
+  font-size:13px;
+  line-height:1.45;
+}
+.list-create-actions{
+  display:flex;
+  justify-content:flex-end;
+  padding-top:2px;
+}
+.list-create-actions .primary{
+  min-width:132px;
+  height:46px;
+}
+.list-member-add-multi{
+  min-height:calc(100dvh - var(--android-standalone-top,60px) - env(safe-area-inset-top));
+  padding-bottom:calc(92px + env(safe-area-inset-bottom));
+}
+.list-member-add-multi .list-member-search{
+  padding-bottom:10px;
+}
+.list-member-add-multi .dm-selected-lenton{
+  padding-left:20px;
+  padding-right:20px;
+}
+.list-member-add-dock{
+  position:fixed;
+  z-index:40;
+  left:0;
+  right:0;
+  bottom:0;
+  padding:10px 20px calc(12px + env(safe-area-inset-bottom));
+  border-top:1px solid var(--line);
+  background:color-mix(in srgb,var(--bg) 96%,transparent);
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+}
+.list-member-confirm{
+  width:100%;
+  height:56px;
+  margin:0;
+  border-radius:28px;
+  font-size:16px;
+  font-weight:800;
+}
+.list-member-confirm:disabled{opacity:.38}
+@media (max-width:430px){
+  .list-toolbar{padding-left:14px;padding-right:14px;gap:8px}
+  .list-order-hint{font-size:11px}
+}

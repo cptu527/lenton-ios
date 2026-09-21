@@ -2162,31 +2162,63 @@ async function listMemberAddScreen(id){
     const [list,members,followingRaw]=await Promise.all([
       api(`/api/v1/lists/${id}`),
       api(`/api/v1/lists/${id}/accounts`,{query:{limit:"80"}}),
-      api("/api/v1/accounts/"+encodeURIComponent(state.me.id)+"/following",{query:{limit:"80"}})
+      loadAllFollowing({fresh:true})
     ]);
     const existing=new Set((members||[]).map(a=>String(a.id||"")).filter(Boolean));
     const mine=String(state.me?.id||"");
     const following=(followingRaw||[]).filter(a=>a?.id&&String(a.id)!==mine&&!existing.has(String(a.id)));
-    const body=`<div class="list-member-add-page">
-      <div class="list-member-add-note"><b>${esc(list.title||"리스트")}</b><span>팔로우 중인 계정에서 멤버를 선택하세요.</span></div>
-      <div class="list-member-search">
+    const selected=new Map();
+    let shown=[...following];
+
+    const body=`<div class="list-member-add-page list-member-add-multi">
+      <div class="list-member-add-note"><b>${esc(list.title||"리스트")}</b><span>팔로우 중인 계정을 여러 명 선택한 뒤 한 번에 추가할 수 있어요.</span></div>
+      <div class="list-member-search lenton-dm-search">
         <input id="listMemberSearchInput" class="field" type="search" inputmode="search" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="이름 또는 @아이디로 필터">
       </div>
+      <div id="listMemberSelected" class="dm-selected dm-selected-lenton"></div>
       <div class="list-member-list-heading" id="listMemberListHeading">팔로잉</div>
-      <div id="listMemberSearchResults" class="list-member-search-results"></div>
+      <div id="listMemberSearchResults" class="dm-results dm-results-lenton"></div>
+      <div class="list-member-add-dock"><button type="button" class="primary list-member-confirm" id="listMemberConfirm" disabled>선택한 멤버 추가</button></div>
     </div>`;
     $("#app").innerHTML=standaloneShell("멤버 추가",body);bind();
-    const input=$("#listMemberSearchInput"),results=$("#listMemberSearchResults"),heading=$("#listMemberListHeading");
+
+    const input=$("#listMemberSearchInput"),results=$("#listMemberSearchResults"),heading=$("#listMemberListHeading"),selectedBox=$("#listMemberSelected"),confirm=$("#listMemberConfirm");
+    const updateConfirm=()=>{
+      if(!confirm)return;
+      confirm.disabled=selected.size===0;
+      confirm.textContent=selected.size?selected.size+"명 추가":"선택한 멤버 추가";
+    };
+    const drawSelected=()=>{
+      if(!selectedBox)return;
+      const values=[...selected.values()];
+      selectedBox.innerHTML=values.map(a=>`<button type="button" class="dm-selected-chip" data-list-member-remove="${esc(a.id)}" aria-label="${esc(a.display_name||a.username||a.acct||"선택한 사용자")} 선택 해제">
+        <img src="${esc(a.avatar_static||a.avatar||"")}" alt="">
+        <span>${renderEmojiText(a.display_name||a.username||a.acct||"",a.emojis||[])}</span>
+        <b>×</b>
+      </button>`).join("");
+      selectedBox.classList.toggle("has-selection",values.length>0);
+      selectedBox.querySelectorAll("[data-list-member-remove]").forEach(b=>b.onclick=()=>{
+        selected.delete(String(b.dataset.listMemberRemove));
+        drawSelected();renderRows(shown);updateConfirm();
+      });
+      updateConfirm();
+    };
     const renderRows=items=>{
-      const rows=(items||[]);
-      results.innerHTML=rows.length?rows.map(a=>`<div class="list-member-candidate">
-        <button type="button" class="list-member-person" data-profile="${esc(a.id)}">
-          <img src="${esc(a.avatar_static||a.avatar||"")}" alt="">
-          <span><b>${renderEmojiText(a.display_name||a.username||a.acct||"",a.emojis||[])}</b><small>@${esc(a.acct||"")}</small></span>
-        </button>
-        <button type="button" class="list-member-add-button" data-list-member-add="${esc(a.id)}" data-list-member-id="${esc(id)}">추가</button>
-      </div>`).join(""):'<div class="center">추가할 수 있는 팔로우 계정이 없어요.</div>';
-      bind();
+      shown=(items||[]).filter(Boolean);
+      results.innerHTML=shown.length?shown.map(a=>{
+        const key=String(a.id),picked=selected.has(key);
+        return `<button type="button" class="dm-person-row lenton-dm-person ${picked?"selected":""}" data-list-member-toggle="${esc(a.id)}" aria-pressed="${picked?"true":"false"}">
+          <img class="dm-person-avatar" src="${esc(a.avatar_static||a.avatar||"")}" alt="">
+          <span class="dm-person-copy"><b>${renderEmojiText(a.display_name||a.username||a.acct||"",a.emojis||[])}</b><small>@${esc(a.acct||"")}</small></span>
+          <span class="dm-person-plus" aria-hidden="true">${picked?"✓":"＋"}</span>
+        </button>`;
+      }).join(""):'<div class="center dm-empty-results">추가할 수 있는 팔로우 계정이 없어요.</div>';
+      results.querySelectorAll("[data-list-member-toggle]").forEach(b=>b.onclick=()=>{
+        const a=shown.find(x=>String(x.id)===String(b.dataset.listMemberToggle));if(!a)return;
+        const key=String(a.id);
+        if(selected.has(key))selected.delete(key);else selected.set(key,a);
+        drawSelected();renderRows(shown);updateConfirm();
+      });
     };
     const filterRows=()=>{
       const q=String(input?.value||"").trim().toLocaleLowerCase();
@@ -2196,33 +2228,32 @@ async function listMemberAddScreen(id){
         return;
       }
       if(heading)heading.textContent="검색 결과";
-      const matched=following.filter(a=>{
+      renderRows(following.filter(a=>{
         const name=String(a.display_name||"").toLocaleLowerCase();
         const username=String(a.username||"").toLocaleLowerCase();
         const acct=String(a.acct||"").toLocaleLowerCase();
         return name.includes(q)||username.includes(q)||acct.includes(q)||("@"+acct).includes(q);
-      });
-      renderRows(matched);
+      }));
     };
     input.addEventListener("input",filterRows);
     input.addEventListener("keydown",e=>{if(e.key==="Enter")e.preventDefault()});
+    confirm.onclick=async()=>{
+      const ids=[...selected.keys()];if(!ids.length)return;
+      confirm.disabled=true;confirm.textContent="추가 중…";
+      try{
+        const form=new URLSearchParams();for(const accountId of ids)form.append("account_ids[]",accountId);
+        await api(`/api/v1/lists/${id}/accounts`,{method:"POST",form});
+        toast(ids.length+"명을 리스트에 추가했어요.");
+        if(state.navStack.length)state.navStack.pop();
+        listManageScreen(id);
+      }catch(e){
+        confirm.disabled=false;updateConfirm();toast("멤버 추가 실패: "+e.message);
+      }
+    };
+    drawSelected();
     renderRows(following);
   }catch(e){
     $("#app").innerHTML=standaloneShell("멤버 추가",'<div class="center">'+esc(e.message)+'</div>');bind();
-  }
-}
-async function addListMember(id,accountId,button=null){
-  if(!id||!accountId)return;
-  if(button){button.disabled=true;button.textContent="추가 중…"}
-  try{
-    const form=new URLSearchParams();form.append("account_ids[]",accountId);
-    await api(`/api/v1/lists/${id}/accounts`,{method:"POST",form});
-    toast("리스트에 멤버를 추가했어요.");
-    if(state.navStack.length)state.navStack.pop();
-    listManageScreen(id);
-  }catch(e){
-    if(button){button.disabled=false;button.textContent="추가"}
-    toast("멤버 추가 실패: "+e.message);
   }
 }
 async function saveListSettings(id){
@@ -3020,8 +3051,43 @@ async function openThread(id,showAllAncestors=false){
 }
 
 async function newList(){
-  const title=prompt("새 리스트 이름");if(!title)return;
-  try{await api("/api/v1/lists",{method:"POST",form:{title}});await loadLists();render()}catch(e){toast(e.message)}
+  pushNavSnapshot();
+  const body=`<div class="list-create-editor">
+    <label>리스트 이름<input id="newListTitle" class="field" maxlength="100" placeholder="새 리스트 이름"></label>
+    <label>답글 표시 범위<select id="newListReplies" class="field">
+      <option value="list" selected>리스트 멤버의 답글</option>
+      <option value="followed">팔로우 중인 사람의 답글</option>
+      <option value="none">답글 숨김</option>
+    </select></label>
+    <label class="check-row"><input id="newListExclusive" type="checkbox"> 홈 타임라인에서 제외</label>
+    <label class="check-row"><input id="newListVisible" type="checkbox" checked> 홈에 리스트 표시</label>
+    <div class="list-create-help">만든 뒤 리스트 관리 화면에서 멤버를 여러 명 한 번에 추가할 수 있어요.</div>
+    <div class="list-create-actions"><button type="button" class="primary" id="createListConfirm">리스트 만들기</button></div>
+  </div>`;
+  $("#app").innerHTML=standaloneShell("새 리스트",body);bind();
+  const title=$("#newListTitle"),confirm=$("#createListConfirm");
+  setTimeout(()=>title?.focus(),40);
+  confirm.onclick=async()=>{
+    const name=String(title?.value||"").trim();if(!name){toast("리스트 이름을 입력해 주세요.");title?.focus();return}
+    const replies_policy=$("#newListReplies")?.value||"list",exclusive=!!$("#newListExclusive")?.checked,visible=!!$("#newListVisible")?.checked;
+    confirm.disabled=true;confirm.textContent="만드는 중…";
+    try{
+      let created;
+      try{
+        created=await api("/api/v1/lists",{method:"POST",form:{title:name,replies_policy,exclusive:String(exclusive)}});
+      }catch{
+        created=await api("/api/v1/lists",{method:"POST",form:{title:name,replies_policy}});
+      }
+      if(created?.id)setListHidden(String(created.id),!visible);
+      await loadLists();
+      if(state.navStack.length)state.navStack.pop();
+      toast("리스트를 만들었어요.");
+      listsScreen();
+    }catch(e){
+      confirm.disabled=false;confirm.textContent="리스트 만들기";toast(e.message);
+    }
+  };
+  title?.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();confirm.click()}});
 }
 async function loadCustomEmojis({fresh=false}={}){
   if(Array.isArray(state.customEmojis)&&!fresh)return state.customEmojis;
@@ -3676,7 +3742,6 @@ function bind(){
   document.querySelectorAll("[data-open-list]").forEach(b=>b.onclick=()=>{state.view="home";state.listId=b.dataset.openList;render()});
   document.querySelectorAll("[data-list-manage]").forEach(b=>b.onclick=()=>{pushNavSnapshot();listManageScreen(b.dataset.listManage)});
   document.querySelectorAll("[data-list-add-member]").forEach(b=>b.onclick=()=>{pushNavSnapshot();listMemberAddScreen(b.dataset.listAddMember)});
-  document.querySelectorAll("[data-list-member-add]").forEach(b=>b.onclick=e=>{e.stopPropagation();addListMember(b.dataset.listMemberId,b.dataset.listMemberAdd,b)});
   document.querySelectorAll("[data-list-visible]").forEach(b=>b.onclick=()=>{const id=b.dataset.listVisible;setListHidden(id,!hiddenListIds().has(id));listsScreen()});
   document.querySelectorAll("[data-list-save]").forEach(b=>b.onclick=()=>saveListSettings(b.dataset.listSave));
   document.querySelectorAll("[data-list-delete]").forEach(b=>b.onclick=()=>deleteList(b.dataset.listDelete));
