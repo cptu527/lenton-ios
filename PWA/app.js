@@ -972,7 +972,9 @@ async function loadMoreHome(){
   if(state.timelineLoadingMore)return;
   const last=state.timelineItems[state.timelineItems.length-1],maxId=statusId(last);
   if(!maxId){toast("더 불러올 게시물이 없어요.");return}
-  const btn=document.querySelector('[data-action="loadmorehome"]');
+  const loadMode=state.listId?"list":state.homeMode;
+  const btn=document.querySelector('[data-action="loadmorehome"][data-home-load-mode="'+loadMode+'"]')
+    ||document.querySelector('[data-action="loadmorehome"]');
   state.timelineLoadingMore=true;
   if(btn){btn.disabled=true;btn.textContent="불러오는 중…"}
   try{
@@ -1005,6 +1007,7 @@ async function loadMoreHome(){
       btn.disabled=false;btn.textContent="더 불러오기";
     }
     bind();
+    if(!state.listId)requestAnimationFrame(()=>syncHomePagerUi(state.homeMode,false));
   }catch(e){
     toast(e.message);
     if(btn){btn.disabled=false;btn.textContent="다시 시도"}
