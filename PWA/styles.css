@@ -4269,6 +4269,13 @@ img{display:block}
   font-size:14px;
   font-weight:700;
   white-space:nowrap;
+  touch-action:manipulation;
+  -webkit-tap-highlight-color:transparent;
+  cursor:pointer;
+  user-select:none;
+}
+.search-filter-bar button:active{
+  transform:scale(.97);
 }
 .search-filter-bar button.active{
   border-color:var(--accent);
