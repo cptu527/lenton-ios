@@ -4772,3 +4772,44 @@ img{display:block}
   .list-toolbar{padding-left:14px;padding-right:14px;gap:8px}
   .list-order-hint{font-size:11px}
 }
+
+
+/* QA 14: spacing for App Update / Help rows */
+.update-settings-screen{
+  padding-bottom:calc(28px + env(safe-area-inset-bottom));
+}
+.update-settings-screen .update-settings-group{
+  border-bottom:10px solid var(--surface);
+}
+.update-settings-screen .update-settings-group:last-child{
+  border-bottom:0;
+}
+.update-settings-screen .update-settings-link{
+  min-height:68px;
+  padding:12px 18px;
+  gap:16px;
+  border-bottom:1px solid var(--line);
+}
+.update-settings-screen .update-settings-link>span:first-child{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.update-settings-screen .update-settings-link b{
+  font-size:16px;
+  line-height:1.3;
+}
+.update-settings-screen .update-settings-link small{
+  display:block;
+  color:var(--sub);
+  font-size:13px;
+  font-weight:400;
+  line-height:1.4;
+}
+.update-settings-screen .settings-chevron{
+  flex:0 0 auto;
+  color:var(--sub);
+  font-size:24px;
+  line-height:1;
+}

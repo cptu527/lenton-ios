@@ -2585,13 +2585,13 @@ async function updateHistoryScreen(){
     '<div class="kv"><span>Android 원본</span><b>v'+esc(ANDROID?.versionName||"?")+' · code '+esc(ANDROID?.versionCode||"?")+'</b></div>'+
     '<div class="kv"><span>PWA revision</span><b>'+esc(build?.pwaRevision||currentPwaToken()||"unknown")+'</b></div>'+
     '<div class="kv"><span>업데이트 방식</span><b>자동 업데이트</b></div></div>';
-  const body='<div class="settings">'+info+
-    '<div class="section"><h3>업데이트</h3>'+
-      '<button class="settings-link" data-action="checkPwaUpdate"><span><b>업데이트 확인</b><small>최신 버전과 변경사항을 확인합니다</small></span><span>›</span></button>'+
+  const body='<div class="settings update-settings-screen">'+info+
+    '<div class="section update-settings-group"><h3>업데이트</h3>'+
+      '<button class="settings-link update-settings-link" data-action="checkPwaUpdate"><span><b>업데이트 확인</b><small>최신 버전과 변경사항을 확인합니다</small></span><span class="settings-chevron">›</span></button>'+
     '</div>'+
-    '<div class="section"><h3>도움말</h3>'+
-      '<button class="settings-link" data-action="inquiry" data-inquiry-type="오류 신고"><span><b>문제 신고하기</b><small>버그 · 오류 · 문의 내용을 이메일로 보내기</small></span><span>›</span></button>'+
-      '<button class="settings-link" data-action="inquiry" data-inquiry-type="기능 건의"><span><b>기능 건의</b><small>렌톤에 원하는 기능을 알려주세요</small></span><span>›</span></button>'+
+    '<div class="section update-settings-group"><h3>도움말</h3>'+
+      '<button class="settings-link update-settings-link" data-action="inquiry" data-inquiry-type="오류 신고"><span><b>문제 신고하기</b><small>버그 · 오류 · 문의 내용을 이메일로 보내기</small></span><span class="settings-chevron">›</span></button>'+
+      '<button class="settings-link update-settings-link" data-action="inquiry" data-inquiry-type="기능 건의"><span><b>기능 건의</b><small>렌톤에 원하는 기능을 알려주세요</small></span><span class="settings-chevron">›</span></button>'+
     '</div></div>';
   $("#app").innerHTML=standaloneShell("앱 업데이트",body);bind();
 }
