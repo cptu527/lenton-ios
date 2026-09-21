@@ -3073,23 +3073,42 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
     $("#composeFile",m).onchange=async e=>{await handleComposeFiles(e.target.files)};
     $("#composeCameraFile",m).onchange=async e=>{await handleComposeFiles(e.target.files)};
     $("#composeGifFile",m).onchange=async e=>{await handleComposeFiles(e.target.files)};
-    $("#composeEmoji",m)?.addEventListener("click",async e=>{
-      e.preventDefault();e.stopPropagation();
-      const box=$("#emojiPicker",m);if(!box)return;
-      const opening=box.hidden;
-      box.hidden=!opening;
-      if(!opening)return;
-      const active=document.activeElement;if(active&&m.contains(active)&&typeof active.blur==="function")active.blur();
-      box.innerHTML='<div class="center">이모지 불러오는 중…</div>';
+    const emojiButton=$("#composeEmoji",m),emojiBox=$("#emojiPicker",m);
+    const closeEmojiPicker=(refocus=false)=>{
+      if(!emojiBox)return;
+      emojiBox.hidden=true;
+      if(refocus){
+        const textarea=m.querySelector(`[data-t="${activePart}"]`);
+        try{textarea?.focus({preventScroll:true})}catch{textarea?.focus()}
+      }
+    };
+    const renderEmojiPicker=async()=>{
+      if(!emojiBox)return;
+      const textarea=m.querySelector(`[data-t="${activePart}"]`);
+      if(!emojiBox.hidden){closeEmojiPicker(true);return}
+      try{textarea?.focus({preventScroll:true})}catch{textarea?.focus()}
+      emojiBox.hidden=false;
+      emojiBox.innerHTML='<div class="emoji-picker-head"><b>서버 이모지</b><button type="button" class="emoji-picker-close" aria-label="이모지 선택 닫기">×</button></div><div class="emoji-picker-loading">이모지 불러오는 중…</div>';
+      emojiBox.querySelector(".emoji-picker-close").onclick=()=>closeEmojiPicker(true);
       const emojis=await loadCustomEmojis();
-      box.innerHTML=emojis.length?emojis.map(e=>`<button data-emoji="${esc(e.shortcode)}" title=":${esc(e.shortcode)}:"><img src="${esc(e.static_url||e.url)}" alt=":${esc(e.shortcode)}:"></button>`).join(""):'<div class="center">서버 이모지가 없어요.</div>';
-      box.querySelectorAll("[data-emoji]").forEach(b=>b.onclick=()=>{
+      if(!emojiBox.isConnected||emojiBox.hidden)return;
+      emojiBox.innerHTML='<div class="emoji-picker-head"><b>서버 이모지</b><button type="button" class="emoji-picker-close" aria-label="이모지 선택 닫기">×</button></div><div class="emoji-picker-grid">'+(emojis.length?emojis.map(e=>`<button type="button" data-emoji="${esc(e.shortcode)}" title=":${esc(e.shortcode)}:"><img src="${esc(e.static_url||e.url)}" alt=":${esc(e.shortcode)}:"></button>`).join(""):'<div class="emoji-picker-empty">서버 이모지가 없어요.</div>')+'</div>';
+      emojiBox.querySelector(".emoji-picker-close").onclick=()=>closeEmojiPicker(true);
+      emojiBox.querySelectorAll("[data-emoji]").forEach(b=>b.onclick=()=>{
         const textarea=m.querySelector(`[data-t="${activePart}"]`);if(!textarea)return;
         const ins=":"+b.dataset.emoji+":",start=textarea.selectionStart??textarea.value.length,end=textarea.selectionEnd??start;
         parts[activePart].text=textarea.value.slice(0,start)+ins+textarea.value.slice(end);
-        textarea.value=parts[activePart].text;box.hidden=true;textarea.focus();textarea.setSelectionRange(start+ins.length,start+ins.length);
+        textarea.value=parts[activePart].text;
+        closeEmojiPicker(true);
+        textarea.setSelectionRange(start+ins.length,start+ins.length);
       });
-    });
+    };
+    if(emojiButton){
+      emojiButton.addEventListener("pointerdown",e=>{e.preventDefault();e.stopPropagation();renderEmojiPicker()});
+      emojiButton.addEventListener("click",e=>{e.preventDefault();e.stopPropagation()});
+      emojiButton.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();renderEmojiPicker()}});
+    }
+    $("#parts",m)?.addEventListener("pointerdown",()=>{if(emojiBox&&!emojiBox.hidden)closeEmojiPicker(false)},{passive:true});
     $("#sendCompose",m).onclick=async()=>{
       if(uploading){toast("미디어 업로드가 끝날 때까지 기다려주세요.");return}
       const valid=parts.filter(p=>p.text.trim()||p.media.length||p.poll?.options?.some(x=>x.trim()));if(!valid.length){toast("내용을 입력해주세요.");return}
