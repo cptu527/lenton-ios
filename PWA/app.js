@@ -1924,8 +1924,11 @@ function renderSearchResults(){
   bind();
 }
 function setSearchMode(mode){
-  if(!["posts","people","media"].includes(mode))return;
-  state.searchMode=mode;renderSearchResults();
+  if(!["posts","people","media"].includes(mode)||state.searchMode===mode)return;
+  state.searchMode=mode;
+  // 탭 버튼의 선택 상태는 즉시 바꾸고, 무거운 결과 렌더는 다음 프레임으로 넘긴다.
+  syncSearchFilterBar();
+  requestAnimationFrame(()=>renderSearchResults());
 }
 function closeSearchMenu(){document.querySelector(".android-popup-shade.search-popup")?.remove()}
 function openSearchMenu(){
@@ -3900,11 +3903,23 @@ function bind(){
   document.querySelectorAll("[data-search-following-toggle]").forEach(b=>b.onclick=async()=>{
     const next=!searchFollowingOnlyEnabled();
     store.set(scopedKey("search_following_only"),next);
-    if(next){
-      try{await ensureSearchFollowingIds()}catch(e){toast(e.message)}
-    }
-    renderSearchResults();
+
+    // 버튼은 네트워크 조회를 기다리지 않고 즉시 눌린 상태로 보이게 한다.
     syncSearchFilterBar();
+
+    if(!next){
+      requestAnimationFrame(()=>renderSearchResults());
+      return;
+    }
+
+    try{
+      await ensureSearchFollowingIds();
+      renderSearchResults();
+    }catch(e){
+      store.set(scopedKey("search_following_only"),false);
+      syncSearchFilterBar();
+      toast(e.message);
+    }
   });
   document.querySelectorAll(".private-note-card[data-action='editPrivateNote']").forEach(b=>b.onclick=e=>{e.preventDefault();e.stopPropagation();editPrivateNote()});
   document.querySelectorAll("[data-account-choice]").forEach(b=>b.onclick=()=>applyAccountChoice(b.dataset.accountChoice,b.dataset.value||""));
