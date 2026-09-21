@@ -2416,26 +2416,21 @@ img{display:block}
   --thread-status-pad-left:18px;
   --thread-status-pad-top:14px;
   --thread-avatar-size:52px;
+  --thread-line-top-gap:6px;
+  --thread-line-bottom-gap:8px;
   position:relative;
   background:var(--bg);
 }
-.thread-node::before,
-.thread-node::after{
+.thread-node.thread-connect-bottom::after{
   content:"";
   position:absolute;
   left:calc(var(--thread-status-pad-left) + (var(--thread-avatar-size) / 2) - 1px);
+  top:calc(var(--thread-status-pad-top) + var(--thread-avatar-size) + var(--thread-line-top-gap));
+  bottom:var(--thread-line-bottom-gap);
   width:2px;
   background:var(--thread);
   z-index:2;
   pointer-events:none;
-}
-.thread-node.thread-connect-top::before{
-  top:0;
-  height:calc(var(--thread-status-pad-top) + (var(--thread-avatar-size) / 2));
-}
-.thread-node.thread-connect-bottom::after{
-  top:calc(var(--thread-status-pad-top) + (var(--thread-avatar-size) / 2));
-  bottom:-1px;
 }
 .thread-node .status{
   position:relative;
