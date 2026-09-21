@@ -1997,16 +1997,16 @@ async function bookmarksView(){
 }
 
 function drawerMenuRows(){
-  const iconMap={profile:"profile",profileedit:"edit",favourites:"heart",bookmarks:"bookmark",followrequests:"personAdd",layoutedit:"edit",lists:"list",settings:"settings",update:"update",history:"update",theme:"settings"};
+  const iconMap={profile:"profile",profileedit:"edit",favourites:"heart",bookmarks:"bookmark",followrequests:"personAdd",layoutedit:"edit",lists:"list",settings:"settings",theme:"settings"};
   const fallback=[
     {id:"profile",label:"프로필"},{id:"profileedit",label:"프로필 편집"},{id:"favourites",label:"좋아요"},
     {id:"bookmarks",label:"북마크"},{id:"followrequests",label:"팔로우 요청"},{id:"layoutedit",label:"화면 구성 편집"},
     {id:"lists",label:"리스트"},{id:"settings",label:"설정"}
   ];
   let rows=Array.isArray(ANDROID?.renderer?.drawerRows)&&ANDROID.renderer.drawerRows.length?ANDROID.renderer.drawerRows:fallback;
-  rows=rows.filter(x=>x?.id&&x.id!=="realtime");
+  rows=rows.filter(x=>x?.id&&x.id!=="realtime"&&x.id!=="update"&&x.id!=="history"&&x.id!=="inquiry");
   if(ANDROID?.features?.lists&&!rows.some(x=>x.id==="lists")){
-    const settingsIndex=rows.findIndex(x=>x.id==="settings"||x.id==="update");
+    const settingsIndex=rows.findIndex(x=>x.id==="settings");
     const listRow={id:"lists",label:"리스트"};
     if(settingsIndex>=0)rows=[...rows.slice(0,settingsIndex),listRow,...rows.slice(settingsIndex)];
     else rows=[...rows,listRow];
@@ -2014,9 +2014,10 @@ function drawerMenuRows(){
   const mapped=rows.map(x=>{
     let label=x.label||x.id;
     if(x.id==="theme")label=(state.theme==="dark"?"라이트 모드":"다크 모드");
-    return {id:x.id==="update"?"history":x.id,label,icon:iconMap[x.id]||"more"};
+    return {id:x.id,label,icon:iconMap[x.id]||"more"};
   });
-  if(!mapped.some(x=>x.id==="history"))mapped.push({id:"history",label:"업데이트 내역",icon:"update"});
+  mapped.push({id:"history",label:"앱 업데이트",icon:"update"});
+  mapped.push({id:"inquiry",label:"문의 / 기능 건의",icon:"edit"});
   return mapped;
 }
 function drawerMenuMarkup(){
@@ -2063,6 +2064,7 @@ function buildDrawerElement(){
     else if(v==="profileedit"){pushNavSnapshot();closeDrawer();profileEditScreen()}
     else if(v==="layoutedit"){pushNavSnapshot();closeDrawer();screenLayoutEditor()}
     else if(v==="history"){pushNavSnapshot();closeDrawer();updateHistoryScreen()}
+    else if(v==="inquiry"){pushNavSnapshot();closeDrawer();inquiryScreen("")}
     else if(v==="theme"){state.theme=state.theme==="dark"?"light":"dark";store.set("lenton_theme",state.theme);document.documentElement.dataset.theme=state.theme;closeDrawer();render()}
     else if(v==="accountswitcher"){closeDrawer();openAccountSwitcher()}
   });
@@ -2510,7 +2512,7 @@ function inquiryScreen(initialType=""){
     '<div class="inquiry-attachments"><div class="inquiry-attachments-head"><b>스크린샷</b><span>최대 3장</span></div>'+
     '<input id="inquiryFiles" type="file" accept="image/*" multiple hidden><button class="outline-btn" id="inquiryPickFiles">스크린샷 추가</button>'+
     '<div id="inquiryFilePreviews" class="inquiry-file-previews"></div></div>'+
-    '<div class="notice">앱 버전, iOS/PWA 환경, 서버 정보가 함께 포함됩니다. 로그인 토큰이나 비밀번호는 포함하지 않습니다.</div>'+
+    '<div class="notice">PWA 빌드, iOS/PWA 환경, 서버 정보가 함께 포함됩니다. 로그인 토큰이나 비밀번호는 포함하지 않습니다.</div>'+
     '<div class="setting-row"><button class="primary" data-action="sendInquiry">이메일로 보내기</button></div></div></div>';
   $("#app").innerHTML=standaloneShell("문의 / 기능 건의",body);bind();
   const draw=()=>{
@@ -2529,8 +2531,7 @@ async function sendInquiry(){
   const info=[
     "■ 문의 정보","문의 유형 : "+type,"발생 화면/기능 : "+area,"제목 : "+title,"",
     "■ 문의 내용",body,"","■ 재현 방법",steps,"","────────────────────",
-    "렌톤 Android 기준 : v"+(ANDROID?.versionName||"?")+" ("+(ANDROID?.versionCode||"?")+")",
-    "PWA 빌드 : "+(currentPwaToken()||"unknown"),
+    "렌톤 iPhone PWA 빌드 : "+(state.buildInfo?.pwaRevision||String(currentPwaToken()||"unknown")),
     "서버 : "+(state.session?.host||"-"),
     "환경 : "+(standalone()?"iPhone/iPad 홈 화면 PWA":"Safari 웹"),
     "User Agent : "+navigator.userAgent
@@ -2545,16 +2546,36 @@ async function sendInquiry(){
   toast(files.length?"메일 앱에서 선택한 스크린샷을 첨부해 주세요.":"메일 앱을 엽니다.");
   location.href="mailto:cptu527@gmail.com?subject="+encodeURIComponent("[Lenton] "+title)+"&body="+encodeURIComponent(info);
 }
+async function loadPwaChangelog(){
+  try{
+    const r=await fetch("./changelog.json?ts="+Date.now(),{cache:"no-store"});
+    if(!r.ok)return[];
+    const data=await r.json();
+    return Array.isArray(data)?data:[];
+  }catch{return[]}
+}
+function pwaRevisionLabel(build){
+  const rev=String(build?.pwaRevision||"").trim();
+  return rev?rev.slice(0,10):(String(currentPwaToken()||"").replace(/^pwa-/,"").split("-")[0]||"unknown");
+}
+function pwaChangelogMarkup(entries,{latestOnly=false}={}){
+  const list=(Array.isArray(entries)?entries:[]).slice(0,latestOnly?1:12);
+  if(!list.length)return '<div class="notice">PWA 업데이트 내역이 아직 없어요.</div>';
+  return list.map(entry=>{
+    const changes=Array.isArray(entry?.changes)?entry.changes:[];
+    return '<div class="update-entry pwa-update-entry"><div class="update-head"><b>'+esc(entry?.title||"PWA 업데이트")+'</b><span>'+esc(entry?.date||"")+'</span></div>'+
+      (changes.length?'<ul>'+changes.map(v=>'<li>'+esc(v)+'</li>').join("")+'</ul>':"")+'</div>';
+  }).join("");
+}
 async function showCurrentReleaseNotes(){
-  let build=null;
-  try{const r=await fetch("./build.json?ts="+Date.now(),{cache:"no-store"});if(r.ok)build=await r.json()}catch{}
-  const notes=String(build?.notes||"").trim();
-  const lines=notes?notes.split(/\r?\n/).map(x=>x.replace(/^\s*[•*-]\s*/,"").trim()).filter(Boolean):[];
-  const body='<div class="settings"><div class="section current-release">'+
-    '<div class="update-head"><b>v'+esc(build?.versionName||ANDROID?.versionName||"?")+'</b><span>현재 버전</span></div>'+
-    (lines.length?'<ul>'+lines.map(v=>'<li>'+esc(v)+'</li>').join("")+'</ul>':'<div class="notice">현재 버전의 업데이트 내용이 없어요.</div>')+
-    '</div></div>';
-  $("#app").innerHTML=standaloneShell("업데이트 내용",body);bind();
+  const [build,entries]=await Promise.all([
+    fetch("./build.json?ts="+Date.now(),{cache:"no-store"}).then(r=>r.ok?r.json():null).catch(()=>null),
+    loadPwaChangelog()
+  ]);
+  const body='<div class="settings pwa-release-screen"><div class="section current-release">'+
+    '<div class="update-head"><b>PWA '+esc(pwaRevisionLabel(build))+'</b><span>현재 빌드</span></div>'+
+    '</div><div class="section pwa-changelog-list">'+pwaChangelogMarkup(entries)+'</div></div>';
+  $("#app").innerHTML=standaloneShell("PWA 업데이트 내역",body);bind();
 }
 async function checkPwaUpdate(){
   toast("업데이트를 확인하고 있어요.");
@@ -2564,34 +2585,28 @@ async function checkPwaUpdate(){
     const current=currentPwaToken(),next=String(remote?.cacheToken||"");
     if(next&&current&&next!==current){
       state.updateAvailable=remote;
-      if(hasUnsavedLentonWork()){toast("새 버전이 있지만 작성 중인 내용이 있어 자동 적용하지 않았어요.");return}
-      toast("새 버전을 적용합니다.");
+      if(hasUnsavedLentonWork()){toast("새 PWA 빌드가 있지만 작성 중인 내용이 있어 자동 적용하지 않았어요.");return}
+      toast("새 PWA 빌드를 적용합니다.");
       setTimeout(()=>activateLatestPwaNow(),250);
       return;
     }
-    const notes=String(remote?.notes||"").trim();
-    const lines=notes?notes.split(/\r?\n/).map(x=>x.replace(/^\s*[•*-]\s*/,"").trim()).filter(Boolean):[];
-    const body='<div class="settings"><div class="section current-release">'+
-      '<div class="update-head"><b>v'+esc(remote?.versionName||ANDROID?.versionName||"?")+'</b><span>현재 최신 버전</span></div>'+
-      (lines.length?'<ul>'+lines.map(v=>'<li>'+esc(v)+'</li>').join("")+'</ul>':'<div class="notice">현재 버전의 업데이트 내용이 없어요.</div>')+
-      '</div></div>';
+    const entries=await loadPwaChangelog();
+    const body='<div class="settings pwa-release-screen"><div class="section current-release">'+
+      '<div class="update-head"><b>PWA '+esc(pwaRevisionLabel(remote))+'</b><span>현재 최신 빌드</span></div>'+
+      '</div><div class="section pwa-changelog-list">'+pwaChangelogMarkup(entries,{latestOnly:true})+'</div></div>';
     $("#app").innerHTML=standaloneShell("업데이트 확인",body);bind();
   }catch(e){toast(e.message||"업데이트 확인에 실패했어요.")}
 }
 async function updateHistoryScreen(){
   let build=null;
   try{const r=await fetch("./build.json?ts="+Date.now(),{cache:"no-store"});if(r.ok)build=await r.json()}catch{}
-  const info='<div class="section"><h3>현재 버전</h3>'+
-    '<div class="kv"><span>Android 원본</span><b>v'+esc(ANDROID?.versionName||"?")+' · code '+esc(ANDROID?.versionCode||"?")+'</b></div>'+
-    '<div class="kv"><span>PWA revision</span><b>'+esc(build?.pwaRevision||currentPwaToken()||"unknown")+'</b></div>'+
+  const info='<div class="section update-settings-group"><h3>현재 버전</h3>'+
+    '<div class="kv"><span>PWA 빌드</span><b>'+esc(pwaRevisionLabel(build))+'</b></div>'+
     '<div class="kv"><span>업데이트 방식</span><b>자동 업데이트</b></div></div>';
   const body='<div class="settings update-settings-screen">'+info+
     '<div class="section update-settings-group"><h3>업데이트</h3>'+
-      '<button class="settings-link update-settings-link" data-action="checkPwaUpdate"><span><b>업데이트 확인</b><small>최신 버전과 변경사항을 확인합니다</small></span><span class="settings-chevron">›</span></button>'+
-    '</div>'+
-    '<div class="section update-settings-group"><h3>도움말</h3>'+
-      '<button class="settings-link update-settings-link" data-action="inquiry" data-inquiry-type="오류 신고"><span><b>문제 신고하기</b><small>버그 · 오류 · 문의 내용을 이메일로 보내기</small></span><span class="settings-chevron">›</span></button>'+
-      '<button class="settings-link update-settings-link" data-action="inquiry" data-inquiry-type="기능 건의"><span><b>기능 건의</b><small>렌톤에 원하는 기능을 알려주세요</small></span><span class="settings-chevron">›</span></button>'+
+      '<button class="settings-link update-settings-link" data-action="checkPwaUpdate"><span><b>업데이트 확인</b><small>iPhone PWA의 최신 빌드를 확인합니다</small></span><span class="settings-chevron">›</span></button>'+
+      '<button class="settings-link update-settings-link" data-action="currentReleaseNotes"><span><b>PWA 업데이트 내역</b><small>iPhone PWA에서 바뀐 내용만 확인합니다</small></span><span class="settings-chevron">›</span></button>'+
     '</div></div>';
   $("#app").innerHTML=standaloneShell("앱 업데이트",body);bind();
 }
@@ -3829,7 +3844,7 @@ function bind(){
     else if(a==="sendInquiry")sendInquiry()
     else if(a==="updateHistory"){pushNavSnapshot();updateHistoryScreen()}
     else if(a==="currentReleaseNotes"){pushNavSnapshot();showCurrentReleaseNotes()}
-    else if(a==="checkPwaUpdate")checkPwaUpdate()
+    else if(a==="checkPwaUpdate"){pushNavSnapshot();checkPwaUpdate()}
     else if(a==="layoutSettings"){pushNavSnapshot();screenLayoutEditor()}
     else if(a==="reload")render()
     else if(a==="logout")logout()
