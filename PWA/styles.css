@@ -1784,7 +1784,8 @@ img{display:block}
 
 /* User-reported parity fixes */
 .drawer-profile-avatar-button,
-.drawer-profile-summary{
+.drawer-profile-main,
+.drawer-connection-button{
   border:0;
   background:transparent;
   color:inherit;
@@ -1794,9 +1795,24 @@ img{display:block}
 }
 .drawer-profile-avatar-button{display:block;border-radius:50%}
 .drawer-profile-summary{display:block;width:100%}
-.drawer-profile-summary .drawer-name,
-.drawer-profile-summary .drawer-handle,
-.drawer-profile-summary .drawer-counts{pointer-events:none}
+.drawer-profile-main{display:block;width:100%}
+.drawer-profile-main .drawer-name,
+.drawer-profile-main .drawer-handle{pointer-events:none}
+.drawer-counts{
+  display:flex;
+  align-items:center;
+  gap:18px;
+  margin:18px 0;
+}
+.drawer-connection-button{
+  display:inline-flex;
+  align-items:center;
+  min-height:32px;
+  font-size:14px;
+  line-height:1.2;
+  white-space:nowrap;
+}
+.drawer-connection-button b{font-weight:800}
 
 .profile-tabs-4{
   display:grid;

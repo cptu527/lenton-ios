@@ -2011,7 +2011,16 @@ function buildDrawerElement(){
         <button class="drawer-add-account" data-drawer="accountswitcher" aria-label="계정">＋</button>
       </div>
     </div>
-    <button class="drawer-profile-summary" data-drawer="profile"><div class="drawer-name">${renderEmojiText(m.display_name||m.username||"렌톤",m.emojis||[])}</div><div class="drawer-handle">@${esc(m.acct||"")}${m.acct?.includes("@")?"":"@"+esc(state.session?.host||"")}</div><div class="drawer-counts"><b>${m.following_count||0}</b> 팔로잉&nbsp;&nbsp;&nbsp;<b>${m.followers_count||0}</b> 팔로워</div></button>
+    <div class="drawer-profile-summary">
+      <button class="drawer-profile-main" data-drawer="profile">
+        <div class="drawer-name">${renderEmojiText(m.display_name||m.username||"렌톤",m.emojis||[])}</div>
+        <div class="drawer-handle">@${esc(m.acct||"")}${m.acct?.includes("@")?"":"@"+esc(state.session?.host||"")}</div>
+      </button>
+      <div class="drawer-counts" role="group" aria-label="팔로우 정보">
+        <button type="button" class="drawer-connection-button" data-drawer-connection="following" data-drawer-connection-account="${esc(m.id||"")}"><b>${m.following_count||0}</b>&nbsp;팔로잉</button>
+        <button type="button" class="drawer-connection-button" data-drawer-connection="followers" data-drawer-connection-account="${esc(m.id||"")}"><b>${m.followers_count||0}</b>&nbsp;팔로워</button>
+      </div>
+    </div>
     ${drawerMenuMarkup()}
 
   </aside>`;
@@ -2030,6 +2039,15 @@ function buildDrawerElement(){
     else if(v==="history"){pushNavSnapshot();closeDrawer();updateHistoryScreen()}
     else if(v==="theme"){state.theme=state.theme==="dark"?"light":"dark";store.set("lenton_theme",state.theme);document.documentElement.dataset.theme=state.theme;closeDrawer();render()}
     else if(v==="accountswitcher"){closeDrawer();openAccountSwitcher()}
+  });
+  shade.querySelectorAll("[data-drawer-connection]").forEach(b=>b.onclick=e=>{
+    e.stopPropagation();
+    const kind=b.dataset.drawerConnection==="followers"?"followers":"following";
+    const accountId=b.dataset.drawerConnectionAccount||m.id;
+    if(!accountId)return;
+    pushNavSnapshot();
+    closeDrawer();
+    profileConnectionsScreen(accountId,kind);
   });
   shade.querySelectorAll("[data-switch-account-key]").forEach(b=>b.onclick=()=>{
     const list=savedAccounts(),i=list.findIndex(x=>x.key===b.dataset.switchAccountKey);closeDrawer();if(i>=0)switchSavedAccount(i);
