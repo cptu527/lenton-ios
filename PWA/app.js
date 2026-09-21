@@ -760,27 +760,33 @@ async function loadRecentMentionStatuses(){
     return out;
   }catch{return[]}
 }
-async function loadChronologicalHome({maxId="",limit=40,maxScans=1}={}){
-  let cursor=maxId||"",homeItems=[];
+async function loadHomeFeed({maxId="",limit=40,maxScans=1,excludeReplies=false}={}){
+  let cursor=maxId||"",items=[];
   const scans=Math.max(1,Number(maxScans)||1);
   for(let scan=0;scan<scans;scan++){
     const query={limit:String(limit)};
     if(cursor)query.max_id=cursor;
+    if(excludeReplies)query.exclude_replies="true";
 
-    // 첫 홈 페이지는 절대 빈 배열로 타임아웃 대체하지 않는다.
-    // Mastodon 홈 자체가 느리면 기다렸다가 실제 결과를 사용한다.
+    // Mastodon 자체 Home API를 그대로 사용한다.
+    // 퍼블릭은 이 동일한 API에 exclude_replies=true만 추가한다.
     const page=scan===0
       ? await api("/api/v1/timelines/home",{query})
       : await settleWithin(api("/api/v1/timelines/home",{query}),8000,[]);
 
     if(!Array.isArray(page)||!page.length)break;
-    homeItems=mergeNewestTimeline(page.filter(nonDirect),homeItems,160);
+    items=mergeNewestTimeline(page.filter(nonDirect),items,160);
     const next=String(page[page.length-1]?.id||"");
     if(!next||next===cursor||page.length<Number(limit))break;
     cursor=next;
   }
-  // 시간순은 Mastodon 홈 타임라인 그 자체다. 알림/멘션을 별도로 섞지 않는다.
-  return homeItems;
+  return items;
+}
+async function loadChronologicalHome(opts={}){
+  return loadHomeFeed({...opts,excludeReplies:false});
+}
+async function loadPublicHome(opts={}){
+  return loadHomeFeed({...opts,excludeReplies:true});
 }
 async function expandHomeTimelineInBackground(){
   if(state.homeBackgroundFillPromise)return state.homeBackgroundFillPromise;
@@ -789,28 +795,25 @@ async function expandHomeTimelineInBackground(){
     if(!items.length)return;
     const current=state.homePagerData?.home||[];
     const merged=mergeNewestTimeline(items,current,160);
-    const pub=publicFromHome(merged);
     updateHomeTimelinePage(merged,{preserveScroll:true});
-    updatePublicTimelinePage(pub,{preserveScroll:true});
-    state.publicFilledAt=Date.now();
   })().finally(()=>{state.homeBackgroundFillPromise=null});
   return state.homeBackgroundFillPromise;
 }
-function publicHomeStatus(raw){
-  if(!raw||!nonDirect(raw))return false;
-  const st=raw?.reblog||raw;
-  if(!st)return false;
-  const reply=st.in_reply_to_id;
-  return reply===null||reply===undefined||String(reply)==="";
-}
-function publicFromHome(items=[]){
-  // 퍼블릭은 별도 타임라인이 아니다.
-  // Mastodon 홈의 '답글 표시' 체크를 끈 것처럼, 같은 Home 배열에서 답글만 제거한다.
-  return (Array.isArray(items)?items:[]).filter(publicHomeStatus);
+async function expandPublicTimelineInBackground(){
+  if(state.publicBackgroundFillPromise)return state.publicBackgroundFillPromise;
+  state.publicBackgroundFillPromise=(async()=>{
+    const items=await loadPublicHome({limit:40,maxScans:3});
+    if(!items.length)return;
+    const current=state.homePagerData?.public||[];
+    const merged=mergeNewestTimeline(items,current,160);
+    updatePublicTimelinePage(merged,{preserveScroll:true});
+    state.publicFilledAt=Date.now();
+  })().finally(()=>{state.publicBackgroundFillPromise=null});
+  return state.publicBackgroundFillPromise;
 }
 
 function homeSnapshotRead(){
-  const snap=store.get(scopedKey("home_snapshot_v10"),null);
+  const snap=store.get(scopedKey("home_snapshot_v11"),null);
   if(!snap?.at||Date.now()-Number(snap.at)>10*60*1000)return null;
   const data=snap.data;
   return data&&Array.isArray(data.home)&&Array.isArray(data.public)?data:null;
@@ -818,7 +821,7 @@ function homeSnapshotRead(){
 function homeSnapshotWrite(data){
   try{
     if(data&&Array.isArray(data.home)&&Array.isArray(data.public)){
-      store.set(scopedKey("home_snapshot_v10"),{at:Date.now(),data});
+      store.set(scopedKey("home_snapshot_v11"),{at:Date.now(),data});
     }
   }catch{}
 }
@@ -875,33 +878,30 @@ function updatePublicTimelinePage(items,{preserveScroll=true}={}){
 async function refreshHomeIncremental(){
   if(state.homeRefreshPromise)return state.homeRefreshPromise;
   state.homeRefreshPromise=(async()=>{
-    // 새로고침은 첫 페이지를 먼저 빠르게 보여주고, 나머지는 뒤에서 보강한다.
     const items=await loadChronologicalHome({limit:40,maxScans:1});
-    if(items.length){
-      const pub=publicFromHome(items);
-      updateHomeTimelinePage(items,{preserveScroll:true});
-      updatePublicTimelinePage(pub,{preserveScroll:true});
-      state.publicFilledAt=Date.now();
-    }
+    if(items.length)updateHomeTimelinePage(items,{preserveScroll:true});
     setTimeout(()=>expandHomeTimelineInBackground().catch(()=>{}),0);
     return items;
   })().finally(()=>{state.homeRefreshPromise=null});
   return state.homeRefreshPromise;
 }
 async function ensurePublicTimelineFilled({fresh=false}={}){
-  if(fresh||!state.homePagerData?.home?.length){
-    await refreshHomeIncremental();
-  }else{
-    const pub=publicFromHome(state.homePagerData.home);
-    updatePublicTimelinePage(pub,{preserveScroll:true});
-    state.publicFilledAt=Date.now();
-  }
-  return state.homePagerData?.public||[];
+  const stale=!state.publicFilledAt||Date.now()-Number(state.publicFilledAt)>60000;
+  if(!fresh&&!stale&&(state.homePagerData?.public||[]).length)return state.homePagerData.public;
+  return refreshPublicTimeline();
 }
 async function refreshPublicTimeline(){
-  state.publicFilledAt=0;
-  await refreshHomeIncremental();
-  return state.homePagerData?.public||[];
+  if(state.publicRefreshPromise)return state.publicRefreshPromise;
+  state.publicRefreshPromise=(async()=>{
+    const items=await loadPublicHome({limit:40,maxScans:1});
+    if(items.length){
+      updatePublicTimelinePage(items,{preserveScroll:true});
+      state.publicFilledAt=Date.now();
+    }
+    setTimeout(()=>expandPublicTimelineInBackground().catch(()=>{}),0);
+    return items;
+  })().finally(()=>{state.publicRefreshPromise=null});
+  return state.publicRefreshPromise;
 }
 async function refreshHomeAfterPost(){
   try{await refreshHomeIncremental()}catch{}
@@ -971,10 +971,12 @@ function setHomePagerMode(mode,animate=true){
   state.timelineItems=state.homePagerData?.[mode]||[];
   syncHomePagerUi(mode,animate);
   if(mode==="public"&&changed){
-    const pub=publicFromHome(state.homePagerData?.home||[]);
-    state.homePagerData.public=pub;
-    state.timelineItems=pub;
-    updatePublicTimelinePage(pub,{preserveScroll:true});
+    const stale=!state.publicFilledAt||Date.now()-Number(state.publicFilledAt)>60000;
+    if(stale||!state.timelineItems.length){
+      const page=document.querySelector('[data-home-page="public"]');
+      if(page&&!state.timelineItems.length)page.innerHTML='<div class="center">불러오는 중…</div>';
+      setTimeout(()=>refreshPublicTimeline().catch(e=>toast(e.message)),0);
+    }
   }
 }
 async function homeView({silent=false,forceFresh=false}={}){
@@ -1009,19 +1011,16 @@ async function homeView({silent=false,forceFresh=false}={}){
     if(!cached){
       const home=await loadChronologicalHome({limit:40,maxScans:1});
       if(!home.length)throw new Error("홈 타임라인이 비어 있습니다.");
-      const data={home,public:publicFromHome(home)};
+      const data={home,public:[]};
       renderHomePagerData(data);
       homeSnapshotWrite(data);
-      state.publicFilledAt=Date.now();
       setTimeout(()=>expandHomeTimelineInBackground().catch(()=>{}),0);
+      setTimeout(()=>expandPublicTimelineInBackground().catch(()=>{}),0);
     }else{
-      if(state.homeMode==="public"){
-        const derived=publicFromHome(cached.home);
-        if((cached.public||[]).length!==derived.length){
-          updatePublicTimelinePage(derived,{preserveScroll:true});
-        }
-      }
       setTimeout(()=>expandHomeTimelineInBackground().catch(()=>{}),0);
+      if(!(cached.public||[]).length||!state.publicFilledAt){
+        setTimeout(()=>expandPublicTimelineInBackground().catch(()=>{}),0);
+      }
     }
   }catch(e){
     if(!state.homePagerData?.home?.length){
@@ -1046,8 +1045,7 @@ async function loadMoreHome(){
     if(state.listId){
       more=await api(`/api/v1/timelines/list/${state.listId}`,{query:{limit:"40",max_id:maxId}});
     }else if(state.homeMode==="public"){
-      const olderHome=await loadChronologicalHome({maxId,limit:40,maxScans:2});
-      more=publicFromHome(olderHome);
+      more=await loadPublicHome({maxId,limit:40,maxScans:2});
     }else{
       more=await loadChronologicalHome({maxId,limit:40,maxScans:2});
     }
