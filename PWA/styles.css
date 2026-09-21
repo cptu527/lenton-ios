@@ -994,7 +994,7 @@ img{display:block}
   place-items:center;
 }
 .drawer-spacer{min-height:190px}
-.drawer-list-row{font-size:18px!important;font-weight:500!important}
+.drawer-list-row{font-size:var(--android-drawer-text,19px)!important;font-weight:700!important}
 .drawer-list-row .glyph{width:56px!important}
 
 @media (min-width:900px){
