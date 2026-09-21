@@ -2402,6 +2402,9 @@ img{display:block}
   font-weight:600;
 }
 .thread-node{
+  --thread-status-pad-left:18px;
+  --thread-status-pad-top:14px;
+  --thread-avatar-size:52px;
   position:relative;
   background:var(--bg);
 }
@@ -2409,7 +2412,7 @@ img{display:block}
 .thread-node::after{
   content:"";
   position:absolute;
-  left:calc(var(--android-status-pad-left,8px) + (var(--android-avatar,46px) / 2) - 1px);
+  left:calc(var(--thread-status-pad-left) + (var(--thread-avatar-size) / 2) - 1px);
   width:2px;
   background:var(--thread);
   z-index:2;
@@ -2417,10 +2420,10 @@ img{display:block}
 }
 .thread-node.thread-connect-top::before{
   top:0;
-  height:calc(var(--android-status-pad-top,16px) + (var(--android-avatar,46px) / 2));
+  height:calc(var(--thread-status-pad-top) + (var(--thread-avatar-size) / 2));
 }
 .thread-node.thread-connect-bottom::after{
-  top:calc(var(--android-status-pad-top,16px) + (var(--android-avatar,46px) / 2));
+  top:calc(var(--thread-status-pad-top) + (var(--thread-avatar-size) / 2));
   bottom:-1px;
 }
 .thread-node .status{
