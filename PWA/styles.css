@@ -4733,7 +4733,7 @@ img{display:block}
 }
 .list-member-add-multi{
   min-height:calc(100dvh - var(--android-standalone-top,60px) - env(safe-area-inset-top));
-  padding-bottom:calc(92px + env(safe-area-inset-bottom));
+  padding-bottom:calc(24px + env(safe-area-inset-bottom));
 }
 .list-member-add-multi .list-member-search{
   padding-bottom:10px;
@@ -4742,24 +4742,29 @@ img{display:block}
   padding-left:20px;
   padding-right:20px;
 }
-.list-member-add-dock{
-  position:fixed;
-  z-index:40;
-  left:0;
-  right:0;
-  bottom:0;
-  padding:10px 20px calc(12px + env(safe-area-inset-bottom));
-  border-top:1px solid var(--line);
+.list-member-add-multi .list-member-list-heading{
+  position:sticky;
+  top:0;
+  z-index:35;
+  min-height:56px;
+  gap:12px;
   background:color-mix(in srgb,var(--bg) 96%,transparent);
   backdrop-filter:blur(12px);
   -webkit-backdrop-filter:blur(12px);
 }
+.list-member-add-multi .list-member-list-heading>span{
+  flex:1;
+  min-width:0;
+}
 .list-member-confirm{
-  width:100%;
-  height:56px;
+  flex:0 0 auto;
+  min-width:82px;
+  height:40px;
   margin:0;
-  border-radius:28px;
-  font-size:16px;
+  border:0;
+  border-radius:20px;
+  padding:0 14px;
+  font-size:14px;
   font-weight:800;
 }
 .list-member-confirm:disabled{opacity:.38}
