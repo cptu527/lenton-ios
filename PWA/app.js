@@ -748,8 +748,9 @@ function lentonPublicStatus(raw){
   if(!author)return false;
   if(cfg.excludeDirect!==false&&raw.visibility==="direct")return false;
   if(cfg.excludeBoosts!==false&&raw.reblog)return false;
-  if(cfg.excludeReplies!==false&&raw.in_reply_to_id!==null&&raw.in_reply_to_id!==undefined&&String(raw.in_reply_to_id)!=="")return false;
-  if(cfg.excludeOwnPosts!==false&&me&&String(author)===String(me))return false;
+  // Public tab shows every public original/reply/mention from followed accounts
+  // plus the signed-in account's own public posts. Only boosts and non-public
+  // visibility are excluded here.
   return true;
 }
 function mergeChronological(home,pub,allowed){
@@ -914,6 +915,7 @@ async function ensurePublicTimelineFilled({fresh=false,forceFullScan=false}={}){
     const followingPromise=loadPublicFollowingAccounts({fresh});
     const [freshHome,serverPublic,following]=await Promise.all([freshHomePromise,publicPromise,followingPromise]);
     const allowed=new Set((following||[]).map(x=>String(x?.id||"")).filter(Boolean));
+    if(state.me?.id)allowed.add(String(state.me.id));
     const eligible=raw=>allowed.has(String(raw?.account?.id||""))&&lentonPublicStatus(raw);
 
     let collected=mergeNewestTimeline(
@@ -935,9 +937,11 @@ async function ensurePublicTimelineFilled({fresh=false,forceFullScan=false}={}){
     // If the fresh home page already filled the target, stop here. Otherwise
     // supplement from every followed account, progressively.
     if(collected.length>=supplementTarget&&!forceFullScan){state.publicFilledAt=Date.now();return collected}
-    const maxAccounts=Math.min(following.length,80),batchSize=10;
+    const publicAccounts=[...(following||[])];
+    if(state.me?.id&&!publicAccounts.some(x=>String(x?.id||"")===String(state.me.id)))publicAccounts.unshift(state.me);
+    const maxAccounts=Math.min(publicAccounts.length,81),batchSize=10;
     for(let i=0;i<maxAccounts;i+=batchSize){
-      const batch=following.slice(i,i+batchSize);
+      const batch=publicAccounts.slice(i,i+batchSize);
       const pages=await Promise.all(batch.map(ac=>{
         const id=String(ac?.id||"");if(!id)return Promise.resolve([]);
         return api(`/api/v1/accounts/${id}/statuses`,{query:{limit:forceFullScan?"20":"12"}}).catch(()=>[]);
@@ -1095,10 +1099,13 @@ async function loadMoreHome(){
       more=await api(`/api/v1/timelines/list/${state.listId}`,{query:{limit:"40",max_id:maxId}});
     }else if(state.homeMode==="public"){
       const following=await loadPublicFollowingAccounts(),allowed=new Set(following.map(x=>String(x?.id||"")).filter(Boolean));
+      if(state.me?.id)allowed.add(String(state.me.id));
       const eligible=raw=>allowed.has(String(raw?.account?.id||""))&&lentonPublicStatus(raw);
+      const accounts=[...(following||[])];
+      if(state.me?.id&&!accounts.some(x=>String(x?.id||"")===String(state.me.id)))accounts.unshift(state.me);
       const batchSize=8;
-      for(let i=0;i<following.length&&more.length<40;i+=batchSize){
-        const batch=following.slice(i,i+batchSize);
+      for(let i=0;i<accounts.length&&more.length<40;i+=batchSize){
+        const batch=accounts.slice(i,i+batchSize);
         const pages=await Promise.all(batch.map(ac=>{
           const id=String(ac?.id||"");if(!id)return Promise.resolve([]);
           return api(`/api/v1/accounts/${id}/statuses`,{query:{limit:"8",max_id:maxId}}).catch(()=>[]);
