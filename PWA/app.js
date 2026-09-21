@@ -2806,8 +2806,8 @@ async function openProfileMediaDetail(statusId,index=0){
     $("#app").innerHTML='<div class="media-status-page">'+body+'</div>';bind();
   }catch(e){toast(e.message);goBackScreen()}
 }
-function threadStatusCard(raw,{connectTop=false,connectBottom=false,current=false,replyCountOverride=null}={}){
-  const cls=["thread-node",connectTop?"thread-connect-top":"",connectBottom?"thread-connect-bottom":"",current?"thread-current":""].filter(Boolean).join(" ");
+function threadStatusCard(raw,{connectBottom=false,current=false,replyCountOverride=null}={}){
+  const cls=["thread-node",connectBottom?"thread-connect-bottom":"",current?"thread-current":""].filter(Boolean).join(" ");
   return '<div class="'+cls+'">'+statusCard(raw,{replyCountOverride})+'</div>';
 }
 async function openThread(id,showAllAncestors=false){
@@ -2823,14 +2823,12 @@ async function openThread(id,showAllAncestors=false){
     const older=ancestors.length>visibleAnc.length?`<button class="thread-older" data-thread-older="${esc(id)}">이전 대화 보기  ›</button>`:"";
     const nodes=[...visibleAnc,st,...desc],allNodes=[...ancestors,st,...desc];
     const body=older+nodes.map((raw,i)=>{
-      const cur=raw.reblog||raw,idNow=String(cur.id||""),parentId=String(cur.in_reply_to_id||"");
-      const prev=nodes[i-1]?.reblog||nodes[i-1]||null,next=nodes[i+1]?.reblog||nodes[i+1]||null;
-      const prevId=String(prev?.id||""),nextParentId=String(next?.in_reply_to_id||"");
-      const connectTop=!!parentId&&parentId===prevId;
+      const cur=raw.reblog||raw,idNow=String(cur.id||"");
+      const next=nodes[i+1]?.reblog||nodes[i+1]||null,nextParentId=String(next?.in_reply_to_id||"");
       const connectBottom=!!idNow&&nextParentId===idNow;
       const derivedReplies=allNodes.filter(x=>String((x.reblog||x)?.in_reply_to_id||"")===idNow).length;
       const replyCountOverride=Math.max(Number(cur.replies_count||0),derivedReplies);
-      return threadStatusCard(raw,{connectTop,connectBottom,current:idNow===String(st.id||""),replyCountOverride});
+      return threadStatusCard(raw,{connectBottom,current:idNow===String(st.id||""),replyCountOverride});
     }).join("");
     $("#app").innerHTML=standaloneShell("게시물",body);bind();
   }catch(e){toast(e.message)}
