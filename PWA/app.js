@@ -2214,9 +2214,29 @@ async function saveListSettings(id){
     }catch(e2){toast(e2.message)}
   }
 }
+function invalidateDeletedListNavigation(id){
+  const listId=String(id||"");
+  if(!listId)return;
+  if(String(state.listId||"")===listId)state.listId=null;
+  state.navStack=(state.navStack||[]).filter(snap=>{
+    if(String(snap?.listId||"")===listId)return false;
+    const html=String(snap?.html||"");
+    return !html.includes('data-list-manage="'+listId+'"');
+  });
+  if(state.pageCache)state.pageCache.home="";
+  state.homeCache={};
+  delete state.scrolls?.["home:"+state.homeMode+":"+listId];
+  setListHidden(listId,false);
+}
 async function deleteList(id){
   if(!confirm("이 리스트를 삭제할까요?"))return;
-  try{await api(`/api/v1/lists/${id}`,{method:"DELETE"});await loadLists();toast("리스트를 삭제했어요.");listsScreen()}catch(e){toast(e.message)}
+  try{
+    await api(`/api/v1/lists/${id}`,{method:"DELETE"});
+    await loadLists();
+    invalidateDeletedListNavigation(id);
+    toast("리스트를 삭제했어요.");
+    listsScreen();
+  }catch(e){toast(e.message)}
 }
 
 function tabLabel(id){return id==="home"?"홈":id==="search"?"검색":id==="notifications"?"알림":"DM"}
