@@ -826,8 +826,7 @@ async function loadPublicFromHome({maxId="",limit=40,onPage=null}={}){
     if(!next||next===cursor||page.length<Number(limit))break;
     cursor=next;
 
-    // 서버를 과도하게 몰아치지 않으면서도 전체 홈을 계속 이어서 가져온다.
-    await new Promise(resolve=>setTimeout(resolve,25));
+    // 페이지는 순차 요청하되 별도 인위 지연은 두지 않는다.
   }
   return items;
 }
@@ -945,23 +944,31 @@ async function ensurePublicTimelineFilled({fresh=false}={}){
   if(!fresh&&!stale&&(state.homePagerData?.public||[]).length>=20)return state.homePagerData.public;
   return refreshPublicTimeline();
 }
-async function refreshPublicTimeline(){
+async function refreshPublicLatestPage({fillBackground=false}={}){
   if(state.publicRefreshPromise)return state.publicRefreshPromise;
   const generation=Number(state.publicLoadGeneration||0)+1;
   state.publicLoadGeneration=generation;
   state.publicRefreshPromise=(async()=>{
-    const items=await loadPublicFromHome({
-      limit:40,
-      onPage:all=>{
-        if(Number(state.publicLoadGeneration||0)===generation)updatePublicTimelinePage(all,{preserveScroll:true});
-      }
-    });
-    if(Number(state.publicLoadGeneration||0)!==generation)return items;
+    const page=await api("/api/v1/timelines/home",{query:{limit:"40"}});
+    if(!Array.isArray(page)||!page.length)return state.homePagerData?.public||[];
+    if(Number(state.publicLoadGeneration||0)!==generation)return state.homePagerData?.public||[];
+
+    // 최신 한 페이지를 먼저 즉시 보여준다. 기존 퍼블릭의 과거 항목은 유지한다.
+    const latest=page.filter(publicHomeStatus);
+    const current=Array.isArray(state.homePagerData?.public)?state.homePagerData.public:[];
+    const items=mergeTimelineUnlimited(latest,current);
     updatePublicTimelinePage(items,{preserveScroll:true});
     state.publicFilledAt=Date.now();
+
+    if(fillBackground){
+      setTimeout(()=>expandPublicTimelineInBackground().catch(()=>{}),0);
+    }
     return items;
   })().finally(()=>{state.publicRefreshPromise=null});
   return state.publicRefreshPromise;
+}
+async function refreshPublicTimeline(){
+  return refreshPublicLatestPage({fillBackground:true});
 }
 async function refreshHomeAfterPost(){
   try{await refreshHomeIncremental()}catch{}
@@ -1037,7 +1044,7 @@ function setHomePagerMode(mode,animate=true){
     state.homePagerData.public=visible;
     state.timelineItems=visible;
     updatePublicTimelinePage(visible,{preserveScroll:true});
-    setTimeout(()=>expandPublicTimelineInBackground().catch(()=>{}),0);
+    setTimeout(()=>refreshPublicLatestPage({fillBackground:true}).catch(()=>{}),0);
   }
 }
 async function homeView({silent=false,forceFresh=false}={}){
@@ -4516,9 +4523,15 @@ async function registerSW(){
     reg.update().catch(()=>{});
   }
 }
-document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"){applyAutomaticUpdate();refreshUnreadNotificationCount()}});
-window.addEventListener("focus",()=>{applyAutomaticUpdate();refreshUnreadNotificationCount()});
+function refreshVisiblePublicQuickly(){
+  if(document.visibilityState!=="visible"||!state.session)return;
+  if(state.view!=="home"||state.homeMode!=="public"||state.listId)return;
+  refreshPublicLatestPage({fillBackground:false}).catch(()=>{});
+}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"){applyAutomaticUpdate();refreshUnreadNotificationCount();refreshVisiblePublicQuickly()}});
+window.addEventListener("focus",()=>{applyAutomaticUpdate();refreshUnreadNotificationCount();refreshVisiblePublicQuickly()});
 setInterval(()=>{if(document.visibilityState==="visible"){applyAutomaticUpdate();refreshUnreadNotificationCount()}},30000);
+setInterval(()=>refreshVisiblePublicQuickly(),15000);
 window.addEventListener("beforeinstallprompt",e=>e.preventDefault());
 window.addEventListener("popstate",()=>{
   const modal=document.querySelector(".compose-modal");
