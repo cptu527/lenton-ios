@@ -4996,3 +4996,32 @@ img{display:block}
 .notify-mention-actions button{
   min-height:30px;
 }
+
+
+/* 2026-09-22 QA22: DM composer stays fixed to the viewport */
+.dm-conversation-page{
+  will-change:auto;
+}
+.dm-conversation-page .main{
+  padding-bottom:calc(82px + env(safe-area-inset-bottom));
+}
+.dm-conversation-page .dm-thread-list{
+  padding-bottom:calc(82px + env(safe-area-inset-bottom));
+}
+.dm-conversation-page .android-dm-compose{
+  position:fixed!important;
+  left:0!important;
+  right:0!important;
+  bottom:0!important;
+  z-index:60!important;
+  width:100%!important;
+  margin:0!important;
+  box-sizing:border-box;
+  transform:translateZ(0);
+  backface-visibility:hidden;
+  -webkit-backface-visibility:hidden;
+  contain:layout paint;
+  border-top:1px solid var(--line);
+  background:var(--bg);
+  box-shadow:0 -2px 8px rgba(0,0,0,.035);
+}

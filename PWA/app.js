@@ -1958,7 +1958,9 @@ async function openConversation(id){
         '<span id="dmInlineCount" class="dm-inline-count">'+Number(state.instance?.configuration?.statuses?.max_characters||500)+'</span>'+
         '<button class="dm-inline-send" id="dmInlineSend" aria-label="보내기">보내기</button>'+
       '</div><div id="dmMediaPreview" class="dm-media-preview"></div>';
-    $("#app").innerHTML=standaloneShell(title,body);bind();
+    $("#app").innerHTML=standaloneShell(title,body);
+    document.querySelector(".standalone-page")?.classList.add("dm-conversation-page");
+    bind();
     const input=$("#dmInlineInput"),max=Number(input?.maxLength||500),count=$("#dmInlineCount");
     const updateCount=()=>{if(count)count.textContent=String(Math.max(0,max-(input?.value.length||0)))};
     input?.addEventListener("input",updateCount);updateCount();
