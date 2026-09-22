@@ -5025,3 +5025,11 @@ img{display:block}
   background:var(--bg);
   box-shadow:0 -2px 8px rgba(0,0,0,.035);
 }
+
+
+/* 2026-09-22 QA23: prevent iPhone focus zoom in DM */
+.dm-conversation-page .android-dm-compose textarea{
+  font-size:16px!important;
+  touch-action:manipulation;
+  -webkit-text-size-adjust:100%;
+}
