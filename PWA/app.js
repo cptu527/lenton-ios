@@ -805,7 +805,7 @@ function mergeTimelineUnlimited(fresh=[],existing=[]){
   out.sort((a,b)=>statusCreatedAtMs(b)-statusCreatedAtMs(a));
   return out;
 }
-async function loadPublicFromHome({maxId="",limit=40,onPage=null}={}){
+async function loadPublicFromHome({maxId="",limit=40,onPage=null,targetVisible=0}={}){
   let cursor=maxId||"",items=[];
   for(;;){
     const query={limit:String(limit)};
@@ -825,6 +825,7 @@ async function loadPublicFromHome({maxId="",limit=40,onPage=null}={}){
     const next=String(page[page.length-1]?.id||"");
     if(!next||next===cursor||page.length<Number(limit))break;
     cursor=next;
+    if(Number(targetVisible)>0&&items.length>=Number(targetVisible))break;
 
     // 페이지는 순차 요청하되 별도 인위 지연은 두지 않는다.
   }
@@ -1037,6 +1038,7 @@ function setHomePagerMode(mode,animate=true){
   state.listId=null;
   state.timelineItems=state.homePagerData?.[mode]||[];
   syncHomePagerUi(mode,animate);
+  requestAnimationFrame(()=>attachHomeInfiniteScroll());
   if(mode==="public"&&changed){
     const immediate=publicFromHome(state.homePagerData?.home||[]);
     const existing=Array.isArray(state.homePagerData?.public)?state.homePagerData.public:[];
@@ -1101,10 +1103,35 @@ async function homeView({silent=false,forceFresh=false}={}){
     bind();
   }
 }
-async function loadMoreHome(){
+function attachHomeInfiniteScroll(){
+  try{state.homeInfiniteObserver?.disconnect()}catch{}
+  state.homeInfiniteObserver=null;
+  if(state.view!=="home")return;
+
+  const loadMode=state.listId?"list":state.homeMode;
+  let btn=null;
+  if(state.listId){
+    btn=document.querySelector('[data-action="loadmorehome"][data-home-load-mode="list"]');
+  }else{
+    btn=document.querySelector('[data-home-page="'+loadMode+'"] [data-action="loadmorehome"][data-home-load-mode="'+loadMode+'"]');
+  }
+  if(!btn||btn.dataset.exhausted==="1")return;
+
+  if("IntersectionObserver" in window){
+    const observer=new IntersectionObserver(entries=>{
+      const hit=entries.some(x=>x.isIntersecting);
+      if(!hit||state.timelineLoadingMore||btn.dataset.exhausted==="1")return;
+      loadMoreHome({automatic:true}).catch(()=>{});
+    },{root:null,rootMargin:"900px 0px 1100px 0px",threshold:.01});
+    observer.observe(btn);
+    state.homeInfiniteObserver=observer;
+  }
+}
+
+async function loadMoreHome({automatic=false}={}){
   if(state.timelineLoadingMore)return;
   const last=state.timelineItems[state.timelineItems.length-1],maxId=statusId(last);
-  if(!maxId){toast("더 불러올 게시물이 없어요.");return}
+  if(!maxId){if(!automatic)toast("더 불러올 게시물이 없어요.");return}
   const loadMode=state.listId?"list":state.homeMode;
   const btn=document.querySelector('[data-action="loadmorehome"][data-home-load-mode="'+loadMode+'"]')
     ||document.querySelector('[data-action="loadmorehome"]');
@@ -1115,7 +1142,7 @@ async function loadMoreHome(){
     if(state.listId){
       more=await api(`/api/v1/timelines/list/${state.listId}`,{query:{limit:"40",max_id:maxId}});
     }else if(state.homeMode==="public"){
-      more=await loadPublicFromHome({maxId,limit:40});
+      more=await loadPublicFromHome({maxId,limit:40,targetVisible:40});
     }else{
       more=await loadChronologicalHome({maxId,limit:40,maxScans:2});
     }
@@ -1127,7 +1154,11 @@ async function loadMoreHome(){
       return true;
     });
     if(!more.length){
-      if(btn){btn.disabled=false;btn.textContent="더 불러올 게시물이 없어요."}
+      if(btn){
+        btn.disabled=false;
+        btn.dataset.exhausted="1";
+        btn.textContent="더 불러올 게시물이 없어요.";
+      }
       return;
     }
     state.timelineItems.push(...more);
@@ -1136,6 +1167,7 @@ async function loadMoreHome(){
     homeSnapshotWrite(state.homePagerData);
     if(btn){
       btn.insertAdjacentHTML("beforebegin",more.map(x=>statusCard(x,{replyCountOverride:visibleReplyCount(x,state.timelineItems)})).join(""));
+      delete btn.dataset.exhausted;
       btn.disabled=false;btn.textContent="더 불러오기";
     }
     bind();
@@ -1148,9 +1180,12 @@ async function loadMoreHome(){
       setTimeout(syncHomePagerHeight,450);
     }
   }catch(e){
-    toast(e.message);
+    if(!automatic)toast(e.message);
     if(btn){btn.disabled=false;btn.textContent="다시 시도"}
-  }finally{state.timelineLoadingMore=false}
+  }finally{
+    state.timelineLoadingMore=false;
+    requestAnimationFrame(()=>attachHomeInfiniteScroll());
+  }
 }
 
 function scrollKey(){return state.view+(state.view==="home"?":"+state.homeMode+":"+(state.listId||""):"")}
@@ -4440,6 +4475,7 @@ function bind(){
     state.profileCache[pid+":"+(state.profileMode||"posts")]=document.querySelector(".main").innerHTML;
   }
   attachLentonGestures();
+  requestAnimationFrame(()=>attachHomeInfiniteScroll());
   restoreScroll();
   attachListOrderDrag();
   attachLayoutEditorDrag();
