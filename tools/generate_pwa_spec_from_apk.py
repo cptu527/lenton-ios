@@ -438,7 +438,8 @@ def build_spec(main_text: str, latest: dict, apk_sha: str, source_path: str):
                 "excludeBoosts": ("reblog" in public_filter_text),
                 "excludeReplies": ("in_reply_to_id" in public_filter_text),
                 "excludeOwnPosts": ("me_id" in main_text),
-                "homeSourceTrusted": ("/api/v1/timelines/home" in main_text and "/api/v1/timelines/public" in main_text),
+                # Newer Android builds derive the Public tab from Home and filter replies locally.
+                "homeSourceTrusted": ("/api/v1/timelines/home" in main_text and "in_reply_to_id" in public_filter_text),
             }
         },
         "theme": theme,
@@ -498,7 +499,9 @@ def main():
         contexts[marker]=None if pos<0 else re.sub(r"\s+"," ",main_text[max(0,pos-600):pos+1200])
     spec["apkMarkerPresence"]={m:(main_text.find(m)>=0) for m in debug_markers}
 
-    required = ["시간순", "퍼블릭", "me_id", "/api/v1/timelines/home", "/api/v1/timelines/public", "in_reply_to_id"]
+    # Public no longer requires a separate /timelines/public endpoint: the current
+    # Android behavior derives that tab from Home and removes replies locally.
+    required = ["시간순", "퍼블릭", "me_id", "/api/v1/timelines/home", "in_reply_to_id"]
     missing = [x for x in required if x not in main_text]
     if missing:
         raise SystemExit("Decompiled Android source missing required Lenton UI markers: " + ", ".join(missing))
