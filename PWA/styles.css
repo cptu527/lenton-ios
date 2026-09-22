@@ -5181,3 +5181,29 @@ img{display:block}
   background:var(--accent);
   box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 12%,transparent);
 }
+
+
+/* 2026-09-22 new-DM Next dock: true viewport fixed on iPhone Safari */
+.dm-new-message-page{
+  will-change:auto!important;
+  transform:none;
+}
+.dm-new-message-page .main{
+  padding-bottom:calc(92px + env(safe-area-inset-bottom))!important;
+}
+.dm-new-message-page .dm-new-lenton{
+  padding-bottom:calc(92px + env(safe-area-inset-bottom))!important;
+}
+.dm-new-message-page .dm-next-dock{
+  position:fixed!important;
+  left:0!important;
+  right:0!important;
+  bottom:0!important;
+  z-index:95!important;
+  margin:0!important;
+  box-sizing:border-box;
+  padding:10px 20px calc(12px + env(safe-area-inset-bottom))!important;
+  background:color-mix(in srgb,var(--bg) 97%,transparent)!important;
+  backdrop-filter:blur(14px) saturate(145%)!important;
+  -webkit-backdrop-filter:blur(14px) saturate(145%)!important;
+}

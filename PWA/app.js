@@ -1813,6 +1813,7 @@ async function newDmScreen(){
       <div id="dmRecipientResults" class="dm-results dm-results-lenton"><div class="center">팔로잉 목록을 불러오는 중…</div></div>
       <div class="dm-next-dock"><button class="primary dm-start dm-next" id="dmStartCompose" disabled>다음</button></div>
     </div>`);
+  document.querySelector(".standalone-page")?.classList.add("dm-new-message-page");
   bind();
 
   const updateNext=()=>{
