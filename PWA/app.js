@@ -1762,14 +1762,30 @@ async function dmView(silent=false){
     const body=cs.length?cs.map(c=>{
       const a=c.accounts?.[0],txt=c.last_status?plain(c.last_status.content):"";
       const thread=c._threadLabel?'<span class="message-thread-label"> · '+esc(c._threadLabel)+'</span>':"";
-      return '<button class="message-row '+(c.unread?"unread":"")+'" data-conv="'+esc(c.id)+'">'+
+      return '<button class="message-row '+(c.unread?"unread":"")+'" data-conv="'+esc(c.id)+'" '+(c.unread?'aria-label="읽지 않은 대화"':"")+'>'+
         '<img class="message-avatar" src="'+esc(a?.avatar_static||a?.avatar||"")+'" alt="">'+
         '<div class="message-main"><div class="message-name">'+renderEmojiText(a?.display_name||a?.username||"대화",a?.emojis||[])+thread+'</div>'+
         '<div class="message-handle">@'+esc(a?.acct||"")+'</div><div class="message-preview">'+esc(txt)+'</div></div>'+
-        '<time class="message-date">'+fmtDateOnly(c.last_status?.created_at)+'</time></button>';
+        '<div class="message-meta"><time class="message-date">'+fmtDateOnly(c.last_status?.created_at)+'</time>'+(c.unread?'<span class="message-unread-dot" aria-hidden="true"></span>':"")+'</div></button>';
     }).join(""):'<div class="center">대화가 없어요.</div>';
     renderMainStable("메시지",body,{view:"dm",fab:true,fabAction:"newdm"}); state._conversations=cs;
   }catch(e){renderMainStable("메시지",'<div class="center">'+esc(e.message)+'</div>',{view:"dm",fab:true,fabAction:"newdm"})}
+}
+
+function markDmConversationReadInSnapshots(id){
+  const target=String(id||"");if(!target)return;
+  for(let i=state.navStack.length-1;i>=0;i--){
+    const snap=state.navStack[i];
+    if(snap?.view!=="dm"||!snap?.html)continue;
+    const holder=document.createElement("div");holder.innerHTML=snap.html;
+    const row=[...holder.querySelectorAll("[data-conv]")].find(el=>String(el.dataset.conv||"")===target);
+    if(!row)continue;
+    row.classList.remove("unread");
+    row.removeAttribute("aria-label");
+    row.querySelector(".message-unread-dot")?.remove();
+    snap.html=holder.innerHTML;
+    break;
+  }
 }
 
 async function searchDmAccounts(q){
@@ -2008,6 +2024,7 @@ async function openConversation(id){
       if(c.unread){
         c.unread=false;
         state.dmUnread=Math.max(0,Number(state.dmUnread||0)-1);
+        markDmConversationReadInSnapshots(c.id);
         await setSharedAccountUnreadBreakdown(currentAccountKey(),state.notificationUnread,state.dmUnread);
         refreshNotificationBadgeDom();
       }

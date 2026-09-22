@@ -5152,3 +5152,32 @@ img{display:block}
   height:24px;
   color:var(--accent);
 }
+
+
+/* 2026-09-22 QA25: clearly distinguish unread DMs */
+.message-meta{
+  min-width:52px;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-end;
+  gap:10px;
+}
+.message-row.unread{
+  background:color-mix(in srgb,var(--accent) 8%,var(--bg));
+  box-shadow:inset 3px 0 0 var(--accent);
+}
+.message-row.unread .message-name{
+  font-weight:800;
+}
+.message-row.unread .message-preview{
+  color:var(--fg);
+  font-weight:600;
+}
+.message-unread-dot{
+  width:9px;
+  height:9px;
+  flex:0 0 9px;
+  border-radius:50%;
+  background:var(--accent);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 12%,transparent);
+}
