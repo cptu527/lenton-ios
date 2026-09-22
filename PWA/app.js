@@ -1662,6 +1662,14 @@ function watchNotificationPagerHeight(){
     el.addEventListener("loadedmetadata",syncNotificationPagerHeight,{once:true});
   });
 }
+function positionNotificationIndicator(tabs,indicator,frac,modes,animate=false){
+  if(!tabs||!indicator||!modes?.length)return;
+  const tabW=Math.max(1,tabs.getBoundingClientRect().width/modes.length);
+  const indicatorW=Math.max(1,indicator.getBoundingClientRect().width||36);
+  const clamped=Math.max(0,Math.min(modes.length-1,Number(frac)||0));
+  indicator.style.transition=animate?"transform 190ms cubic-bezier(.2,.75,.25,1)":"none";
+  indicator.style.transform="translate3d("+(clamped*tabW+(tabW-indicatorW)/2)+"px,0,0)";
+}
 function syncNotificationPagerUi(mode,animate=true){
   const modes=notificationModes(),index=Math.max(0,modes.indexOf(mode));
   const pager=document.querySelector("[data-notification-pager]"),track=document.querySelector("[data-notification-track]"),tabs=document.querySelector("[data-notification-tabs]");
@@ -1670,11 +1678,7 @@ function syncNotificationPagerUi(mode,animate=true){
   track.style.transition=animate?"transform 190ms cubic-bezier(.2,.75,.25,1)":"none";
   track.style.transform="translate3d("+(-index*width)+"px,0,0)";
   tabs.querySelectorAll("[data-notify]").forEach(b=>b.classList.toggle("active",(b.dataset.notify==="all"?"all":"replyNeeded")===mode));
-  const indicator=tabs.querySelector(".notify-tab-indicator"),tabW=tabs.clientWidth/modes.length;
-  if(indicator){
-    indicator.style.transition=animate?"transform 190ms cubic-bezier(.2,.75,.25,1)":"none";
-    indicator.style.transform="translate3d("+(index*tabW+(tabW-36)/2)+"px,0,0)";
-  }
+  positionNotificationIndicator(tabs,tabs.querySelector(".notify-tab-indicator"),index,modes,animate);
   requestAnimationFrame(()=>{syncNotificationPagerHeight();watchNotificationPagerHeight()});
 }
 function setNotificationPagerMode(mode,animate=true){
@@ -4093,21 +4097,30 @@ function attachSwipe(el,{onLeft,onRight,edgeOnly=false,threshold=40,ratio=1.25,s
   },{passive:true});
   el.addEventListener("touchcancel",()=>{start=null;tracking=false},{passive:true});
 }
-function scrollHomeToTop({smooth=false}={}){
+function scrollMainViewToTop(view=state.view,{smooth=false}={}){
   const behavior=smooth?"smooth":"auto";
   const apply=()=>{
     try{window.scrollTo({top:0,left:0,behavior})}catch{window.scrollTo(0,0)}
     document.documentElement.scrollTop=0;
     document.body.scrollTop=0;
-    const main=document.querySelector(".app.lenton-view-home .main");
-    if(main)main.scrollTop=0;
-    const page=document.querySelector('[data-home-page="'+state.homeMode+'"]');
-    if(page)page.scrollTop=0;
+    const main=document.querySelector(".app.lenton-view-"+view+" .main");
+    if(main){
+      try{main.scrollTo({top:0,left:0,behavior})}catch{main.scrollTop=0}
+      if(!smooth)main.scrollTop=0;
+    }
+    if(view==="home"){
+      const page=document.querySelector('[data-home-page="'+state.homeMode+'"]');
+      if(page)page.scrollTop=0;
+    }else if(view==="notifications"){
+      const page=document.querySelector('[data-notification-page="'+state.notificationMode+'"]');
+      if(page)page.scrollTop=0;
+    }
   };
   apply();
   requestAnimationFrame(apply);
   setTimeout(apply,smooth?180:40);
 }
+function scrollHomeToTop(opts={}){scrollMainViewToTop("home",opts)}
 function moveMainView(dir){
   rememberScroll();
   const order=visibleNavItems().map(x=>x.id);
@@ -4280,8 +4293,8 @@ function attachNotificationTabSwipe(){
     let shown=dx;
     if((startIndex===0&&dx>0)||(startIndex===modes.length-1&&dx<0))shown=dx*.22;
     track.style.transform="translate3d("+(-startIndex*width+shown)+"px,0,0)";
-    const frac=Math.max(0,Math.min(modes.length-1,startIndex-shown/width)),tabW=tabs.clientWidth/modes.length;
-    if(indicator)indicator.style.transform="translate3d("+(frac*tabW+(tabW-36)/2)+"px,0,0)";
+    const frac=Math.max(0,Math.min(modes.length-1,startIndex-shown/width));
+    positionNotificationIndicator(tabs,indicator,frac,modes,false);
   },{passive:false});
   pager.addEventListener("touchend",e=>{
     if(!start)return;
@@ -4330,17 +4343,21 @@ function bind(){
   document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{
     const target=b.dataset.view,wasCurrent=target===state.view;
     rememberScroll();
-    if(target==="home"&&wasCurrent){
+    if(wasCurrent){
       state.listId=null;
-      scrollHomeToTop({smooth:true});
-      setTimeout(async()=>{
-        try{
-          if(state.homeMode==="public")await refreshPublicTimeline();
-          else await homeView({silent:true,forceFresh:true});
-        }finally{
-          scrollHomeToTop();
-        }
-      },120);
+      scrollMainViewToTop(target,{smooth:true});
+      state.scrolls[scrollKey()]=0;
+      if(target==="home"){
+        setTimeout(async()=>{
+          try{
+            if(state.homeMode==="public")await refreshPublicTimeline();
+            else await homeView({silent:true,forceFresh:true});
+          }finally{
+            scrollMainViewToTop("home");
+            state.scrolls[scrollKey()]=0;
+          }
+        },120);
+      }
       return;
     }
     state.view=target;state.listId=null;
