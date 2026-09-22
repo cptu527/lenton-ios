@@ -1923,7 +1923,7 @@ async function sendInlineDm(conversation){
   if(!input||!send)return;
   const text=input.value.trim(),files=[...(file?.files||[]),...(camera?.files||[])].slice(0,4);
   if(!text&&!files.length)return;
-  send.disabled=true;send.textContent="전송 중…";
+  send.disabled=true;send.textContent="…";
   try{
     const media=[];for(const f of files)media.push(await uploadComposerFile(f));
     const recipient=(conversation.accounts||[]).filter(a=>String(a.id)!==String(state.me?.id))[0];
@@ -1936,7 +1936,7 @@ async function sendInlineDm(conversation){
     input.value="";if(file)file.value="";if(camera)camera.value="";
     await dmView();const refreshed=state._conversations?.find(x=>String(x.id)===String(conversation.id))||state._conversations?.find(x=>dmConversationKey(x)===dmConversationKey(conversation));
     if(refreshed)await openConversation(refreshed.id);
-  }catch(e){toast(e.message);send.disabled=false;send.textContent="보내기"}
+  }catch(e){toast(e.message);send.textContent="↑";send.disabled=false}
 }
 async function openConversation(id){
   const c=state._conversations?.find(x=>String(x.id)===String(id));if(!c?.last_status)return;
@@ -1950,27 +1950,60 @@ async function openConversation(id){
     const previous=c._previousConversationId?'<button class="dm-previous-conversation" data-dm-previous="'+esc(c._previousConversationId)+'">이전 대화 보기 ›</button>':"";
     const body=previous+'<div class="dm-thread-list">'+dmThreadMarkup(statuses)+'</div>'+
       '<div class="dm-inline-compose android-dm-compose">'+
-        '<button class="dm-tool-btn" id="dmInlineAttach" aria-label="사진 첨부">'+lentonIcon("photo")+'</button>'+
-        '<button class="dm-tool-btn" id="dmInlineCamera" aria-label="카메라">'+lentonIcon("camera")+'</button>'+
+        '<button class="dm-tool-btn dm-tool-more" id="dmInlineMore" aria-label="첨부 메뉴" aria-expanded="false">+</button>'+
         '<input id="dmInlineFile" type="file" accept="image/*,video/*" multiple hidden>'+
         '<input id="dmInlineCameraFile" type="file" accept="image/*" capture="environment" hidden>'+
         '<textarea id="dmInlineInput" rows="1" maxlength="'+Number(state.instance?.configuration?.statuses?.max_characters||500)+'" placeholder="메시지 보내기"></textarea>'+
-        '<span id="dmInlineCount" class="dm-inline-count">'+Number(state.instance?.configuration?.statuses?.max_characters||500)+'</span>'+
-        '<button class="dm-inline-send" id="dmInlineSend" aria-label="보내기">보내기</button>'+
-      '</div><div id="dmMediaPreview" class="dm-media-preview"></div>';
+        '<button class="dm-inline-send" id="dmInlineSend" aria-label="보내기" disabled>↑</button>'+
+        '<div id="dmMediaPreview" class="dm-media-preview"></div>'+
+        '<div class="dm-attach-menu" id="dmInlineAttachMenu" hidden>'+
+          '<button type="button" id="dmInlineAttach">'+lentonIcon("photo")+'<span>사진·동영상</span></button>'+
+          '<button type="button" id="dmInlineCamera">'+lentonIcon("camera")+'<span>카메라</span></button>'+
+        '</div>'+
+      '</div>';
     $("#app").innerHTML=standaloneShell(title,body);
     document.querySelector(".standalone-page")?.classList.add("dm-conversation-page");
     bind();
-    const input=$("#dmInlineInput"),max=Number(input?.maxLength||500),count=$("#dmInlineCount");
-    const updateCount=()=>{if(count)count.textContent=String(Math.max(0,max-(input?.value.length||0)))};
-    input?.addEventListener("input",updateCount);updateCount();
-    $("#dmInlineAttach")?.addEventListener("click",()=>$("#dmInlineFile")?.click());
-    $("#dmInlineCamera")?.addEventListener("click",()=>$("#dmInlineCameraFile")?.click());
-    const previewFiles=files=>{const box=$("#dmMediaPreview");if(!box)return;box.innerHTML=[...files].slice(0,4).map(f=>'<div class="dm-media-chip">'+esc(f.name)+'</div>').join("")};
-    $("#dmInlineFile")?.addEventListener("change",e=>previewFiles(e.target.files));
-    $("#dmInlineCameraFile")?.addEventListener("change",e=>previewFiles(e.target.files));
-    $("#dmInlineSend")?.addEventListener("click",()=>sendInlineDm(c));
+    const input=$("#dmInlineInput"),send=$("#dmInlineSend"),more=$("#dmInlineMore"),menu=$("#dmInlineAttachMenu"),file=$("#dmInlineFile"),camera=$("#dmInlineCameraFile");
+    const selectedFiles=()=>[...(file?.files||[]),...(camera?.files||[])].slice(0,4);
+    const syncComposerSpace=()=>{
+      const page=document.querySelector(".dm-conversation-page"),composer=document.querySelector(".android-dm-compose");
+      if(!page||!composer)return;
+      page.style.setProperty("--dm-composer-height",Math.ceil(composer.getBoundingClientRect().height)+"px");
+    };
+    const updateSendState=()=>{if(send)send.disabled=!(String(input?.value||"").trim()||selectedFiles().length)};
+    const resizeInput=()=>{
+      if(!input)return;
+      input.style.height="auto";
+      const maxHeight=116,next=Math.max(44,Math.min(maxHeight,input.scrollHeight));
+      input.style.height=next+"px";
+      input.style.overflowY=input.scrollHeight>maxHeight?"auto":"hidden";
+      updateSendState();
+      requestAnimationFrame(syncComposerSpace);
+    };
+    const closeAttachMenu=()=>{if(menu)menu.hidden=true;if(more)more.setAttribute("aria-expanded","false")};
+    const previewFiles=()=>{
+      const box=$("#dmMediaPreview");if(!box)return;
+      box.innerHTML=selectedFiles().map(f=>'<div class="dm-media-chip">'+esc(f.name)+'</div>').join("");
+      updateSendState();
+      requestAnimationFrame(syncComposerSpace);
+    };
+    more?.addEventListener("click",e=>{
+      e.stopPropagation();
+      if(!menu)return;
+      menu.hidden=!menu.hidden;
+      more.setAttribute("aria-expanded",menu.hidden?"false":"true");
+    });
+    $("#dmInlineAttach")?.addEventListener("click",()=>{closeAttachMenu();file?.click()});
+    $("#dmInlineCamera")?.addEventListener("click",()=>{closeAttachMenu();camera?.click()});
+    file?.addEventListener("change",previewFiles);
+    camera?.addEventListener("change",previewFiles);
+    input?.addEventListener("input",resizeInput);
+    input?.addEventListener("focus",closeAttachMenu);
+    send?.addEventListener("click",()=>sendInlineDm(c));
     input?.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendInlineDm(c)}});
+    resizeInput();previewFiles();
+    requestAnimationFrame(syncComposerSpace);
     api("/api/v1/conversations/"+id+"/read",{method:"POST",form:{}}).then(async()=>{
       if(c.unread){
         c.unread=false;
