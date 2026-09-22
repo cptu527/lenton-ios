@@ -1122,7 +1122,7 @@ function attachHomeInfiniteScroll(){
       const hit=entries.some(x=>x.isIntersecting);
       if(!hit||state.timelineLoadingMore||btn.dataset.exhausted==="1")return;
       loadMoreHome({automatic:true}).catch(()=>{});
-    },{root:null,rootMargin:"900px 0px 1100px 0px",threshold:.01});
+    },{root:null,rootMargin:"1500px 0px 1700px 0px",threshold:.01});
     observer.observe(btn);
     state.homeInfiniteObserver=observer;
   }
@@ -1142,7 +1142,9 @@ async function loadMoreHome({automatic=false}={}){
     if(state.listId){
       more=await api(`/api/v1/timelines/list/${state.listId}`,{query:{limit:"40",max_id:maxId}});
     }else if(state.homeMode==="public"){
-      more=await loadPublicFromHome({maxId,limit:40,targetVisible:40});
+      // 자동 스크롤에서는 작은 묶음을 빨리 붙이고 곧바로 다음 묶음을 이어 받는다.
+      const targetVisible=automatic?12:24;
+      more=await loadPublicFromHome({maxId,limit:40,targetVisible});
     }else{
       more=await loadChronologicalHome({maxId,limit:40,maxScans:2});
     }
