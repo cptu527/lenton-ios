@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "generatedFrom": "published-android-apk",
-  "versionCode": 247,
-  "versionName": "0.25.63",
-  "apkUrl": "https://raw.githubusercontent.com/cptu527/lenton-updates/main/Lenton-v0.25.63-test.apk",
-  "apkSha256": "29d52c3778943e71043f3e1b82a839ebfa418c95799490266846efddd52d542f",
+  "versionCode": 248,
+  "versionName": "0.25.64",
+  "apkUrl": "https://raw.githubusercontent.com/cptu527/lenton-updates/main/Lenton-v0.25.64-test.apk",
+  "apkSha256": "153921ab88cd03cb08339978b517667b0ac7b3a5459d6894604cecbc8b77ee91",
   "decompiledSource": "com/mastoflow/app/MainActivity.java",
   "homeTabs": {
     "chronological": "시간순",
@@ -245,17 +245,17 @@
     "draftGuard": true
   },
   "criticalSourceHashes": {
-    "activity": "71c7cbeb8ce1c553bfaf333b765c5a1a60ce7855ae46caffeb1318af4db01ab7",
+    "activity": "79ba8de05c8d2c373eda1817a0e7da5ea2e7b09d5ecf368d05f66b5c2ae51cc5",
     "publicFilter": "de8d4cd01e5c5ee6a8080c67b280796c4ec6ca8c6a7ac26f9fe8fc2ec139f16e",
     "publicLoader": null,
-    "bottomNav": "8ba94293f28eef6812248b80648f40752bb1b31f428d331dc93b57097c91596d",
-    "drawer": "4a39647a6ab9c2fc52068cb56be9e7d9fdbd0e52a7b56373c99eb5f18c02116d",
+    "bottomNav": "081980ca29c61ea2ca4173d84a8ece5acaadf733446ea028cac53a3986015834",
+    "drawer": "ef3bcd44955451801a65b755ef615271d34f03aeec9a8485dab221f54c0812d2",
     "composer": "90e01f3b6ba3a012dda437c110b94d484006ce57cf1e8d084a384aafaaa95f2c",
-    "topBar": "cb835b197f0347a1dade8a73015e17814c4f9320a4c32d09e64b1db902c9da36",
+    "topBar": "3fb5f3c1cf673df5eca29b9d8c122e00dafc5b9b6153dd6a1fc4a3f642f4b49f",
     "status": null,
-    "profile": "5947202f647aee6df8eb980ab71fbf2bec7cf30331a017051be31f72bfa3d809",
+    "profile": "ccfdb8569ce0acb1654953c3a1794d56ba1e5f74cfc79b61ff1b0d7376a641c1",
     "notification": null,
-    "conversation": "ef5440b4c6ed7bfe512d0e3972eb612284569592f8d6f51dfb1f412c50af6000"
+    "conversation": "f92f83fae440fb08a780fc3634400385f2277a95cf4258261d6e0fd87e4249a6"
   },
   "apkMarkerPresence": {
     "시간순": true,
