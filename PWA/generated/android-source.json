@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "generatedFrom": "published-android-apk",
-  "versionCode": 220,
-  "versionName": "0.25.36",
-  "apkUrl": "https://raw.githubusercontent.com/cptu527/lenton-updates/main/Lenton-v0.25.36-test.apk",
-  "apkSha256": "8ddea629a10a48b86c5b58fcd859ab9c23c45f8b6041ccb290990354ae660d44",
+  "versionCode": 245,
+  "versionName": "0.25.61",
+  "apkUrl": "https://raw.githubusercontent.com/cptu527/lenton-updates/main/Lenton-v0.25.61-test.apk",
+  "apkSha256": "8d9b57e47f326b3c0b559fb19b9f930f52a0736f812b1be589e4c0820d1a81b7",
   "decompiledSource": "com/mastoflow/app/MainActivity.java",
   "homeTabs": {
     "chronological": "시간순",
@@ -22,8 +22,8 @@
     "public": {
       "targetInitialItems": 30,
       "maxHomeScans": 6,
-      "excludeDirect": true,
-      "excludeBoosts": true,
+      "excludeDirect": false,
+      "excludeBoosts": false,
       "excludeReplies": true,
       "excludeOwnPosts": true,
       "homeSourceTrusted": true
@@ -245,17 +245,17 @@
     "draftGuard": true
   },
   "criticalSourceHashes": {
-    "activity": "347a1cba27d6958b5bc18a98c35aaec6c5ae903ca519f2a8c53ccdb4f853a965",
-    "publicFilter": "0167b2e6ce401ed1bc84439327b900a5e6eef7c4520a7d3ddfe1f44eeb1de09b",
+    "activity": "74bb1861241ef8e1e92747f95abf552b2e60984af9fcdf57d9e49de40852d057",
+    "publicFilter": "de8d4cd01e5c5ee6a8080c67b280796c4ec6ca8c6a7ac26f9fe8fc2ec139f16e",
     "publicLoader": null,
-    "bottomNav": "86797387f1d42ee259e0c23861daa4cddf80dc2cdd89bb88bf47277cad96a17f",
-    "drawer": "2648282a43c2e68a2cabca15cc4b598434fc3b00d37c3a81a830d6c994e469d9",
+    "bottomNav": "081980ca29c61ea2ca4173d84a8ece5acaadf733446ea028cac53a3986015834",
+    "drawer": "170bd888a2235a288359a3b4f579cb8073f66526212691a833937614edf86c40",
     "composer": "90e01f3b6ba3a012dda437c110b94d484006ce57cf1e8d084a384aafaaa95f2c",
-    "topBar": "404ec32ae4d65d564a62fffc78a02f3ab3e9a8d57b2a65f3cb896aea4922ef71",
+    "topBar": "76a527f4ac3383b0878b6b3e1fb089e19d204433c5ae2909548bad20237cd784",
     "status": null,
-    "profile": "2d97bc5cb9b461bb7fceff7f046c102a83fac95f45d4032f2ae10796efcb0976",
+    "profile": "65d5eecba721f486f6c4b8113d7a968e7e626744e5c8411309f90a7aaecb12ad",
     "notification": null,
-    "conversation": "d4ff4530739b13925157d62c0c1e6273d97b842cc63c4526aaeaa83df7164c23"
+    "conversation": "2f37e10c262d086b6badf3cd14f09acd915ae620f97d47ce6ac6777316ef5074"
   },
   "apkMarkerPresence": {
     "시간순": true,
@@ -268,7 +268,7 @@
     "답글": true,
     "전체": true,
     "멘션": true,
-    "알림 지우기": false,
+    "알림 지우기": true,
     "팔로잉": true,
     "팔로워": true,
     "게시물과 답글": false,
