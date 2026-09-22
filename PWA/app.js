@@ -1207,8 +1207,8 @@ function pushNavSnapshot(){
   state.navStack.push(snap);if(state.navStack.length>30)state.navStack.shift();
 }
 function clearGestureBindingMarks(root=document){
-  const marks=["interactiveSwipe","homeSwipe","lentonSwipe","edgeDrawerSwipe","closeSwipe","profileSwipe","backSwipe","pullRefresh","notificationSwipe"];
-  root.querySelectorAll?.("[data-interactive-swipe],[data-home-swipe],[data-lenton-swipe],[data-edge-drawer-swipe],[data-close-swipe],[data-profile-swipe],[data-back-swipe],[data-pull-refresh],[data-notification-swipe]").forEach(el=>{
+  const marks=["interactiveSwipe","homeSwipe","lentonSwipe","edgeDrawerSwipe","closeSwipe","profileSwipe","backSwipe","pullRefresh","notificationPullRefresh","notificationSwipe"];
+  root.querySelectorAll?.("[data-interactive-swipe],[data-home-swipe],[data-lenton-swipe],[data-edge-drawer-swipe],[data-close-swipe],[data-profile-swipe],[data-back-swipe],[data-pull-refresh],[data-notification-pull-refresh],[data-notification-swipe]").forEach(el=>{
     for(const k of marks)if(k in el.dataset)delete el.dataset[k];
   });
 }
@@ -4266,6 +4266,124 @@ function attachHomePullToRefresh(){
   },{passive:true});
   main.addEventListener("touchcancel",cleanup,{passive:true});
 }
+function attachNotificationPullToRefresh(){
+  const main=document.querySelector(".app.lenton-view-notifications .main");
+  if(!main||main.dataset.notificationPullRefresh==="1")return;
+  main.dataset.notificationPullRefresh="1";
+
+  let start=null,axis="",drag=0,active=false,refreshing=false;
+
+  const top=()=>Math.max(
+    window.scrollY||0,
+    document.documentElement.scrollTop||0,
+    main.scrollTop||0
+  )<=2;
+  const pager=()=>main.querySelector("[data-notification-pager]");
+  const indicator=()=>main.querySelector(".notification-pull-indicator");
+
+  const ensureIndicator=()=>{
+    let el=indicator();
+    if(!el){
+      el=document.createElement("div");
+      el.className="notification-pull-indicator";
+      el.innerHTML='<span class="notification-pull-spinner" aria-hidden="true"></span>';
+      main.appendChild(el);
+    }
+    const tabs=main.querySelector("[data-notification-tabs]");
+    el.style.top=((tabs?.offsetHeight||74)+8)+"px";
+    return el;
+  };
+
+  const resetTracking=()=>{start=null;axis="";drag=0;active=false};
+
+  const clearVisual=(animate=true)=>{
+    const p=pager();
+    if(p){
+      p.style.transition=animate?"transform 160ms cubic-bezier(.2,.75,.25,1)":"";
+      p.style.transform="translate3d(0,0,0)";
+      if(animate)setTimeout(()=>{if(p.isConnected){p.style.transition="";p.style.transform=""}},170);
+      else{p.style.transition="";p.style.transform=""}
+    }
+    const el=indicator();
+    if(el){
+      el.style.opacity="0";
+      setTimeout(()=>el.remove(),animate?170:0);
+    }
+  };
+
+  main.addEventListener("touchstart",e=>{
+    if(refreshing||e.touches?.length!==1||!top())return;
+    const t=e.touches[0];
+    start={x:t.clientX,y:t.clientY};
+    axis="";drag=0;active=false;
+  },{passive:true});
+
+  main.addEventListener("touchmove",e=>{
+    if(!start||refreshing||e.touches?.length!==1)return;
+    const t=e.touches[0],dx=t.clientX-start.x,dy=t.clientY-start.y;
+    if(!axis){
+      if(Math.abs(dx)<6&&Math.abs(dy)<6)return;
+      if(Math.abs(dx)>Math.abs(dy)*1.08){axis="horizontal";return}
+      if(Math.abs(dy)>Math.abs(dx)*1.05)axis="vertical";
+      else return;
+    }
+    if(axis!=="vertical")return;
+    if(dy<=0||!top()){
+      if(active){clearVisual(false);active=false;drag=0}
+      return;
+    }
+
+    active=true;
+    e.preventDefault();
+    drag=Math.min(84,dy*.44);
+
+    const p=pager();
+    if(!p)return;
+    p.style.transition="none";
+    p.style.transform="translate3d(0,"+drag+"px,0)";
+
+    const el=ensureIndicator(),spinner=el.querySelector(".notification-pull-spinner");
+    el.style.opacity=String(Math.max(0,Math.min(1,(drag-10)/28)));
+    if(spinner&&!el.classList.contains("loading"))spinner.style.transform="rotate("+Math.min(300,drag*4.2)+"deg)";
+  },{passive:false});
+
+  main.addEventListener("touchend",async()=>{
+    if(!start){resetTracking();return}
+    if(axis!=="vertical"||!active){resetTracking();return}
+
+    const shouldRefresh=drag>=54;
+    if(!shouldRefresh){
+      clearVisual(true);
+      resetTracking();
+      return;
+    }
+
+    refreshing=true;
+    const el=ensureIndicator(),p=pager();
+    el.classList.add("loading");
+    el.style.opacity="1";
+    if(p){
+      p.style.transition="transform 140ms cubic-bezier(.2,.75,.25,1)";
+      p.style.transform="translate3d(0,44px,0)";
+    }
+    resetTracking();
+
+    try{
+      await notificationsView(state.notificationMode==="replyNeeded",true);
+    }finally{
+      setTimeout(()=>{
+        refreshing=false;
+        clearVisual(false);
+      },120);
+    }
+  },{passive:true});
+
+  main.addEventListener("touchcancel",()=>{
+    if(!refreshing)clearVisual(true);
+    resetTracking();
+  },{passive:true});
+}
+
 function attachNotificationTabSwipe(){
   const pager=document.querySelector("[data-notification-pager]");
   if(!pager||pager.dataset.notificationSwipe==="1")return;
@@ -4322,7 +4440,7 @@ function attachLentonGestures(){
   attachDrawerCloseSwipe(drawer);
 
   if(state.view==="home"){attachInteractiveHomeSwipe(document.querySelector("[data-home-pager]"));attachHomePullToRefresh()}
-  if(state.view==="notifications")attachNotificationTabSwipe();
+  if(state.view==="notifications"){attachNotificationTabSwipe();attachNotificationPullToRefresh()}
 
   attachStandaloneBackSwipe(document.querySelector(".standalone-page"));
   const profilePager=document.querySelector("[data-profile-pager]");

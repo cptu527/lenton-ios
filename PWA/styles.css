@@ -5207,3 +5207,41 @@ img{display:block}
   backdrop-filter:blur(14px) saturate(145%)!important;
   -webkit-backdrop-filter:blur(14px) saturate(145%)!important;
 }
+
+
+/* 2026-09-23 notification pull-to-refresh */
+.app.lenton-view-notifications .main{
+  position:relative;
+}
+.notification-pull-indicator{
+  position:absolute;
+  left:50%;
+  z-index:12;
+  width:28px;
+  height:28px;
+  transform:translate3d(-50%,0,0);
+  display:grid;
+  place-items:center;
+  opacity:0;
+  pointer-events:none;
+  transition:opacity 90ms linear;
+}
+.notification-pull-spinner{
+  display:block;
+  width:20px;
+  height:20px;
+  box-sizing:border-box;
+  border-radius:50%;
+  border:2px solid color-mix(in srgb,var(--accent) 22%,var(--line));
+  border-top-color:var(--accent);
+  will-change:transform;
+}
+.notification-pull-indicator.loading .notification-pull-spinner{
+  animation:lenton-notification-spin .62s linear infinite;
+}
+@keyframes lenton-notification-spin{
+  to{transform:rotate(360deg)}
+}
+.app.lenton-view-notifications .notification-pager{
+  will-change:transform,height;
+}
