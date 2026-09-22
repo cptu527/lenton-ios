@@ -643,7 +643,7 @@ function visibleReplyCount(raw,items=[]){
   return Math.max(Number(st.replies_count||0),authors.size);
 }
 function statusCard(raw,opts={}){
-  const st=rememberStatus(raw.reblog||raw)||(raw.reblog||raw), boosted=!!raw.reblog, a=st.account||{};
+  const st=raw.reblog||raw, boosted=!!raw.reblog, a=st.account||{};
   const boostAllowed=st?.rebloggable!==false&&!["private","direct"].includes(String(st?.visibility||""));
   const boostLine=boosted?`<div class="boosted">↻ ${renderEmojiText(raw.account?.display_name||raw.account?.username||"",raw.account?.emojis||[])}님이 부스트</div>`:"";
   const pinnedLine=opts.pinned?'<div class="profile-pinned-label">📌 고정됨</div>':"";
@@ -716,96 +716,6 @@ async function loadAllFollowing({fresh=false}={}){
   store.set(cacheKey,{at:Date.now(),items:out});
   return out;
 }
-function rememberStatus(raw){
-  const st=raw?.reblog||raw;
-  if(!st?.id)return st||null;
-  if(!(state.statusCache instanceof Map))state.statusCache=new Map();
-  state.statusCache.set(String(st.id),st);
-  return st;
-}
-function rememberStatuses(items=[]){
-  for(const raw of Array.isArray(items)?items:[])if(raw)rememberStatus(raw?.status||raw?.last_status||raw);
-}
-function findStatusInPool(value,key,depth=0,seen=new Set()){
-  if(!value||depth>4)return null;
-  if(typeof value==="object"){
-    if(seen.has(value))return null;
-    seen.add(value);
-  }
-  if(Array.isArray(value)){
-    for(const item of value){const found=findStatusInPool(item,key,depth+1,seen);if(found)return found}
-    return null;
-  }
-  if(typeof value!=="object")return null;
-  for(const candidate of [value.reblog,value.status,value.last_status,value]){
-    if(candidate?.id&&String(candidate.id)===key&&candidate.account)return rememberStatus(candidate);
-  }
-  for(const nested of Object.values(value)){
-    if(!nested||typeof nested!=="object")continue;
-    const found=findStatusInPool(nested,key,depth+1,seen);if(found)return found;
-  }
-  return null;
-}
-function cachedStatusById(id){
-  const key=String(id||"");if(!key)return null;
-  if(state.statusCache instanceof Map&&state.statusCache.has(key))return state.statusCache.get(key);
-  const pools=[
-    state.timelineItems,state.notificationAllItems,state.replyNeededItems,
-    state.homePagerData,state.profilePagerData,state._conversations,state.currentConversation
-  ];
-  for(const pool of pools){const found=findStatusInPool(pool,key);if(found)return found}
-  return null;
-}
-function replyContextStore(){
-  if(!(state.replyContextCache instanceof Map))state.replyContextCache=new Map();
-  return state.replyContextCache;
-}
-function replyContextRequests(){
-  if(!(state.replyContextRequests instanceof Map))state.replyContextRequests=new Map();
-  return state.replyContextRequests;
-}
-function rememberReplyContext(id,items=[]){
-  const key=String(id||"");
-  const uniq=new Map();
-  for(const raw of Array.isArray(items)?items:[]){
-    const st=rememberStatus(raw);if(st?.id)uniq.set(String(st.id),st);
-  }
-  const value=[...uniq.values()];
-  if(key)replyContextStore().set(key,{at:Date.now(),items:value});
-  return value;
-}
-function reconstructedReplyContext(st,max=5){
-  const chain=[],seen=new Set();let parent=String(st?.in_reply_to_id||"");
-  while(parent&&chain.length<max&&!seen.has(parent)){
-    seen.add(parent);
-    const p=cachedStatusById(parent);if(!p)break;
-    chain.unshift(p);parent=String(p?.in_reply_to_id||"");
-  }
-  return chain;
-}
-function cachedReplyContext(id,st=null){
-  const key=String(id||""),hit=replyContextStore().get(key);
-  if(hit&&Date.now()-Number(hit.at||0)<300000&&Array.isArray(hit.items))return hit.items;
-  return reconstructedReplyContext(st||cachedStatusById(key));
-}
-function loadReplyContext(id){
-  const key=String(id||"");if(!key)return Promise.resolve([]);
-  const hit=replyContextStore().get(key);
-  if(hit&&Date.now()-Number(hit.at||0)<300000&&Array.isArray(hit.items))return Promise.resolve(hit.items);
-  const requests=replyContextRequests();
-  if(requests.has(key))return requests.get(key);
-  const req=api(`/api/v1/statuses/${key}/context`)
-    .then(ctx=>rememberReplyContext(key,ctx?.ancestors||[]))
-    .finally(()=>requests.delete(key));
-  requests.set(key,req);
-  return req;
-}
-function prefetchReplyData(id){
-  const key=String(id||"");if(!key)return;
-  loadReplyContext(key).catch(()=>{});
-  if(!cachedStatusById(key))api(`/api/v1/statuses/${key}`).then(rememberStatus).catch(()=>{});
-}
-
 function statusId(raw){return raw?.id||raw?.reblog?.id||""}
 function nonDirect(raw){return raw&&raw.visibility!=="direct"}
 function statusCreatedAtMs(raw){
@@ -1297,8 +1207,8 @@ function pushNavSnapshot(){
   state.navStack.push(snap);if(state.navStack.length>30)state.navStack.shift();
 }
 function clearGestureBindingMarks(root=document){
-  const marks=["interactiveSwipe","homeSwipe","lentonSwipe","edgeDrawerSwipe","closeSwipe","profileSwipe","backSwipe","pullRefresh","notificationPullRefresh","notificationSwipe"];
-  root.querySelectorAll?.("[data-interactive-swipe],[data-home-swipe],[data-lenton-swipe],[data-edge-drawer-swipe],[data-close-swipe],[data-profile-swipe],[data-back-swipe],[data-pull-refresh],[data-notification-pull-refresh],[data-notification-swipe]").forEach(el=>{
+  const marks=["interactiveSwipe","homeSwipe","lentonSwipe","edgeDrawerSwipe","closeSwipe","profileSwipe","backSwipe","pullRefresh","notificationSwipe"];
+  root.querySelectorAll?.("[data-interactive-swipe],[data-home-swipe],[data-lenton-swipe],[data-edge-drawer-swipe],[data-close-swipe],[data-profile-swipe],[data-back-swipe],[data-pull-refresh],[data-notification-swipe]").forEach(el=>{
     for(const k of marks)if(k in el.dataset)delete el.dataset[k];
   });
 }
@@ -1675,7 +1585,7 @@ async function reconcileReplyNeededAcrossClients(pending=[]){
   return pending.filter(n=>!answered.has(String(n?.status?.id||"")));
 }
 function notificationMentionRowHtml(n,isNew=false){
-  const a=n?.account||{},st=n?.status||{};rememberStatus(st);
+  const a=n?.account||{},st=n?.status||{};
   const reply=!!String(st.in_reply_to_id||"");
   const boostAllowed=st?.rebloggable!==false&&!["private","direct"].includes(String(st?.visibility||""));
   const replyCount=Number(st.replies_count||0);
@@ -3641,7 +3551,6 @@ async function openThread(id,showAllAncestors=false){
       api(`/api/v1/statuses/${id}`),
       api(`/api/v1/statuses/${id}/context`)
     ]);
-    rememberStatus(st);rememberStatuses(ctx.ancestors||[]);rememberStatuses(ctx.descendants||[]);rememberReplyContext(id,ctx.ancestors||[]);
     const ancestors=ctx.ancestors||[],desc=ctx.descendants||[];
     const visibleAnc=showAllAncestors?ancestors:ancestors.slice(-2);
     const older=ancestors.length>visibleAnc.length?`<button class="thread-older" data-thread-older="${esc(id)}">이전 대화 보기  ›</button>`:"";
@@ -3804,7 +3713,6 @@ function attachComposerViewportDock(m){
 }
 function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyContext=[]){
   let historyPushed=false;
-  let liveReplyContext=Array.isArray(replyContext)?[...replyContext]:[];
   window.__lentonComposeLayoutHeight=Math.max(window.innerHeight||0,document.documentElement.clientHeight||0,window.visualViewport?.height||0);
   window.__lentonComposeLayoutWidth=Math.round(window.visualViewport?.width||window.innerWidth||0);
   let parts=[{text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[],poll:null}];
@@ -3814,12 +3722,12 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
   for(const a of initialRecipients||[])addRecipient(a);
   if(reply){
     addRecipient(reply.account);(reply.mentions||[]).forEach(addRecipient);
-    for(const st of liveReplyContext){addRecipient(st.account);(st.mentions||[]).forEach(addRecipient)}
+    for(const st of replyContext||[]){addRecipient(st.account);(st.mentions||[]).forEach(addRecipient)}
   }
   const dirty=()=>parts.some(p=>p.text.trim()||p.spoiler.trim()||p.media.length||p.poll?.options?.some(x=>x.trim()));
   const replyContextRows=()=>{
     if(!reply)return "";
-    const uniq=new Map();for(const st of [...liveReplyContext,reply])if(st?.id)uniq.set(String(st.id),st);
+    const uniq=new Map();for(const st of [...(replyContext||[]),reply])if(st?.id)uniq.set(String(st.id),st);
     return '<div class="compose-thread-context">'+[...uniq.values()].slice(-5).map(st=>{const a=st.account||{};return '<div class="compose-thread-row"><img src="'+esc(a.avatar_static||a.avatar||"")+'" alt=""><div><div class="compose-thread-author"><b>'+renderEmojiText(a.display_name||a.username||"",a.emojis||[])+'</b><span>@'+esc(a.acct||"")+' · '+fmtTime(st.created_at)+'</span></div><div class="compose-thread-text">'+renderRichText(st.content||"")+'</div></div></div>';}).join("")+'</div>';
   };
   const replySummaryText=()=>{
@@ -4000,37 +3908,13 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
       }catch(e){toast(e.message);btn.disabled=false;btn.textContent=reply?"답글":"게시"}
     };
   };
-  const updateReplyContext=(next=[])=>{
-    if(!reply)return;
-    const uniq=new Map();
-    for(const raw of Array.isArray(next)?next:[]){
-      const st=rememberStatus(raw);if(st?.id)uniq.set(String(st.id),st);
-    }
-    liveReplyContext=[...uniq.values()];
-    for(const st of liveReplyContext){addRecipient(st.account);(st.mentions||[]).forEach(addRecipient)}
-    const m=document.querySelector(".compose-modal");if(!m)return;
-    const current=m.querySelector(".compose-thread-context");
-    if(current){
-      const holder=document.createElement("div");holder.innerHTML=replyContextRows();
-      const replacement=holder.firstElementChild;if(replacement)current.replaceWith(replacement);
-    }
-    const picker=m.querySelector("#replyRecipientPicker");if(picker)picker.textContent=replySummaryText();
-  };
   draw();
   if(recips.some(x=>!x.avatar))hydrateRecipients();
-  return {updateReplyContext};
 }
 async function replyById(id,forced=null){
-  const key=String(id||"");if(!key)return;
   try{
-    let st=cachedStatusById(key);
-    if(!st)st=rememberStatus(await api(`/api/v1/statuses/${key}`));
-    if(!st)throw new Error("답글 대상 게시물을 불러오지 못했습니다.");
-    const initialContext=cachedReplyContext(key,st);
-    const controller=compose(st,forced,[],initialContext);
-    loadReplyContext(key)
-      .then(items=>controller?.updateReplyContext?.(items))
-      .catch(()=>{});
+    const [st,ctx]=await Promise.all([api(`/api/v1/statuses/${id}`),api(`/api/v1/statuses/${id}/context`).catch(()=>({ancestors:[]}))]);
+    compose(st,forced,[],ctx.ancestors||[]);
   }catch(e){toast(e.message)}
 }
 
@@ -4382,124 +4266,6 @@ function attachHomePullToRefresh(){
   },{passive:true});
   main.addEventListener("touchcancel",cleanup,{passive:true});
 }
-function attachNotificationPullToRefresh(){
-  const main=document.querySelector(".app.lenton-view-notifications .main");
-  if(!main||main.dataset.notificationPullRefresh==="1")return;
-  main.dataset.notificationPullRefresh="1";
-
-  let start=null,axis="",drag=0,active=false,refreshing=false;
-
-  const top=()=>Math.max(
-    window.scrollY||0,
-    document.documentElement.scrollTop||0,
-    main.scrollTop||0
-  )<=2;
-  const pager=()=>main.querySelector("[data-notification-pager]");
-  const indicator=()=>main.querySelector(".notification-pull-indicator");
-
-  const ensureIndicator=()=>{
-    let el=indicator();
-    if(!el){
-      el=document.createElement("div");
-      el.className="notification-pull-indicator";
-      el.innerHTML='<span class="notification-pull-spinner" aria-hidden="true"></span>';
-      main.appendChild(el);
-    }
-    const tabs=main.querySelector("[data-notification-tabs]");
-    el.style.top=((tabs?.offsetHeight||74)+8)+"px";
-    return el;
-  };
-
-  const resetTracking=()=>{start=null;axis="";drag=0;active=false};
-
-  const clearVisual=(animate=true)=>{
-    const p=pager();
-    if(p){
-      p.style.transition=animate?"transform 160ms cubic-bezier(.2,.75,.25,1)":"";
-      p.style.transform="translate3d(0,0,0)";
-      if(animate)setTimeout(()=>{if(p.isConnected){p.style.transition="";p.style.transform=""}},170);
-      else{p.style.transition="";p.style.transform=""}
-    }
-    const el=indicator();
-    if(el){
-      el.style.opacity="0";
-      setTimeout(()=>el.remove(),animate?170:0);
-    }
-  };
-
-  main.addEventListener("touchstart",e=>{
-    if(refreshing||e.touches?.length!==1||!top())return;
-    const t=e.touches[0];
-    start={x:t.clientX,y:t.clientY};
-    axis="";drag=0;active=false;
-  },{passive:true});
-
-  main.addEventListener("touchmove",e=>{
-    if(!start||refreshing||e.touches?.length!==1)return;
-    const t=e.touches[0],dx=t.clientX-start.x,dy=t.clientY-start.y;
-    if(!axis){
-      if(Math.abs(dx)<6&&Math.abs(dy)<6)return;
-      if(Math.abs(dx)>Math.abs(dy)*1.08){axis="horizontal";return}
-      if(Math.abs(dy)>Math.abs(dx)*1.05)axis="vertical";
-      else return;
-    }
-    if(axis!=="vertical")return;
-    if(dy<=0||!top()){
-      if(active){clearVisual(false);active=false;drag=0}
-      return;
-    }
-
-    active=true;
-    e.preventDefault();
-    drag=Math.min(84,dy*.44);
-
-    const p=pager();
-    if(!p)return;
-    p.style.transition="none";
-    p.style.transform="translate3d(0,"+drag+"px,0)";
-
-    const el=ensureIndicator(),spinner=el.querySelector(".notification-pull-spinner");
-    el.style.opacity=String(Math.max(0,Math.min(1,(drag-10)/28)));
-    if(spinner&&!el.classList.contains("loading"))spinner.style.transform="rotate("+Math.min(300,drag*4.2)+"deg)";
-  },{passive:false});
-
-  main.addEventListener("touchend",async()=>{
-    if(!start){resetTracking();return}
-    if(axis!=="vertical"||!active){resetTracking();return}
-
-    const shouldRefresh=drag>=54;
-    if(!shouldRefresh){
-      clearVisual(true);
-      resetTracking();
-      return;
-    }
-
-    refreshing=true;
-    const el=ensureIndicator(),p=pager();
-    el.classList.add("loading");
-    el.style.opacity="1";
-    if(p){
-      p.style.transition="transform 140ms cubic-bezier(.2,.75,.25,1)";
-      p.style.transform="translate3d(0,44px,0)";
-    }
-    resetTracking();
-
-    try{
-      await notificationsView(state.notificationMode==="replyNeeded",true);
-    }finally{
-      setTimeout(()=>{
-        refreshing=false;
-        clearVisual(false);
-      },120);
-    }
-  },{passive:true});
-
-  main.addEventListener("touchcancel",()=>{
-    if(!refreshing)clearVisual(true);
-    resetTracking();
-  },{passive:true});
-}
-
 function attachNotificationTabSwipe(){
   const pager=document.querySelector("[data-notification-pager]");
   if(!pager||pager.dataset.notificationSwipe==="1")return;
@@ -4556,7 +4322,7 @@ function attachLentonGestures(){
   attachDrawerCloseSwipe(drawer);
 
   if(state.view==="home"){attachInteractiveHomeSwipe(document.querySelector("[data-home-pager]"));attachHomePullToRefresh()}
-  if(state.view==="notifications"){attachNotificationTabSwipe();attachNotificationPullToRefresh()}
+  if(state.view==="notifications")attachNotificationTabSwipe();
 
   attachStandaloneBackSwipe(document.querySelector(".standalone-page"));
   const profilePager=document.querySelector("[data-profile-pager]");
@@ -4673,11 +4439,6 @@ function bind(){
     else if(a==="profileMessage"){const p=state.profileAccount;if(p)compose(null,"direct",[p])}
     else if(a==="profileNotify")toggleProfileNotify()
     else if(a==="followProfile")toggleFollowProfile()
-  });
-  document.querySelectorAll('[data-action="reply"][data-id]').forEach(b=>{
-    const warm=()=>prefetchReplyData(b.dataset.id);
-    b.addEventListener("touchstart",warm,{passive:true,once:true});
-    b.addEventListener("pointerenter",warm,{passive:true,once:true});
   });
   document.querySelectorAll("[data-search-mode]").forEach(b=>b.onclick=()=>setSearchMode(b.dataset.searchMode));
   document.querySelectorAll("[data-search-following-toggle]").forEach(b=>b.onclick=async()=>{
