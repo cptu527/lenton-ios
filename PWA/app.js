@@ -1688,9 +1688,12 @@ function setNotificationPagerMode(mode,animate=true){
 }
 function renderNotificationsPager(mode="all"){
   state.notificationMode=notificationModes().includes(mode)?mode:"all";
+  const notificationTabs=ANDROID?.renderer?.notificationTabs||[];
+  const allLabel=notificationTabs[0]||"전체";
+  const replyNeededLabel="답장할 멘션";
   const tabs='<div class="notify-tabs lenton-notify-tabs" data-notification-tabs>'+
-    '<button data-notify="all" class="'+(state.notificationMode==="all"?"active":"")+'">전체</button>'+
-    '<button data-notify="mention" class="'+(state.notificationMode==="replyNeeded"?"active":"")+'">답장할 멘션</button>'+
+    '<button data-notify="all" class="'+(state.notificationMode==="all"?"active":"")+'">'+esc(allLabel)+'</button>'+
+    '<button data-notify="mention" class="'+(state.notificationMode==="replyNeeded"?"active":"")+'">'+esc(replyNeededLabel)+'</button>'+
     '<div class="notify-tab-indicator"></div></div>';
   renderMainStable("알림",tabs+buildNotificationPager(state.notificationMode),{view:"notifications",fab:true});
   requestAnimationFrame(()=>syncNotificationPagerUi(state.notificationMode,false));
