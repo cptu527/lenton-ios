@@ -3110,9 +3110,16 @@ function screenLayoutEditor(mode=state.layoutEditorMode||"layout"){
   </div>`;
   let body="";
   if(state.layoutEditorMode==="background"){
-    const cfg=backgroundThemeSettings();
+    const cfg=backgroundThemeSettings(),acct=state.me?.acct||"현재 계정",avatar=state.me?.avatar_static||state.me?.avatar||"";
     body=`<div class="background-theme-editor">
-      <div class="layout-guide">이 배경은 다른 사용자에게 보이지 않고 이 iPhone/iPad의 렌톤 화면에만 적용됩니다.</div>
+      <div class="background-account-note">
+        ${avatar?'<img src="'+esc(avatar)+'" alt="">':""}
+        <div><b>이 계정 전용 배경</b><span>@${esc(acct)} · 다른 계정에는 따로 저장됩니다.</span></div>
+      </div>
+      <div class="background-preview-heading">
+        <div><b>전체 화면 미리보기</b><span>실제 홈에서 배경이 어떻게 보이는지 확인하세요.</span></div>
+        <button type="button" class="outline-btn" id="openBackgroundFullPreview">크게 보기</button>
+      </div>
       <div class="background-preview" id="backgroundPreview">
         <img id="backgroundPreviewImage" alt="선택한 배경 미리보기" hidden>
         <div class="background-preview-ui" aria-hidden="true">
@@ -3128,20 +3135,28 @@ function screenLayoutEditor(mode=state.layoutEditorMode||"layout"){
             <span class="background-preview-avatar alt"></span>
             <div class="background-preview-copy"><div><b>미리보기</b><span>@preview · 3분</span></div><i class="wide"></i><i class="mid"></i><i class="short"></i><div class="background-preview-actions"><span>○</span><span>↻</span><span>♡</span><span>▢</span></div></div>
           </div>
+          <div class="background-preview-post compact">
+            <span class="background-preview-avatar third"></span>
+            <div class="background-preview-copy"><div><b>배경 확인</b><span>@theme · 7분</span></div><i class="wide"></i><i class="mid"></i><div class="background-preview-actions"><span>○</span><span>↻</span><span>♡</span><span>▢</span></div></div>
+          </div>
+          <div class="background-preview-fab">＋</div>
           <div class="background-preview-bottom"><span>⌂</span><span>⌕</span><span>♢</span><span>▢</span></div>
         </div>
-        <div id="backgroundPreviewEmpty" class="background-preview-empty">사진을 선택하면 실제 렌톤 화면처럼 미리 볼 수 있어요.</div>
+        <div id="backgroundPreviewEmpty" class="background-preview-empty">사진을 선택하면 전체 화면 배치를 바로 확인할 수 있어요.</div>
       </div>
       <input id="backgroundImageInput" type="file" accept="image/*" hidden>
       <div class="background-action-row">
         <button type="button" class="outline-btn" id="pickBackgroundImage">사진 선택 / 변경</button>
         <button type="button" class="outline-btn danger-text" id="removeBackgroundImage">배경 삭제</button>
       </div>
-      <div class="background-opacity-row">
-        <div><b>배경 불투명도</b><span id="backgroundOpacityValue">${cfg.opacity}%</span></div>
-        <input id="backgroundOpacity" type="range" min="0" max="100" step="1" value="${cfg.opacity}">
+      <div class="background-edit-panel">
+        <div class="background-edit-title"><div><b>배경 편집</b><span>미리보기를 보면서 원하는 위치로 맞출 수 있어요.</span></div><button type="button" class="outline-btn" id="resetBackgroundFraming">위치 초기화</button></div>
+        <label class="background-slider-row"><div><b>배경 불투명도</b><span id="backgroundOpacityValue">${cfg.opacity}%</span></div><input id="backgroundOpacity" type="range" min="0" max="100" step="1" value="${cfg.opacity}"></label>
+        <label class="background-slider-row"><div><b>확대</b><span id="backgroundZoomValue">${cfg.zoom}%</span></div><input id="backgroundZoom" type="range" min="100" max="220" step="1" value="${cfg.zoom}"></label>
+        <label class="background-slider-row"><div><b>가로 위치</b><span id="backgroundPositionXValue">${cfg.x}%</span></div><input id="backgroundPositionX" type="range" min="0" max="100" step="1" value="${cfg.x}"></label>
+        <label class="background-slider-row"><div><b>세로 위치</b><span id="backgroundPositionYValue">${cfg.y}%</span></div><input id="backgroundPositionY" type="range" min="0" max="100" step="1" value="${cfg.y}"></label>
       </div>
-      <div class="background-apply-row"><button type="button" class="primary" id="applyBackgroundTheme">적용</button></div>
+      <div class="background-apply-row"><button type="button" class="primary" id="applyBackgroundTheme">이 계정에 적용</button></div>
     </div>`;
   }else{
     const cfg=mainTabLayout();
