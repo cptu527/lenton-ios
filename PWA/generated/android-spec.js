@@ -245,7 +245,7 @@ window.LENTON_ANDROID_SPEC = {
     "draftGuard": true
   },
   "criticalSourceHashes": {
-    "activity": "059c37ea2db5809dd99105e6525a2a1a013498c8690ea6f0d494f8019da26590",
+    "activity": "ead2bddb07ac95e07b873b862a000d9c88182f00045eda40baece31cb2f0f614",
     "publicFilter": "de8d4cd01e5c5ee6a8080c67b280796c4ec6ca8c6a7ac26f9fe8fc2ec139f16e",
     "publicLoader": null,
     "bottomNav": "baee0c182c6265a1900bac1c672d66aec2ecc086f845045b76928e3d17ab0cd6",
