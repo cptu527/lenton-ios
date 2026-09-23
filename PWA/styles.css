@@ -5670,15 +5670,29 @@ html.has-local-background .background-theme-editor{background:color-mix(in srgb,
   z-index:7;
   transform:translate(-50%,-50%);
   width:max-content;
-  max-width:84%;
-  padding:9px 13px;
-  border-radius:999px;
+  max-width:86%;
+  padding:10px 14px;
+  border-radius:16px;
   background:color-mix(in srgb,var(--fg) 82%,transparent);
   color:var(--bg);
-  font-size:12px;
-  font-weight:750;
   pointer-events:none;
   box-shadow:0 5px 16px rgba(0,0,0,.18);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:3px;
+  text-align:center;
+}
+.background-position-hint b{font-size:12px;font-weight:800}
+.background-position-hint span{font-size:11px;opacity:.88}
+.background-position-hint em{
+  margin-top:3px;
+  padding:3px 7px;
+  border-radius:999px;
+  background:color-mix(in srgb,var(--bg) 16%,transparent);
+  font-size:10px;
+  font-style:normal;
+  font-weight:800;
 }
 .background-slider-row{
   display:block;
