@@ -87,11 +87,11 @@ async function applyBackgroundEditorSettings(){
   const opacity=Math.max(0,Math.min(100,Number(slider?.value||24)||0));
   if(button){button.disabled=true;button.textContent="적용 중…"}
   try{
-    const file=input?.files?.[0]||null;
-    if(state.backgroundDraftRemove){await backgroundBlobDelete();store.set("lenton_background_theme",{enabled:false,opacity})}
+    const file=input?.files?.[0]||null,removed=state.backgroundDraftRemove===true;
+    if(removed){await backgroundBlobDelete();store.set("lenton_background_theme",{enabled:false,opacity})}
     else if(file){await backgroundBlobWrite(file);store.set("lenton_background_theme",{enabled:true,opacity})}
     else{const current=await backgroundBlobRead();store.set("lenton_background_theme",{enabled:!!current,opacity})}
-    state.backgroundDraftRemove=false;await applySavedBackgroundTheme();toast(state.backgroundDraftRemove?"배경을 삭제했어요.":"배경 설정을 적용했어요.");await hydrateBackgroundEditor();
+    state.backgroundDraftRemove=false;await applySavedBackgroundTheme();toast(removed?"배경을 삭제했어요.":"배경 설정을 적용했어요.");await hydrateBackgroundEditor();
   }catch(e){toast(e?.message||"배경 설정을 저장하지 못했어요.")}
   finally{if(button){button.disabled=false;button.textContent="적용"}}
 }
