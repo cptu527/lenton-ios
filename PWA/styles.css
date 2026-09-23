@@ -5291,7 +5291,7 @@ html.has-local-background .app,
 html.has-local-background .main{background:transparent!important}
 html.has-local-background .topbar,
 html.has-local-background .bottom{
-  background:color-mix(in srgb,var(--bg) 88%,transparent)!important;
+  background:color-mix(in srgb,var(--bg) 74%,transparent)!important;
   -webkit-backdrop-filter:blur(14px) saturate(125%);
   backdrop-filter:blur(14px) saturate(125%);
 }
@@ -5299,7 +5299,9 @@ html.has-local-background .home-tabs,
 html.has-local-background .notify-tabs,
 html.has-local-background .lenton-notify-tabs,
 html.has-local-background .profile-tabs-4,
-html.has-local-background .profile-tabs-2,
+html.has-local-background .profile-tabs-2{
+  background:color-mix(in srgb,var(--bg) 58%,transparent)!important;
+}
 html.has-local-background .status,
 html.has-local-background .row,
 html.has-local-background .android-notify-card,
@@ -5307,10 +5309,10 @@ html.has-local-background .message-row,
 html.has-local-background .dm-previous-conversation,
 html.has-local-background .notify-status,
 html.has-local-background .notify-simple{
-  background:color-mix(in srgb,var(--bg) 82%,transparent)!important;
+  background:color-mix(in srgb,var(--bg) 18%,transparent)!important;
 }
 html.has-local-background .android-notify-card.is-new{
-  background:color-mix(in srgb,var(--accent) 10%,color-mix(in srgb,var(--bg) 78%,transparent))!important;
+  background:color-mix(in srgb,var(--accent) 12%,color-mix(in srgb,var(--bg) 22%,transparent))!important;
 }
 html.has-local-background .notification-pager,
 html.has-local-background .notification-pager-track,
@@ -5321,13 +5323,13 @@ html.has-local-background .home-pager-page{background:transparent!important}
 html.has-local-background .main-swipe-preview,
 html.has-local-background .home-swipe-preview,
 html.has-local-background .profile-swipe-preview{
-  background:color-mix(in srgb,var(--bg) 76%,transparent)!important;
+  background:color-mix(in srgb,var(--bg) 18%,transparent)!important;
 }
 html.has-local-background .drawer,
 html.has-local-background .sheet,
 html.has-local-background .modal,
 html.has-local-background .standalone-page{
-  background:color-mix(in srgb,var(--bg) 94%,transparent)!important;
+  background:color-mix(in srgb,var(--bg) 88%,transparent)!important;
 }
 html.has-local-background .sheet-head,
 html.has-local-background .dm-conversation-page .android-dm-compose{
@@ -5340,7 +5342,7 @@ html.has-local-background .compose-input,
 html.has-local-background .compose-meta-row,
 html.has-local-background .compose-tools,
 html.has-local-background .part{
-  background:color-mix(in srgb,var(--bg) 86%,transparent);
+  background:color-mix(in srgb,var(--bg) 45%,transparent);
 }
 html.has-local-background .login{background:var(--bg)}
 
@@ -5375,18 +5377,148 @@ html.has-local-background .login{background:var(--bg)}
 .background-theme-editor{padding-bottom:calc(28px + env(safe-area-inset-bottom))}
 .background-preview{
   position:relative;
-  height:min(52vw,300px);
-  min-height:210px;
+  height:min(92vw,430px);
+  min-height:330px;
   margin:18px;
   border:1px solid var(--line);
   border-radius:18px;
   overflow:hidden;
-  display:grid;
-  place-items:center;
-  background:var(--surface);
+  background:var(--bg);
+  isolation:isolate;
 }
-.background-preview img{width:100%;height:100%;object-fit:cover;transition:opacity 120ms ease}
-.background-preview-empty{padding:24px;text-align:center;color:var(--sub);font-size:14px;line-height:1.5}
+.background-preview>img{
+  position:absolute;
+  inset:0;
+  z-index:0;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  transition:opacity 120ms ease;
+}
+.background-preview-ui{
+  position:absolute;
+  inset:0;
+  z-index:2;
+  display:flex;
+  flex-direction:column;
+  color:var(--fg);
+  font-size:12px;
+}
+.background-preview-topbar{
+  height:48px;
+  flex:0 0 48px;
+  display:grid;
+  grid-template-columns:36px 1fr 36px;
+  align-items:center;
+  padding:0 10px;
+  background:color-mix(in srgb,var(--bg) 74%,transparent);
+  border-bottom:1px solid color-mix(in srgb,var(--line) 78%,transparent);
+  -webkit-backdrop-filter:blur(8px);
+  backdrop-filter:blur(8px);
+}
+.background-preview-topbar b{text-align:center;font-size:14px}
+.background-preview-self-avatar,.background-preview-avatar{
+  display:block;
+  width:28px;
+  height:28px;
+  border-radius:50%;
+  background:color-mix(in srgb,var(--accent) 32%,var(--surface));
+  border:1px solid color-mix(in srgb,var(--line) 75%,transparent);
+}
+.background-preview-more{text-align:right;color:var(--sub);letter-spacing:1px}
+.background-preview-tabs{
+  height:38px;
+  flex:0 0 38px;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  align-items:center;
+  text-align:center;
+  background:color-mix(in srgb,var(--bg) 58%,transparent);
+  border-bottom:1px solid color-mix(in srgb,var(--line) 72%,transparent);
+}
+.background-preview-tabs b{height:38px;line-height:38px;position:relative}
+.background-preview-tabs b::after{
+  content:"";
+  position:absolute;
+  left:50%;
+  bottom:0;
+  width:34px;
+  height:3px;
+  border-radius:999px;
+  transform:translateX(-50%);
+  background:var(--accent);
+}
+.background-preview-tabs span{color:var(--sub)}
+.background-preview-post{
+  flex:1 1 0;
+  min-height:0;
+  display:grid;
+  grid-template-columns:34px minmax(0,1fr);
+  gap:8px;
+  padding:10px;
+  background:color-mix(in srgb,var(--bg) 18%,transparent);
+  border-bottom:1px solid color-mix(in srgb,var(--line) 72%,transparent);
+}
+.background-preview-avatar{width:30px;height:30px}
+.background-preview-avatar.alt{background:color-mix(in srgb,var(--pink) 24%,var(--surface))}
+.background-preview-copy{min-width:0}
+.background-preview-copy>div:first-child{display:flex;gap:5px;align-items:center;white-space:nowrap;overflow:hidden}
+.background-preview-copy b{font-size:11px}
+.background-preview-copy>div:first-child span{color:var(--sub);font-size:9px;overflow:hidden;text-overflow:ellipsis}
+.background-preview-copy i{
+  display:block;
+  width:72%;
+  height:7px;
+  margin-top:7px;
+  border-radius:999px;
+  background:color-mix(in srgb,var(--fg) 62%,transparent);
+  opacity:.72;
+}
+.background-preview-copy i.wide{width:96%}
+.background-preview-copy i.mid{width:82%}
+.background-preview-copy i.short{width:48%}
+.background-preview-actions{
+  display:grid!important;
+  grid-template-columns:repeat(4,1fr);
+  gap:0!important;
+  margin-top:8px;
+  color:var(--sub);
+  font-size:13px;
+}
+.background-preview-actions span{text-align:left}
+.background-preview-bottom{
+  height:46px;
+  flex:0 0 46px;
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  align-items:center;
+  text-align:center;
+  font-size:19px;
+  background:color-mix(in srgb,var(--bg) 74%,transparent);
+  border-top:1px solid color-mix(in srgb,var(--line) 72%,transparent);
+  -webkit-backdrop-filter:blur(8px);
+  backdrop-filter:blur(8px);
+}
+.background-preview-bottom span:first-child{color:var(--accent)}
+.background-preview-empty{
+  position:absolute;
+  z-index:4;
+  left:50%;
+  top:50%;
+  transform:translate(-50%,-50%);
+  width:max-content;
+  max-width:82%;
+  padding:10px 14px;
+  border-radius:999px;
+  text-align:center;
+  color:var(--sub);
+  font-size:12px;
+  line-height:1.4;
+  background:color-mix(in srgb,var(--bg) 88%,transparent);
+  border:1px solid var(--line);
+  -webkit-backdrop-filter:blur(8px);
+  backdrop-filter:blur(8px);
+}
 .background-action-row{display:flex;gap:10px;padding:0 18px 18px}
 .background-action-row button{flex:1;min-height:44px}
 .background-opacity-row{padding:16px 18px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}

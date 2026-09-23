@@ -3007,7 +3007,22 @@ function screenLayoutEditor(mode=state.layoutEditorMode||"layout"){
       <div class="layout-guide">이 배경은 다른 사용자에게 보이지 않고 이 iPhone/iPad의 렌톤 화면에만 적용됩니다.</div>
       <div class="background-preview" id="backgroundPreview">
         <img id="backgroundPreviewImage" alt="선택한 배경 미리보기" hidden>
-        <div id="backgroundPreviewEmpty" class="background-preview-empty">설정된 배경 이미지가 없습니다.</div>
+        <div class="background-preview-ui" aria-hidden="true">
+          <div class="background-preview-topbar">
+            <span class="background-preview-self-avatar"></span><b>홈</b><span class="background-preview-more">•••</span>
+          </div>
+          <div class="background-preview-tabs"><b>시간순</b><span>퍼블릭</span></div>
+          <div class="background-preview-post">
+            <span class="background-preview-avatar"></span>
+            <div class="background-preview-copy"><div><b>렌톤 사용자</b><span>@lenton · 지금</span></div><i class="wide"></i><i></i><div class="background-preview-actions"><span>○</span><span>↻</span><span>♡</span><span>▢</span></div></div>
+          </div>
+          <div class="background-preview-post">
+            <span class="background-preview-avatar alt"></span>
+            <div class="background-preview-copy"><div><b>미리보기</b><span>@preview · 3분</span></div><i class="wide"></i><i class="mid"></i><i class="short"></i><div class="background-preview-actions"><span>○</span><span>↻</span><span>♡</span><span>▢</span></div></div>
+          </div>
+          <div class="background-preview-bottom"><span>⌂</span><span>⌕</span><span>♢</span><span>▢</span></div>
+        </div>
+        <div id="backgroundPreviewEmpty" class="background-preview-empty">사진을 선택하면 실제 렌톤 화면처럼 미리 볼 수 있어요.</div>
       </div>
       <input id="backgroundImageInput" type="file" accept="image/*" hidden>
       <div class="background-action-row">
