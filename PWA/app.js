@@ -805,15 +805,15 @@ function mergeTimelineUnlimited(fresh=[],existing=[]){
   out.sort((a,b)=>statusCreatedAtMs(b)-statusCreatedAtMs(a));
   return out;
 }
-async function loadPublicFromHome({maxId="",limit=40,onPage=null,targetVisible=0}={}){
-  let cursor=maxId||"",items=[];
+async function loadPublicFromHome({maxId="",limit=40,onPage=null,targetVisible=0,stopAtCreatedAt=0,maxPages=0}={}){
+  let cursor=maxId||"",items=[],scan=0;
   for(;;){
     const query={limit:String(limit)};
     if(cursor)query.max_id=cursor;
 
-    // 게시물 개수/페이지 수 제한 없이 Mastodon Home을 끝까지 읽는다.
     const page=await api("/api/v1/timelines/home",{query});
     if(!Array.isArray(page)||!page.length)break;
+    scan++;
 
     const visible=page.filter(publicHomeStatus);
     items=mergeTimelineUnlimited(visible,items);
@@ -822,12 +822,15 @@ async function loadPublicFromHome({maxId="",limit=40,onPage=null,targetVisible=0
       try{onPage(items,visible,page)}catch{}
     }
 
+    const times=page.map(statusCreatedAtMs).filter(x=>Number(x)>0);
+    const pageOldest=times.length?Math.min(...times):0;
+    if(Number(stopAtCreatedAt)>0&&pageOldest>0&&pageOldest<=Number(stopAtCreatedAt))break;
+    if(Number(targetVisible)>0&&items.length>=Number(targetVisible))break;
+    if(Number(maxPages)>0&&scan>=Number(maxPages))break;
+
     const next=String(page[page.length-1]?.id||"");
     if(!next||next===cursor||page.length<Number(limit))break;
     cursor=next;
-    if(Number(targetVisible)>0&&items.length>=Number(targetVisible))break;
-
-    // 페이지는 순차 요청하되 별도 인위 지연은 두지 않는다.
   }
   return items;
 }
@@ -847,29 +850,36 @@ async function expandPublicTimelineInBackground(){
   if(state.publicBackgroundFillPromise)return state.publicBackgroundFillPromise;
   const generation=Number(state.publicLoadGeneration||0)+1;
   state.publicLoadGeneration=generation;
+  const existing=Array.isArray(state.homePagerData?.public)?[...state.homePagerData.public]:[];
+  const existingTimes=existing.map(statusCreatedAtMs).filter(x=>Number(x)>0);
+  const stopAtCreatedAt=existingTimes.length?Math.min(...existingTimes):0;
   state.publicBackgroundFillPromise=(async()=>{
     let lastPaint=0;
     const items=await loadPublicFromHome({
       limit:40,
+      stopAtCreatedAt,
+      targetVisible:existing.length?0:40,
+      maxPages:24,
       onPage:all=>{
         if(Number(state.publicLoadGeneration||0)!==generation)return;
         const now=Date.now();
         if(now-lastPaint<120)return;
         lastPaint=now;
-        updatePublicTimelinePage(all,{preserveScroll:true});
+        updatePublicTimelinePage(mergeTimelineUnlimited(all,existing),{preserveScroll:true});
       }
     });
-    if(Number(state.publicLoadGeneration||0)!==generation)return items;
-    updatePublicTimelinePage(items,{preserveScroll:true});
+    const merged=mergeTimelineUnlimited(items,existing);
+    if(Number(state.publicLoadGeneration||0)!==generation)return merged;
+    updatePublicTimelinePage(merged,{preserveScroll:true});
     state.publicFilledAt=Date.now();
-    return items;
+    return merged;
   })().finally(()=>{state.publicBackgroundFillPromise=null});
   return state.publicBackgroundFillPromise;
 }
 
 function homeSnapshotRead(){
   const snap=store.get(scopedKey("home_snapshot_v16"),null);
-  if(!snap?.at||Date.now()-Number(snap.at)>10*60*1000)return null;
+  if(!snap?.at||Date.now()-Number(snap.at)>7*24*60*60*1000)return null;
   const data=snap.data;
   return data&&Array.isArray(data.home)&&Array.isArray(data.public)?data:null;
 }
