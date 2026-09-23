@@ -5601,24 +5601,6 @@ html.has-local-background .background-theme-editor{background:color-mix(in srgb,
   outline-offset:2px;
 }
 .background-preview.position-editing.is-positioning{cursor:grabbing;outline-color:var(--accent)}
-.background-preview-done{
-  position:absolute;
-  top:12px;
-  right:12px;
-  z-index:10;
-  min-width:62px;
-  height:38px;
-  padding:0 15px;
-  border:0;
-  border-radius:999px;
-  background:var(--accent);
-  color:#fff;
-  font-size:13px;
-  font-weight:800;
-  box-shadow:0 4px 14px rgba(0,0,0,.24);
-  pointer-events:auto;
-}
-.background-preview-done[hidden]{display:none!important}
 .background-preview>img{
   will-change:transform,object-position,opacity;
   backface-visibility:hidden;
@@ -5688,29 +5670,15 @@ html.has-local-background .background-theme-editor{background:color-mix(in srgb,
   z-index:7;
   transform:translate(-50%,-50%);
   width:max-content;
-  max-width:86%;
-  padding:10px 14px;
-  border-radius:16px;
+  max-width:84%;
+  padding:9px 13px;
+  border-radius:999px;
   background:color-mix(in srgb,var(--fg) 82%,transparent);
   color:var(--bg);
+  font-size:12px;
+  font-weight:750;
   pointer-events:none;
   box-shadow:0 5px 16px rgba(0,0,0,.18);
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  gap:3px;
-  text-align:center;
-}
-.background-position-hint b{font-size:12px;font-weight:800}
-.background-position-hint span{font-size:11px;opacity:.88}
-.background-position-hint em{
-  margin-top:3px;
-  padding:3px 7px;
-  border-radius:999px;
-  background:color-mix(in srgb,var(--bg) 16%,transparent);
-  font-size:10px;
-  font-style:normal;
-  font-weight:800;
 }
 .background-slider-row{
   display:block;
