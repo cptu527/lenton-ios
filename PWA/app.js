@@ -123,35 +123,32 @@ function setBackgroundEditorPreview(src,cfg){
   }
 }
 function backgroundEditorDraftSettings(){
-  const base=backgroundThemeSettings();
+  const base=backgroundThemeSettings(),draft=state.backgroundEditorDraft||{};
   return normalizeBackgroundSettings({
     enabled:true,
-    opacity:Number($("#backgroundOpacity")?.value??base.opacity),
-    zoom:Number($("#backgroundZoom")?.value??base.zoom),
-    x:Number($("#backgroundPositionX")?.value??base.x),
-    y:Number($("#backgroundPositionY")?.value??base.y)
+    opacity:Number($("#backgroundOpacity")?.value??draft.opacity??base.opacity),
+    zoom:Number(draft.zoom??base.zoom),
+    x:Number(draft.x??base.x),
+    y:Number(draft.y??base.y)
   });
 }
 function refreshBackgroundEditorLabels(cfg){
-  const pairs=[
-    ["#backgroundOpacityValue",cfg.opacity+"%"],
-    ["#backgroundZoomValue",cfg.zoom+"%"],
-    ["#backgroundPositionXValue",cfg.x+"%"],
-    ["#backgroundPositionYValue",cfg.y+"%"]
-  ];
-  for(const [selector,value] of pairs){const el=$(selector);if(el)el.textContent=value}
+  const opacity=$("#backgroundOpacityValue"),zoom=$("#backgroundGestureZoom");
+  if(opacity)opacity.textContent=cfg.opacity+"%";
+  if(zoom)zoom.textContent="확대 "+Math.round(cfg.zoom)+"%";
 }
 function syncBackgroundEditorPreview(){
-  const cfg=backgroundEditorDraftSettings();refreshBackgroundEditorLabels(cfg);
+  const cfg=backgroundEditorDraftSettings();
+  state.backgroundEditorDraft={...cfg};
+  refreshBackgroundEditorLabels(cfg);
   const img=$("#backgroundPreviewImage");
   if(img&&!img.hidden){img.style.opacity=String(cfg.opacity/100);applyBackgroundImageFraming(img,cfg)}
 }
 async function hydrateBackgroundEditor(){
   const opacity=$("#backgroundOpacity");if(!opacity)return;
   const cfg=backgroundThemeSettings();
+  state.backgroundEditorDraft={...cfg};
   opacity.value=String(cfg.opacity);
-  const zoom=$("#backgroundZoom"),x=$("#backgroundPositionX"),y=$("#backgroundPositionY");
-  if(zoom)zoom.value=String(cfg.zoom);if(x)x.value=String(cfg.x);if(y)y.value=String(cfg.y);
   refreshBackgroundEditorLabels(cfg);
   if(backgroundEditorObjectUrl){URL.revokeObjectURL(backgroundEditorObjectUrl);backgroundEditorObjectUrl=""}
   let blob=null;try{blob=await backgroundBlobRead()}catch{}
@@ -177,53 +174,97 @@ function bindBackgroundEditor(){
     if(backgroundEditorObjectUrl){URL.revokeObjectURL(backgroundEditorObjectUrl);backgroundEditorObjectUrl=""}
     backgroundEditorObjectUrl=URL.createObjectURL(file);setBackgroundEditorPreview(backgroundEditorObjectUrl,backgroundEditorDraftSettings());
   });
-  ["#backgroundOpacity","#backgroundZoom","#backgroundPositionX","#backgroundPositionY"].forEach(selector=>$(selector)?.addEventListener("input",syncBackgroundEditorPreview));
+  $("#backgroundOpacity")?.addEventListener("input",syncBackgroundEditorPreview);
   const preview=$("#backgroundPreview"),togglePosition=$("#toggleBackgroundPositionEdit"),positionHint=$("#backgroundPositionHint");
-  let positioningEnabled=false;
-  const setPositioningEnabled=enabled=>{
-    positioningEnabled=!!enabled;
-    preview?.classList.toggle("position-editing",positioningEnabled);
+  let editing=false;
+  const pointers=new Map();
+  let panStartPoint=null,panStartX=50,panStartY=50,pinchStartDistance=0,pinchStartZoom=100;
+  const PAN_SENSITIVITY=.35;
+  const setEditing=enabled=>{
+    editing=!!enabled;
+    pointers.clear();panStartPoint=null;pinchStartDistance=0;
+    preview?.classList.toggle("position-editing",editing);
     if(togglePosition){
-      togglePosition.classList.toggle("active",positioningEnabled);
-      togglePosition.textContent=positioningEnabled?"위치 조정 끝내기":"사진 위치 직접 조정";
+      togglePosition.classList.toggle("active",editing);
+      togglePosition.textContent=editing?"편집 끝내기":"미리보기에서 직접 편집";
     }
-    if(positionHint)positionHint.hidden=!positioningEnabled;
+    if(positionHint)positionHint.hidden=!editing;
   };
-  togglePosition?.addEventListener("click",()=>setPositioningEnabled(!positioningEnabled));
+  const rebasePan=()=>{
+    if(pointers.size!==1)return;
+    const p=[...pointers.values()][0],cfg=backgroundEditorDraftSettings();
+    panStartPoint={x:p.x,y:p.y};panStartX=cfg.x;panStartY=cfg.y;
+  };
+  const startPinch=()=>{
+    if(pointers.size<2)return;
+    const [a,b]=[...pointers.values()].slice(0,2),cfg=backgroundEditorDraftSettings();
+    pinchStartDistance=Math.max(1,Math.hypot(a.x-b.x,a.y-b.y));
+    pinchStartZoom=cfg.zoom;
+    panStartPoint=null;
+  };
+  togglePosition?.addEventListener("click",()=>setEditing(!editing));
   if(preview){
-    let dragging=false,startX=0,startY=0,startPx=50,startPy=50;
     preview.addEventListener("pointerdown",e=>{
-      if(!positioningEnabled)return;
+      if(!editing)return;
       const img=$("#backgroundPreviewImage");if(!img||img.hidden)return;
       e.preventDefault();
-      dragging=true;startX=e.clientX;startY=e.clientY;
-      startPx=Number($("#backgroundPositionX")?.value||50);startPy=Number($("#backgroundPositionY")?.value||50);
-      preview.classList.add("is-positioning");
+      pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
       try{preview.setPointerCapture(e.pointerId)}catch{}
+      preview.classList.add("is-positioning");
+      if(pointers.size===1)rebasePan();
+      else if(pointers.size===2)startPinch();
     });
     preview.addEventListener("pointermove",e=>{
-      if(!dragging||!positioningEnabled)return;
+      if(!editing||!pointers.has(e.pointerId))return;
       e.preventDefault();
-      const rect=preview.getBoundingClientRect(),x=$("#backgroundPositionX"),y=$("#backgroundPositionY");
-      if(x)x.value=String(Math.max(0,Math.min(100,startPx-((e.clientX-startX)/Math.max(1,rect.width))*100)));
-      if(y)y.value=String(Math.max(0,Math.min(100,startPy-((e.clientY-startY)/Math.max(1,rect.height))*100)));
-      syncBackgroundEditorPreview();
+      pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+      const cfg=backgroundEditorDraftSettings();
+      if(pointers.size>=2){
+        const [a,b]=[...pointers.values()].slice(0,2);
+        const distance=Math.max(1,Math.hypot(a.x-b.x,a.y-b.y));
+        if(!pinchStartDistance)startPinch();
+        const ratio=distance/Math.max(1,pinchStartDistance);
+        const zoom=Math.max(100,Math.min(220,pinchStartZoom*Math.pow(ratio,.72)));
+        state.backgroundEditorDraft={...cfg,zoom};
+        syncBackgroundEditorPreview();
+        return;
+      }
+      if(pointers.size===1){
+        const p=[...pointers.values()][0];
+        if(!panStartPoint)rebasePan();
+        const rect=preview.getBoundingClientRect();
+        const dx=((p.x-panStartPoint.x)/Math.max(1,rect.width))*100*PAN_SENSITIVITY;
+        const dy=((p.y-panStartPoint.y)/Math.max(1,rect.height))*100*PAN_SENSITIVITY;
+        state.backgroundEditorDraft={
+          ...cfg,
+          x:Math.max(0,Math.min(100,panStartX-dx)),
+          y:Math.max(0,Math.min(100,panStartY-dy))
+        };
+        syncBackgroundEditorPreview();
+      }
     });
-    const finish=e=>{
-      if(!dragging)return;
-      dragging=false;preview.classList.remove("is-positioning");
+    const finishPointer=e=>{
+      if(!pointers.has(e.pointerId))return;
+      pointers.delete(e.pointerId);
       try{preview.releasePointerCapture(e.pointerId)}catch{}
+      if(pointers.size===0){
+        preview.classList.remove("is-positioning");panStartPoint=null;pinchStartDistance=0;
+      }else if(pointers.size===1){
+        pinchStartDistance=0;rebasePan();
+      }else startPinch();
     };
-    preview.addEventListener("pointerup",finish);preview.addEventListener("pointercancel",finish);
+    preview.addEventListener("pointerup",finishPointer);
+    preview.addEventListener("pointercancel",finishPointer);
   }
   $("#resetBackgroundFraming")?.addEventListener("click",()=>{
-    const z=$("#backgroundZoom"),x=$("#backgroundPositionX"),y=$("#backgroundPositionY");
-    if(z)z.value="100";if(x)x.value="50";if(y)y.value="50";syncBackgroundEditorPreview();
+    const cfg=backgroundEditorDraftSettings();
+    state.backgroundEditorDraft={...cfg,zoom:100,x:50,y:50};
+    syncBackgroundEditorPreview();
   });
   $("#openBackgroundFullPreview")?.addEventListener("click",openBackgroundFullPreview);
   remove?.addEventListener("click",()=>{
     state.backgroundDraftRemove=true;if(input)input.value="";
-    setPositioningEnabled(false);
+    setEditing(false);
     if(backgroundEditorObjectUrl){URL.revokeObjectURL(backgroundEditorObjectUrl);backgroundEditorObjectUrl=""}
     setBackgroundEditorPreview("",backgroundEditorDraftSettings());
   });
@@ -249,7 +290,7 @@ const state = {
   me:null, view:"home", homeMode:"home", listId:null, lists:[], busy:false,
   theme:store.get("lenton_theme","system"), accent:store.get("lenton_accent",ANDROID?.theme?.accent||"#1d9bf0"),
   uiScale:Math.max(.6,Math.min(1.2,Number(store.get("lenton_ui_scale",1))||1)),
-  pushError:"", toast:"", notificationUnread:0, notificationUnreadOverflow:false, dmUnread:0, accountUnread:{}, accountNotificationUnread:{}, accountDmUnread:{}, currentConversation:null, profileReplies:false, profileMode:"posts", profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, profilePagerData:{}, homePagerData:{}, navStack:[], dmDraftRecipients:[], searchResults:null, searchQuery:"", searchMode:"posts", notificationMode:"all", notificationAllItems:[], replyNeededItems:[], updateAvailable:null, buildInfo:null, layoutEditorMode:"layout", backgroundDraftRemove:false
+  pushError:"", toast:"", notificationUnread:0, notificationUnreadOverflow:false, dmUnread:0, accountUnread:{}, accountNotificationUnread:{}, accountDmUnread:{}, currentConversation:null, profileReplies:false, profileMode:"posts", profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, profilePagerData:{}, homePagerData:{}, navStack:[], dmDraftRecipients:[], searchResults:null, searchQuery:"", searchMode:"posts", notificationMode:"all", notificationAllItems:[], replyNeededItems:[], updateAvailable:null, buildInfo:null, layoutEditorMode:"layout", backgroundDraftRemove:false, backgroundEditorDraft:null
 };
 
 function accountScope(){
@@ -3181,7 +3222,7 @@ function screenLayoutEditor(mode=state.layoutEditorMode||"layout"){
           <div class="background-preview-fab">＋</div>
           <div class="background-preview-bottom"><span>⌂</span><span>⌕</span><span>♢</span><span>▢</span></div>
         </div>
-        <div class="background-position-hint" id="backgroundPositionHint" hidden>사진을 끌어서 위치를 조정하세요</div>
+        <div class="background-position-hint" id="backgroundPositionHint" hidden><b>한 손가락으로 천천히 이동</b><span>두 손가락으로 확대·축소</span><em id="backgroundGestureZoom">확대 ${Math.round(cfg.zoom)}%</em></div>
         <div id="backgroundPreviewEmpty" class="background-preview-empty">사진을 선택하면 전체 화면 배치를 바로 확인할 수 있어요.</div>
       </div>
       <input id="backgroundImageInput" type="file" accept="image/*" hidden>
@@ -3190,15 +3231,12 @@ function screenLayoutEditor(mode=state.layoutEditorMode||"layout"){
         <button type="button" class="outline-btn danger-text" id="removeBackgroundImage">배경 삭제</button>
       </div>
       <div class="background-edit-panel">
-        <div class="background-edit-title"><div><b>배경 편집</b><span>평소에는 미리보기 위에서도 그대로 스크롤되고, 위치 조정 모드에서만 사진을 움직일 수 있어요.</span></div></div>
+        <div class="background-edit-title"><div><b>배경 편집</b><span>버튼을 누른 뒤 미리보기에서 한 손가락으로 위치를 옮기고, 두 손가락으로 확대·축소하세요.</span></div></div>
         <div class="background-position-actions">
-          <button type="button" class="outline-btn" id="toggleBackgroundPositionEdit">사진 위치 직접 조정</button>
+          <button type="button" class="outline-btn" id="toggleBackgroundPositionEdit">미리보기에서 직접 편집</button>
           <button type="button" class="outline-btn" id="resetBackgroundFraming">위치 초기화</button>
         </div>
         <label class="background-slider-row"><div><b>배경 불투명도</b><span id="backgroundOpacityValue">${cfg.opacity}%</span></div><input id="backgroundOpacity" type="range" min="0" max="100" step="1" value="${cfg.opacity}"></label>
-        <label class="background-slider-row"><div><b>확대</b><span id="backgroundZoomValue">${cfg.zoom}%</span></div><input id="backgroundZoom" type="range" min="100" max="220" step="1" value="${cfg.zoom}"></label>
-        <label class="background-slider-row"><div><b>가로 위치</b><span id="backgroundPositionXValue">${cfg.x}%</span></div><input id="backgroundPositionX" type="range" min="0" max="100" step="1" value="${cfg.x}"></label>
-        <label class="background-slider-row"><div><b>세로 위치</b><span id="backgroundPositionYValue">${cfg.y}%</span></div><input id="backgroundPositionY" type="range" min="0" max="100" step="1" value="${cfg.y}"></label>
       </div>
       <div class="background-apply-row"><button type="button" class="primary" id="applyBackgroundTheme">이 계정에 적용</button></div>
     </div>`;
