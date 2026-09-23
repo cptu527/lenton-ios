@@ -5207,3 +5207,53 @@ img{display:block}
   backdrop-filter:blur(14px) saturate(145%)!important;
   -webkit-backdrop-filter:blur(14px) saturate(145%)!important;
 }
+
+
+/* 2026-09-23 compact iPhone notification density */
+.lenton-view-notifications .android-notify-card{
+  grid-template-columns:38px minmax(0,1fr);
+  padding:8px 11px;
+}
+.lenton-view-notifications .android-notify-glyph{
+  width:38px;
+  min-height:40px;
+  font-size:22px;
+}
+.lenton-view-notifications .android-notify-person{
+  min-height:36px;
+  gap:8px;
+}
+.lenton-view-notifications .android-notify-avatar,
+.lenton-view-notifications .android-notify-avatar img,
+.lenton-view-notifications .android-notify-person img{
+  width:32px;
+  height:32px;
+  flex-basis:32px;
+}
+.lenton-view-notifications .android-notify-card.mention-post-card{
+  grid-template-columns:40px minmax(0,1fr);
+  gap:7px;
+  padding:8px 11px 7px 9px;
+}
+.lenton-view-notifications .mention-card-avatar,
+.lenton-view-notifications .mention-card-avatar img{
+  width:34px;
+  height:34px;
+}
+.lenton-view-notifications .mention-card-author{
+  min-height:19px;
+}
+.lenton-view-notifications .mention-card-kind{
+  margin:1px 0 4px;
+}
+.lenton-view-notifications .notify-mention-actions{
+  margin-top:3px;
+  min-height:27px;
+}
+.lenton-view-notifications .notify-mention-actions button{
+  min-height:27px;
+}
+.lenton-view-notifications .notify-mention-actions .lenton-icon{
+  width:23px;
+  height:23px;
+}

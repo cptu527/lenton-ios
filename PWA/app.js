@@ -1207,8 +1207,8 @@ function pushNavSnapshot(){
   state.navStack.push(snap);if(state.navStack.length>30)state.navStack.shift();
 }
 function clearGestureBindingMarks(root=document){
-  const marks=["interactiveSwipe","homeSwipe","lentonSwipe","edgeDrawerSwipe","closeSwipe","profileSwipe","backSwipe","pullRefresh","notificationSwipe"];
-  root.querySelectorAll?.("[data-interactive-swipe],[data-home-swipe],[data-lenton-swipe],[data-edge-drawer-swipe],[data-close-swipe],[data-profile-swipe],[data-back-swipe],[data-pull-refresh],[data-notification-swipe]").forEach(el=>{
+  const marks=["interactiveSwipe","homeSwipe","lentonSwipe","edgeDrawerSwipe","closeSwipe","profileSwipe","backSwipe","pullRefresh","notificationSwipe","notificationPullRefresh"];
+  root.querySelectorAll?.("[data-interactive-swipe],[data-home-swipe],[data-lenton-swipe],[data-edge-drawer-swipe],[data-close-swipe],[data-profile-swipe],[data-back-swipe],[data-pull-refresh],[data-notification-swipe],[data-notification-pull-refresh]").forEach(el=>{
     for(const k of marks)if(k in el.dataset)delete el.dataset[k];
   });
 }
@@ -4266,6 +4266,60 @@ function attachHomePullToRefresh(){
   },{passive:true});
   main.addEventListener("touchcancel",cleanup,{passive:true});
 }
+function attachNotificationPullToRefresh(){
+  const main=document.querySelector(".app.lenton-view-notifications .main"),pager=document.querySelector("[data-notification-pager]");
+  if(!main||!pager||main.dataset.notificationPullRefresh==="1")return;
+  main.dataset.notificationPullRefresh="1";
+  let startY=0,startX=0,drag=0,active=false,indicator=null;
+  const top=()=>Math.max(window.scrollY||0,document.documentElement.scrollTop||0,main.scrollTop||0)<=2;
+  const cleanup=()=>{
+    indicator?.remove();indicator=null;drag=0;active=false;startY=0;startX=0;
+    main.style.transform="";main.style.transition="";
+  };
+  main.addEventListener("touchstart",e=>{
+    if(e.touches?.length!==1||!top())return;
+    startY=e.touches[0].clientY;startX=e.touches[0].clientX;drag=0;active=false;
+  },{passive:true});
+  main.addEventListener("touchmove",e=>{
+    if(!startY||e.touches?.length!==1)return;
+    const dy=e.touches[0].clientY-startY,dx=e.touches[0].clientX-startX;
+    if(dy<=0||Math.abs(dx)>=Math.abs(dy)){
+      if(active)cleanup();
+      return;
+    }
+    if(!active&&dy<10)return;
+    active=true;
+    e.preventDefault();
+    drag=Math.min(96,dy*.46);
+    if(!indicator){
+      indicator=document.createElement("div");
+      indicator.className="pull-refresh-indicator";
+      indicator.innerHTML="<span>↻</span>";
+      main.prepend(indicator);
+    }
+    indicator.style.transform="translate3d(-50%,"+Math.min(54,drag-44)+"px,0) rotate("+Math.min(220,drag*3)+"deg)";
+    main.style.transform="translate3d(0,"+drag+"px,0)";
+  },{passive:false});
+  main.addEventListener("touchend",async()=>{
+    if(!active){startY=0;startX=0;return}
+    const should=drag>=58;
+    startY=0;startX=0;
+    main.style.transition="transform 160ms ease";
+    main.style.transform="translate3d(0,0,0)";
+    if(should){
+      if(indicator)indicator.classList.add("loading");
+      try{
+        await notificationsView(state.notificationMode==="replyNeeded",true);
+      }finally{
+        setTimeout(cleanup,120);
+      }
+    }else{
+      setTimeout(cleanup,170);
+    }
+  },{passive:true});
+  main.addEventListener("touchcancel",cleanup,{passive:true});
+}
+
 function attachNotificationTabSwipe(){
   const pager=document.querySelector("[data-notification-pager]");
   if(!pager||pager.dataset.notificationSwipe==="1")return;
@@ -4322,7 +4376,7 @@ function attachLentonGestures(){
   attachDrawerCloseSwipe(drawer);
 
   if(state.view==="home"){attachInteractiveHomeSwipe(document.querySelector("[data-home-pager]"));attachHomePullToRefresh()}
-  if(state.view==="notifications")attachNotificationTabSwipe();
+  if(state.view==="notifications"){attachNotificationTabSwipe();attachNotificationPullToRefresh()}
 
   attachStandaloneBackSwipe(document.querySelector(".standalone-page"));
   const profilePager=document.querySelector("[data-profile-pager]");
