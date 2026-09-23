@@ -178,6 +178,26 @@ function bindBackgroundEditor(){
     backgroundEditorObjectUrl=URL.createObjectURL(file);setBackgroundEditorPreview(backgroundEditorObjectUrl,backgroundEditorDraftSettings());
   });
   ["#backgroundOpacity","#backgroundZoom","#backgroundPositionX","#backgroundPositionY"].forEach(selector=>$(selector)?.addEventListener("input",syncBackgroundEditorPreview));
+  const preview=$("#backgroundPreview");
+  if(preview){
+    let dragging=false,startX=0,startY=0,startPx=50,startPy=50;
+    preview.addEventListener("pointerdown",e=>{
+      const img=$("#backgroundPreviewImage");if(!img||img.hidden)return;
+      dragging=true;startX=e.clientX;startY=e.clientY;
+      startPx=Number($("#backgroundPositionX")?.value||50);startPy=Number($("#backgroundPositionY")?.value||50);
+      preview.classList.add("is-positioning");
+      try{preview.setPointerCapture(e.pointerId)}catch{}
+    });
+    preview.addEventListener("pointermove",e=>{
+      if(!dragging)return;
+      const rect=preview.getBoundingClientRect(),x=$("#backgroundPositionX"),y=$("#backgroundPositionY");
+      if(x)x.value=String(Math.max(0,Math.min(100,startPx-((e.clientX-startX)/Math.max(1,rect.width))*100)));
+      if(y)y.value=String(Math.max(0,Math.min(100,startPy-((e.clientY-startY)/Math.max(1,rect.height))*100)));
+      syncBackgroundEditorPreview();
+    });
+    const finish=e=>{if(!dragging)return;dragging=false;preview.classList.remove("is-positioning");try{preview.releasePointerCapture(e.pointerId)}catch{}};
+    preview.addEventListener("pointerup",finish);preview.addEventListener("pointercancel",finish);
+  }
   $("#resetBackgroundFraming")?.addEventListener("click",()=>{
     const z=$("#backgroundZoom"),x=$("#backgroundPositionX"),y=$("#backgroundPositionY");
     if(z)z.value="100";if(x)x.value="50";if(y)y.value="50";syncBackgroundEditorPreview();
