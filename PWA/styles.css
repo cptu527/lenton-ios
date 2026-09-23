@@ -5291,7 +5291,7 @@ html.has-local-background .app,
 html.has-local-background .main{background:transparent!important}
 html.has-local-background .topbar,
 html.has-local-background .bottom{
-  background:color-mix(in srgb,var(--bg) 88%,transparent)!important;
+  background:color-mix(in srgb,var(--bg) 74%,transparent)!important;
   -webkit-backdrop-filter:blur(14px) saturate(125%);
   backdrop-filter:blur(14px) saturate(125%);
 }
