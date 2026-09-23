@@ -348,12 +348,14 @@ async function saveCurrentAccount(){
   await syncSavedAccountsToPushMeta();
 }
 function resetAccountState(){
+  stopForegroundRealtime();
+  state.realtimeStreamingHost="";state.realtimeStreamingBase="";state.realtimeAuthMode="protocol";
   state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.listOrderDirty=false;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];state.searchResults=null;state.searchQuery="";state.searchMode="posts";state.searchFollowingIds=null;state.notificationUnread=0;state.notificationUnreadOverflow=false;state.dmUnread=0;state.notificationMode="all";state.notificationAllItems=[];state.replyNeededItems=[];
 }
 async function switchSavedAccount(index){
   const list=savedAccounts(),entry=list[index];if(!entry?.session)return;
   rememberScroll();state.session=entry.session;store.set("lenton_session",state.session);resetAccountState();
-  try{state.me=await api("/api/v1/accounts/verify_credentials");state.customEmojis=null;await loadCustomEmojis();await saveCurrentAccount();state.notificationUnread=accountNotificationUnreadFor(entry);state.dmUnread=accountDmUnreadFor(entry);state.view="home";render();refreshNotificationBadgeDom();setTimeout(()=>refreshUnreadNotificationCount(),80);toast("계정을 전환했어요.")}
+  try{state.me=await api("/api/v1/accounts/verify_credentials");state.customEmojis=null;await loadCustomEmojis();await saveCurrentAccount();state.notificationUnread=accountNotificationUnreadFor(entry);state.dmUnread=accountDmUnreadFor(entry);state.view="home";render();refreshNotificationBadgeDom();setTimeout(()=>refreshUnreadNotificationCount(),80);setTimeout(()=>startForegroundRealtime(),120);toast("계정을 전환했어요.")}
   catch(e){toast("계정 전환 실패: "+e.message)}
 }
 function savedAccountFullHandle(x){
@@ -472,6 +474,7 @@ function realtimeSettingsScreen(){
 
 function logout(){
   if(!confirm("로그아웃할까요?"))return;
+  stopForegroundRealtime();
   const key=state.session&&state.me?state.session.host+"|"+state.me.id:"";
   if(key)store.set("lenton_accounts",savedAccounts().filter(x=>x.key!==key));
   store.del("lenton_session");state.session=null;state.me=null;resetAccountState();render();
@@ -4659,13 +4662,254 @@ async function registerSW(){
     reg.update().catch(()=>{});
   }
 }
+function foregroundRealtimeShouldRun(){
+  return !!(state.session&&state.me&&document.visibilityState==="visible"&&navigator.onLine!==false&&"WebSocket" in window);
+}
+function foregroundRealtimeConnected(){
+  return !!(state.realtimeSocket&&state.realtimeSocket.readyState===WebSocket.OPEN);
+}
+function normalizeStreamingBase(raw=""){
+  let value=String(raw||"").trim();
+  if(!value)value="https://"+String(state.session?.host||"");
+  if(!/^[a-z]+:\/\//i.test(value))value="https://"+value.replace(/^\/+/, "");
+  const u=new URL(value);
+  if(u.protocol==="https:")u.protocol="wss:";
+  else if(u.protocol==="http:")u.protocol="ws:";
+  else if(u.protocol!=="wss:"&&u.protocol!=="ws:")u.protocol="wss:";
+  let path=String(u.pathname||"").replace(/\/+$/,"");
+  if(!/\/api\/v1\/streaming$/i.test(path)){
+    path=(path&&path!=="/"?path:"")+"/api/v1/streaming";
+  }
+  u.pathname=path||"/api/v1/streaming";
+  u.search="";
+  u.hash="";
+  return u.toString();
+}
+async function discoverForegroundStreamingBase(){
+  const host=String(state.session?.host||"");
+  if(!host)throw new Error("스트리밍 서버 정보가 없습니다.");
+  if(state.realtimeStreamingHost===host&&state.realtimeStreamingBase)return state.realtimeStreamingBase;
+  let raw="";
+  try{
+    const inst=await api("/api/v2/instance");
+    raw=inst?.configuration?.urls?.streaming||inst?.urls?.streaming_api||"";
+  }catch{}
+  const base=normalizeStreamingBase(raw||("https://"+host));
+  state.realtimeStreamingHost=host;
+  state.realtimeStreamingBase=base;
+  return base;
+}
+async function buildForegroundStreamingUrl(authMode="protocol"){
+  const base=await discoverForegroundStreamingBase();
+  const u=new URL(base);
+  u.searchParams.set("stream","user");
+  if(authMode==="query")u.searchParams.set("access_token",String(state.session?.token||""));
+  return u.toString();
+}
+function scheduleRealtimeBind(){
+  if(state.realtimeBindScheduled)return;
+  state.realtimeBindScheduled=true;
+  requestAnimationFrame(()=>{
+    state.realtimeBindScheduled=false;
+    if(state.view==="home")bind();
+  });
+}
+function realtimeCardStatusId(raw){
+  return String((raw?.reblog||raw)?.id||"");
+}
+function prependRealtimeCard(mode,raw){
+  if(state.view!=="home"||state.listId)return;
+  const page=document.querySelector('[data-home-page="'+mode+'"]');
+  if(!page)return;
+  const y=window.scrollY||document.documentElement.scrollTop||0;
+  const active=state.homeMode===mode;
+  const before=active?page.scrollHeight:0;
+  const empty=page.querySelector(":scope > .center");
+  if(empty)empty.remove();
+  const items=state.homePagerData?.[mode]||[];
+  const first=page.querySelector(":scope > .status");
+  const html=statusCard(raw,{replyCountOverride:visibleReplyCount(raw,items)});
+  if(first)first.insertAdjacentHTML("beforebegin",html);
+  else page.insertAdjacentHTML("afterbegin",html);
+  scheduleRealtimeBind();
+  requestAnimationFrame(()=>{
+    if(active&&y>96){
+      const delta=Math.max(0,page.scrollHeight-before);
+      if(delta)window.scrollTo(0,y+delta);
+    }
+    syncHomePagerHeight();
+  });
+}
+function applyForegroundRealtimeUpdate(raw){
+  const st=raw?.reblog||raw;
+  if(!st||st.visibility==="direct")return;
+  const rawId=String(statusId(raw)||"");
+  if(!rawId)return;
+  const data=state.homePagerData||{home:[],public:[]};
+  const oldHome=Array.isArray(data.home)?data.home:[];
+  const oldPublic=Array.isArray(data.public)?data.public:[];
+  const homeKnown=oldHome.some(x=>String(statusId(x)||"")===rawId);
+  const publicKnown=oldPublic.some(x=>String(statusId(x)||"")===rawId);
+  data.home=mergeTimelineUnlimited([raw],oldHome);
+  if(publicHomeStatus(raw))data.public=mergeTimelineUnlimited([raw],oldPublic);
+  state.homePagerData=data;
+  if(state.homeMode==="home")state.timelineItems=data.home;
+  else if(state.homeMode==="public")state.timelineItems=data.public;
+  homeSnapshotWrite(data);
+  if(!homeKnown)prependRealtimeCard("home",raw);
+  if(publicHomeStatus(raw)&&!publicKnown)prependRealtimeCard("public",raw);
+}
+function removeForegroundRealtimeStatus(id){
+  const target=String(id||"");if(!target)return;
+  const data=state.homePagerData||{home:[],public:[]};
+  const removedByMode={home:new Set(),public:new Set()};
+  for(const mode of ["home","public"]){
+    const source=Array.isArray(data[mode])?data[mode]:[];
+    const kept=[];
+    for(const raw of source){
+      const rawId=String(statusId(raw)||""),cardId=realtimeCardStatusId(raw);
+      if(rawId===target||cardId===target)removedByMode[mode].add(cardId);
+      else kept.push(raw);
+    }
+    data[mode]=kept;
+  }
+  state.homePagerData=data;
+  state.timelineItems=data[state.homeMode]||data.home;
+  homeSnapshotWrite(data);
+  if(state.view==="home"&&!state.listId){
+    for(const mode of ["home","public"]){
+      const page=document.querySelector('[data-home-page="'+mode+'"]');if(!page)continue;
+      for(const cardId of removedByMode[mode]){
+        const stillExists=(data[mode]||[]).some(raw=>realtimeCardStatusId(raw)===cardId);
+        if(stillExists)continue;
+        page.querySelectorAll('[data-status-id="'+CSS.escape(cardId)+'"]').forEach(el=>el.remove());
+      }
+    }
+    requestAnimationFrame(syncHomePagerHeight);
+  }
+}
+function applyForegroundRealtimeStatusUpdate(updated){
+  const id=String(updated?.id||"");if(!id)return;
+  const data=state.homePagerData||{home:[],public:[]};
+  let changed=false;
+  for(const mode of ["home","public"]){
+    const next=[];
+    for(const raw of (Array.isArray(data[mode])?data[mode]:[])){
+      const st=raw?.reblog||raw;
+      if(String(st?.id||"")!==id){next.push(raw);continue}
+      changed=true;
+      const patched=raw?.reblog?{...raw,reblog:updated}:updated;
+      if(mode==="public"&&!publicHomeStatus(patched))continue;
+      next.push(patched);
+    }
+    data[mode]=next;
+  }
+  if(!changed)return;
+  state.homePagerData=data;
+  state.timelineItems=data[state.homeMode]||data.home;
+  homeSnapshotWrite(data);
+  if(state.view==="home"&&!state.listId){
+    for(const mode of ["home","public"]){
+      const page=document.querySelector('[data-home-page="'+mode+'"]');if(!page)continue;
+      const raw=(data[mode]||[]).find(x=>realtimeCardStatusId(x)===id);
+      page.querySelectorAll('[data-status-id="'+CSS.escape(id)+'"]').forEach(card=>{
+        if(!raw){card.remove();return}
+        const holder=document.createElement("div");
+        holder.innerHTML=statusCard(raw,{replyCountOverride:visibleReplyCount(raw,data[mode])});
+        const next=holder.firstElementChild;if(next)card.replaceWith(next);
+      });
+    }
+    scheduleRealtimeBind();
+    requestAnimationFrame(syncHomePagerHeight);
+  }
+}
+function handleForegroundRealtimeMessage(event){
+  let msg=null;
+  try{msg=JSON.parse(String(event?.data||""))}catch{return}
+  const kind=String(msg?.event||"");
+  let payload=msg?.payload;
+  if(kind==="delete"){
+    removeForegroundRealtimeStatus(payload);
+    return;
+  }
+  if(typeof payload==="string"){
+    try{payload=JSON.parse(payload)}catch{return}
+  }
+  if(kind==="update")applyForegroundRealtimeUpdate(payload);
+  else if(kind==="status.update")applyForegroundRealtimeStatusUpdate(payload);
+  else if(kind==="filters_changed"&&state.view==="home"){
+    refreshHomeIncremental().catch(()=>{});
+  }
+}
+function stopForegroundRealtime(){
+  state.realtimeIntent=Number(state.realtimeIntent||0)+1;
+  clearTimeout(state.realtimeReconnectTimer);state.realtimeReconnectTimer=null;
+  const ws=state.realtimeSocket;state.realtimeSocket=null;state.realtimeConnectionKey="";
+  if(ws&&(ws.readyState===WebSocket.OPEN||ws.readyState===WebSocket.CONNECTING)){
+    try{ws.close(1000,"pause")}catch{}
+  }
+}
+function scheduleForegroundRealtimeReconnect(intent,delay=0){
+  clearTimeout(state.realtimeReconnectTimer);
+  if(intent!==state.realtimeIntent||!foregroundRealtimeShouldRun())return;
+  const attempt=Math.max(0,Number(state.realtimeReconnectAttempt||0));
+  const wait=delay||Math.min(30000,1500*Math.pow(2,attempt));
+  state.realtimeReconnectAttempt=Math.min(6,attempt+1);
+  state.realtimeReconnectTimer=setTimeout(()=>startForegroundRealtime(),wait);
+}
+async function startForegroundRealtime(){
+  if(!foregroundRealtimeShouldRun()){stopForegroundRealtime();return}
+  const key=String(state.session?.host||"")+"|"+String(state.me?.id||"");
+  if(state.realtimeSocket&&state.realtimeConnectionKey===key&&(state.realtimeSocket.readyState===WebSocket.OPEN||state.realtimeSocket.readyState===WebSocket.CONNECTING))return;
+  stopForegroundRealtime();
+  const intent=state.realtimeIntent;
+  const authMode=state.realtimeAuthMode==="query"?"query":"protocol";
+  let url="";
+  try{url=await buildForegroundStreamingUrl(authMode)}catch{
+    scheduleForegroundRealtimeReconnect(intent,3000);return;
+  }
+  if(intent!==state.realtimeIntent||!foregroundRealtimeShouldRun())return;
+  let ws=null,opened=false;
+  try{
+    ws=authMode==="protocol"?new WebSocket(url,String(state.session.token||"")):new WebSocket(url);
+  }catch{
+    if(authMode==="protocol"){state.realtimeAuthMode="query";scheduleForegroundRealtimeReconnect(intent,200)}
+    else scheduleForegroundRealtimeReconnect(intent,3000);
+    return;
+  }
+  state.realtimeSocket=ws;state.realtimeConnectionKey=key;
+  ws.onopen=()=>{
+    if(intent!==state.realtimeIntent){try{ws.close()}catch{};return}
+    opened=true;state.realtimeReconnectAttempt=0;
+  };
+  ws.onmessage=e=>{if(intent===state.realtimeIntent)handleForegroundRealtimeMessage(e)};
+  ws.onerror=()=>{};
+  ws.onclose=()=>{
+    if(state.realtimeSocket===ws)state.realtimeSocket=null;
+    if(intent!==state.realtimeIntent||!foregroundRealtimeShouldRun())return;
+    if(!opened&&authMode==="protocol"){
+      state.realtimeAuthMode="query";
+      scheduleForegroundRealtimeReconnect(intent,200);
+      return;
+    }
+    scheduleForegroundRealtimeReconnect(intent);
+  };
+}
+
 function refreshVisiblePublicQuickly(){
+  if(foregroundRealtimeConnected())return;
   if(document.visibilityState!=="visible"||!state.session)return;
   if(state.view!=="home"||state.homeMode!=="public"||state.listId)return;
   refreshPublicLatestPage({fillBackground:false}).catch(()=>{});
 }
-document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"){applyAutomaticUpdate();refreshUnreadNotificationCount();refreshVisiblePublicQuickly()}});
-window.addEventListener("focus",()=>{applyAutomaticUpdate();refreshUnreadNotificationCount();refreshVisiblePublicQuickly()});
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState==="visible"){
+    applyAutomaticUpdate();refreshUnreadNotificationCount();refreshVisiblePublicQuickly();startForegroundRealtime();
+  }else stopForegroundRealtime();
+});
+window.addEventListener("focus",()=>{applyAutomaticUpdate();refreshUnreadNotificationCount();refreshVisiblePublicQuickly();startForegroundRealtime()});
+window.addEventListener("online",()=>startForegroundRealtime());
+window.addEventListener("offline",()=>stopForegroundRealtime());
 setInterval(()=>{if(document.visibilityState==="visible"){applyAutomaticUpdate();refreshUnreadNotificationCount()}},30000);
 setInterval(()=>refreshVisiblePublicQuickly(),15000);
 window.addEventListener("beforeinstallprompt",e=>e.preventDefault());
@@ -4705,6 +4949,7 @@ window.addEventListener("beforeunload",e=>{
     loadCustomEmojis().catch(()=>{});
     saveCurrentAccount().catch(()=>{});
     setTimeout(()=>refreshUnreadNotificationCount(),80);
+    setTimeout(()=>startForegroundRealtime(),140);
   }
   if(("Notification"in window)&&Notification.permission==="granted")setTimeout(()=>ensureAllAccountPushSubscriptions({quiet:true}),650);
   if(notificationId&&state.session)setTimeout(()=>openNotificationDeepLink(notificationId),0);
