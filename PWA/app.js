@@ -10,12 +10,98 @@ const store = {
   set(k,v){localStorage.setItem(k,JSON.stringify(v))},
   del(k){localStorage.removeItem(k)}
 };
+const BACKGROUND_THEME_DB="lenton-local-theme-v1",BACKGROUND_THEME_STORE="assets",BACKGROUND_THEME_KEY="background";
+let backgroundActiveObjectUrl="",backgroundEditorObjectUrl="";
+function backgroundThemeSettings(){
+  const raw=store.get("lenton_background_theme",{enabled:false,opacity:24})||{};
+  return {enabled:raw.enabled===true,opacity:Math.max(0,Math.min(100,Number(raw.opacity??24)||0))};
+}
+function openBackgroundThemeDb(){
+  if(!("indexedDB" in window))return Promise.reject(new Error("이 기기에서는 배경 이미지 저장을 사용할 수 없어요."));
+  return new Promise((resolve,reject)=>{
+    const req=indexedDB.open(BACKGROUND_THEME_DB,1);
+    req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains(BACKGROUND_THEME_STORE))db.createObjectStore(BACKGROUND_THEME_STORE)};
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error||new Error("배경 저장소를 열지 못했어요."));
+  });
+}
+async function backgroundBlobRead(){
+  const db=await openBackgroundThemeDb();
+  try{return await new Promise((resolve,reject)=>{const req=db.transaction(BACKGROUND_THEME_STORE,"readonly").objectStore(BACKGROUND_THEME_STORE).get(BACKGROUND_THEME_KEY);req.onsuccess=()=>resolve(req.result||null);req.onerror=()=>reject(req.error)})}finally{db.close()}
+}
+async function backgroundBlobWrite(blob){
+  const db=await openBackgroundThemeDb();
+  try{await new Promise((resolve,reject)=>{const tx=db.transaction(BACKGROUND_THEME_STORE,"readwrite");tx.objectStore(BACKGROUND_THEME_STORE).put(blob,BACKGROUND_THEME_KEY);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error("배경 이미지를 저장하지 못했어요."))})}finally{db.close()}
+}
+async function backgroundBlobDelete(){
+  const db=await openBackgroundThemeDb();
+  try{await new Promise((resolve,reject)=>{const tx=db.transaction(BACKGROUND_THEME_STORE,"readwrite");tx.objectStore(BACKGROUND_THEME_STORE).delete(BACKGROUND_THEME_KEY);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error("배경 이미지를 삭제하지 못했어요."))})}finally{db.close()}
+}
+function ensureLocalBackgroundLayer(){
+  let layer=document.getElementById("lentonLocalBackground");
+  if(!layer){layer=document.createElement("div");layer.id="lentonLocalBackground";layer.className="lenton-local-background";layer.setAttribute("aria-hidden","true");document.body.prepend(layer)}
+  return layer;
+}
+async function applySavedBackgroundTheme(){
+  const cfg=backgroundThemeSettings(),layer=ensureLocalBackgroundLayer();
+  let blob=null;
+  if(cfg.enabled){try{blob=await backgroundBlobRead()}catch{blob=null}}
+  if(backgroundActiveObjectUrl){URL.revokeObjectURL(backgroundActiveObjectUrl);backgroundActiveObjectUrl=""}
+  if(blob){
+    backgroundActiveObjectUrl=URL.createObjectURL(blob);
+    layer.style.backgroundImage="url(\""+backgroundActiveObjectUrl+"\")";
+    layer.style.opacity=String(cfg.opacity/100);
+    document.documentElement.classList.add("has-local-background");
+  }else{
+    layer.style.backgroundImage="";layer.style.opacity="0";document.documentElement.classList.remove("has-local-background");
+  }
+}
+function setBackgroundEditorPreview(src,opacity){
+  const preview=$("#backgroundPreview"),img=$("#backgroundPreviewImage"),empty=$("#backgroundPreviewEmpty");
+  if(!preview||!img||!empty)return;
+  if(src){img.src=src;img.hidden=false;img.style.opacity=String(Math.max(0,Math.min(100,Number(opacity)||0))/100);empty.hidden=true;preview.classList.add("has-image")}
+  else{img.removeAttribute("src");img.hidden=true;empty.hidden=false;preview.classList.remove("has-image")}
+}
+async function hydrateBackgroundEditor(){
+  const slider=$("#backgroundOpacity"),value=$("#backgroundOpacityValue");if(!slider)return;
+  const cfg=backgroundThemeSettings();slider.value=String(cfg.opacity);if(value)value.textContent=cfg.opacity+"%";
+  if(backgroundEditorObjectUrl){URL.revokeObjectURL(backgroundEditorObjectUrl);backgroundEditorObjectUrl=""}
+  let blob=null;try{blob=await backgroundBlobRead()}catch{}
+  if(blob&&cfg.enabled){backgroundEditorObjectUrl=URL.createObjectURL(blob);setBackgroundEditorPreview(backgroundEditorObjectUrl,cfg.opacity)}else setBackgroundEditorPreview("",cfg.opacity);
+  state.backgroundDraftRemove=false;
+}
+function bindBackgroundEditor(){
+  const input=$("#backgroundImageInput"),pick=$("#pickBackgroundImage"),remove=$("#removeBackgroundImage"),slider=$("#backgroundOpacity"),value=$("#backgroundOpacityValue"),apply=$("#applyBackgroundTheme");
+  pick?.addEventListener("click",()=>input?.click());
+  input?.addEventListener("change",()=>{
+    const file=input.files?.[0];if(!file)return;state.backgroundDraftRemove=false;
+    if(backgroundEditorObjectUrl){URL.revokeObjectURL(backgroundEditorObjectUrl);backgroundEditorObjectUrl=""}
+    backgroundEditorObjectUrl=URL.createObjectURL(file);setBackgroundEditorPreview(backgroundEditorObjectUrl,Number(slider?.value||24));
+  });
+  slider?.addEventListener("input",()=>{const n=Math.max(0,Math.min(100,Number(slider.value)||0));if(value)value.textContent=n+"%";const img=$("#backgroundPreviewImage");if(img&&!img.hidden)img.style.opacity=String(n/100)});
+  remove?.addEventListener("click",()=>{state.backgroundDraftRemove=true;if(input)input.value="";if(backgroundEditorObjectUrl){URL.revokeObjectURL(backgroundEditorObjectUrl);backgroundEditorObjectUrl=""}setBackgroundEditorPreview("",Number(slider?.value||24))});
+  apply?.addEventListener("click",()=>applyBackgroundEditorSettings());
+}
+async function applyBackgroundEditorSettings(){
+  const input=$("#backgroundImageInput"),slider=$("#backgroundOpacity"),button=$("#applyBackgroundTheme");
+  const opacity=Math.max(0,Math.min(100,Number(slider?.value||24)||0));
+  if(button){button.disabled=true;button.textContent="적용 중…"}
+  try{
+    const file=input?.files?.[0]||null;
+    if(state.backgroundDraftRemove){await backgroundBlobDelete();store.set("lenton_background_theme",{enabled:false,opacity})}
+    else if(file){await backgroundBlobWrite(file);store.set("lenton_background_theme",{enabled:true,opacity})}
+    else{const current=await backgroundBlobRead();store.set("lenton_background_theme",{enabled:!!current,opacity})}
+    state.backgroundDraftRemove=false;await applySavedBackgroundTheme();toast(state.backgroundDraftRemove?"배경을 삭제했어요.":"배경 설정을 적용했어요.");await hydrateBackgroundEditor();
+  }catch(e){toast(e?.message||"배경 설정을 저장하지 못했어요.")}
+  finally{if(button){button.disabled=false;button.textContent="적용"}}
+}
+
 const state = {
   session: store.get("lenton_session"),
   me:null, view:"home", homeMode:"home", listId:null, lists:[], busy:false,
   theme:store.get("lenton_theme","system"), accent:store.get("lenton_accent",ANDROID?.theme?.accent||"#1d9bf0"),
   uiScale:Math.max(.6,Math.min(1.2,Number(store.get("lenton_ui_scale",1))||1)),
-  pushError:"", toast:"", notificationUnread:0, notificationUnreadOverflow:false, dmUnread:0, accountUnread:{}, accountNotificationUnread:{}, accountDmUnread:{}, currentConversation:null, profileReplies:false, profileMode:"posts", profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, profilePagerData:{}, homePagerData:{}, navStack:[], dmDraftRecipients:[], searchResults:null, searchQuery:"", searchMode:"posts", notificationMode:"all", notificationAllItems:[], replyNeededItems:[], updateAvailable:null, buildInfo:null
+  pushError:"", toast:"", notificationUnread:0, notificationUnreadOverflow:false, dmUnread:0, accountUnread:{}, accountNotificationUnread:{}, accountDmUnread:{}, currentConversation:null, profileReplies:false, profileMode:"posts", profileAccount:null, profileRelationship:null, returnView:"home", customEmojis:null, timelineItems:[], timelineLoadingMore:false, scrolls:{}, pageCache:{}, homeCache:{}, profileCache:{}, profilePagerData:{}, homePagerData:{}, navStack:[], dmDraftRecipients:[], searchResults:null, searchQuery:"", searchMode:"posts", notificationMode:"all", notificationAllItems:[], replyNeededItems:[], updateAvailable:null, buildInfo:null, layoutEditorMode:"layout", backgroundDraftRemove:false
 };
 
 function accountScope(){
@@ -178,6 +264,7 @@ function applyAndroidSpecMetrics(){
   root.style.setProperty("--android-message-padding",mp.map(x=>String(scaled(x))+"px").join(" "));
 }
 applyAndroidSpecMetrics();
+applySavedBackgroundTheme().catch(()=>{});
 
 function toast(msg){ state.toast=msg; renderToast(); setTimeout(()=>{state.toast="";renderToast()},2600) }
 function renderToast(){ const old=$(".toast"); if(old) old.remove(); if(state.toast){const x=document.createElement("div");x.className="toast";x.setAttribute("role","status");x.setAttribute("aria-live","polite");x.textContent=state.toast;document.body.append(x)}}
@@ -2906,19 +2993,48 @@ function attachLayoutEditorDrag(){
     grip.addEventListener("pointerup",finish);grip.addEventListener("pointercancel",finish);
   });
 }
-function screenLayoutEditor(){
+function screenLayoutEditor(mode=state.layoutEditorMode||"layout"){
   closeDrawer();
-  const cfg=mainTabLayout();
-  const rows=cfg.order.map((id,i)=>`<div class="layout-tab-row" data-layout-id="${id}">
-    <span class="layout-grip">☰</span><b>${tabLabel(id)}</b>
-    <button data-layout-up="${id}" ${i===0?"disabled":""}>↑</button>
-    <button data-layout-down="${id}" ${i===cfg.order.length-1?"disabled":""}>↓</button>
-    <button class="layout-toggle ${cfg.hidden.has(id)?"off":""}" data-layout-toggle="${id}">${cfg.hidden.has(id)?"숨김":"표시"}</button>
-  </div>`).join("");
-  const body=`<div class="layout-guide">하단 탭의 순서와 표시 여부를 편집할 수 있습니다. 숨긴 탭은 화면과 데이터를 지우지 않고 하단 메뉴와 좌우 스와이프 대상에서만 제외됩니다.</div>
-    <div class="section-title">하단 탭</div><div class="layout-tab-rows">${rows}</div>
-    <div class="section-title">초기화</div><button class="row reset-layout" data-action="resetLayout">기본값으로 초기화</button>`;
-  $("#app").innerHTML=standaloneShell("화면 구성 편집",body);bind();
+  state.layoutEditorMode=mode==="background"?"background":"layout";
+  const tabs=`<div class="layout-editor-mode-tabs" role="tablist" aria-label="화면 구성 편집">
+    <button type="button" class="${state.layoutEditorMode==="layout"?"active":""}" data-layout-editor-mode="layout">화면 구성</button>
+    <button type="button" class="${state.layoutEditorMode==="background"?"active":""}" data-layout-editor-mode="background">배경 설정</button>
+  </div>`;
+  let body="";
+  if(state.layoutEditorMode==="background"){
+    const cfg=backgroundThemeSettings();
+    body=`<div class="background-theme-editor">
+      <div class="layout-guide">이 배경은 다른 사용자에게 보이지 않고 이 iPhone/iPad의 렌톤 화면에만 적용됩니다.</div>
+      <div class="background-preview" id="backgroundPreview">
+        <img id="backgroundPreviewImage" alt="선택한 배경 미리보기" hidden>
+        <div id="backgroundPreviewEmpty" class="background-preview-empty">설정된 배경 이미지가 없습니다.</div>
+      </div>
+      <input id="backgroundImageInput" type="file" accept="image/*" hidden>
+      <div class="background-action-row">
+        <button type="button" class="outline-btn" id="pickBackgroundImage">사진 선택 / 변경</button>
+        <button type="button" class="outline-btn danger-text" id="removeBackgroundImage">배경 삭제</button>
+      </div>
+      <div class="background-opacity-row">
+        <div><b>배경 불투명도</b><span id="backgroundOpacityValue">${cfg.opacity}%</span></div>
+        <input id="backgroundOpacity" type="range" min="0" max="100" step="1" value="${cfg.opacity}">
+      </div>
+      <div class="background-apply-row"><button type="button" class="primary" id="applyBackgroundTheme">적용</button></div>
+    </div>`;
+  }else{
+    const cfg=mainTabLayout();
+    const rows=cfg.order.map((id,i)=>`<div class="layout-tab-row" data-layout-id="${id}">
+      <span class="layout-grip">☰</span><b>${tabLabel(id)}</b>
+      <button data-layout-up="${id}" ${i===0?"disabled":""}>↑</button>
+      <button data-layout-down="${id}" ${i===cfg.order.length-1?"disabled":""}>↓</button>
+      <button class="layout-toggle ${cfg.hidden.has(id)?"off":""}" data-layout-toggle="${id}">${cfg.hidden.has(id)?"숨김":"표시"}</button>
+    </div>`).join("");
+    body=`<div class="layout-guide">하단 탭의 순서와 표시 여부를 편집할 수 있습니다. 숨긴 탭은 화면과 데이터를 지우지 않고 하단 메뉴와 좌우 스와이프 대상에서만 제외됩니다.</div>
+      <div class="section-title">하단 탭</div><div class="layout-tab-rows">${rows}</div>
+      <div class="section-title">초기화</div><button class="row reset-layout" data-action="resetLayout">기본값으로 초기화</button>`;
+  }
+  $("#app").innerHTML=standaloneShell("화면 구성 편집",tabs+body);bind();
+  document.querySelectorAll("[data-layout-editor-mode]").forEach(b=>b.addEventListener("click",()=>screenLayoutEditor(b.dataset.layoutEditorMode)));
+  if(state.layoutEditorMode==="background"){bindBackgroundEditor();hydrateBackgroundEditor().catch(()=>{})}
 }
 function mutateLayout(id,dir){
   const cfg=mainTabLayout(),i=cfg.order.indexOf(id);if(i<0)return;
