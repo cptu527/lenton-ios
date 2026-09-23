@@ -1,4 +1,4 @@
-const CACHE="lenton-pwa-v4";
+const CACHE="lenton-pwa-v5";
 const SHELL=["./","./index.html","./styles.css","./app.js","./manifest.webmanifest","./generated/android-spec.js","./changelog.json","./icon-192.png","./icon-512.png","./icon-1024.png"];
 
 self.addEventListener("install",event=>{
