@@ -175,20 +175,21 @@ function bindBackgroundEditor(){
     backgroundEditorObjectUrl=URL.createObjectURL(file);setBackgroundEditorPreview(backgroundEditorObjectUrl,backgroundEditorDraftSettings());
   });
   $("#backgroundOpacity")?.addEventListener("input",syncBackgroundEditorPreview);
-  const preview=$("#backgroundPreview"),togglePosition=$("#toggleBackgroundPositionEdit"),positionHint=$("#backgroundPositionHint");
+  const preview=$("#backgroundPreview"),togglePosition=$("#toggleBackgroundPositionEdit"),positionHint=$("#backgroundPositionHint"),previewDone=$("#backgroundPreviewDone");
   let editing=false;
   const pointers=new Map();
   let panStartPoint=null,panStartX=50,panStartY=50,pinchStartDistance=0,pinchStartZoom=100;
-  const PAN_SENSITIVITY=.35;
+  const PAN_SENSITIVITY=.6;
   const setEditing=enabled=>{
     editing=!!enabled;
     pointers.clear();panStartPoint=null;pinchStartDistance=0;
     preview?.classList.toggle("position-editing",editing);
     if(togglePosition){
       togglePosition.classList.toggle("active",editing);
-      togglePosition.textContent=editing?"편집 끝내기":"미리보기에서 직접 편집";
+      togglePosition.textContent=editing?"편집 중":"미리보기에서 직접 편집";
     }
     if(positionHint)positionHint.hidden=!editing;
+    if(previewDone)previewDone.hidden=!editing;
   };
   const rebasePan=()=>{
     if(pointers.size!==1)return;
@@ -202,7 +203,8 @@ function bindBackgroundEditor(){
     pinchStartZoom=cfg.zoom;
     panStartPoint=null;
   };
-  togglePosition?.addEventListener("click",()=>setEditing(!editing));
+  togglePosition?.addEventListener("click",()=>{if(!editing)setEditing(true)});
+  previewDone?.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();setEditing(false)});
   if(preview){
     preview.addEventListener("pointerdown",e=>{
       if(!editing)return;
@@ -3222,7 +3224,8 @@ function screenLayoutEditor(mode=state.layoutEditorMode||"layout"){
           <div class="background-preview-fab">＋</div>
           <div class="background-preview-bottom"><span>⌂</span><span>⌕</span><span>♢</span><span>▢</span></div>
         </div>
-        <div class="background-position-hint" id="backgroundPositionHint" hidden><b>한 손가락으로 천천히 이동</b><span>두 손가락으로 확대·축소</span><em id="backgroundGestureZoom">확대 ${Math.round(cfg.zoom)}%</em></div>
+        <button type="button" class="background-preview-done" id="backgroundPreviewDone" hidden>완료</button>
+        <div class="background-position-hint" id="backgroundPositionHint" hidden><b>한 손가락으로 이동</b><span>두 손가락으로 확대·축소</span><em id="backgroundGestureZoom">확대 ${Math.round(cfg.zoom)}%</em></div>
         <div id="backgroundPreviewEmpty" class="background-preview-empty">사진을 선택하면 전체 화면 배치를 바로 확인할 수 있어요.</div>
       </div>
       <input id="backgroundImageInput" type="file" accept="image/*" hidden>
