@@ -178,24 +178,42 @@ function bindBackgroundEditor(){
     backgroundEditorObjectUrl=URL.createObjectURL(file);setBackgroundEditorPreview(backgroundEditorObjectUrl,backgroundEditorDraftSettings());
   });
   ["#backgroundOpacity","#backgroundZoom","#backgroundPositionX","#backgroundPositionY"].forEach(selector=>$(selector)?.addEventListener("input",syncBackgroundEditorPreview));
-  const preview=$("#backgroundPreview");
+  const preview=$("#backgroundPreview"),togglePosition=$("#toggleBackgroundPositionEdit"),positionHint=$("#backgroundPositionHint");
+  let positioningEnabled=false;
+  const setPositioningEnabled=enabled=>{
+    positioningEnabled=!!enabled;
+    preview?.classList.toggle("position-editing",positioningEnabled);
+    if(togglePosition){
+      togglePosition.classList.toggle("active",positioningEnabled);
+      togglePosition.textContent=positioningEnabled?"위치 조정 끝내기":"사진 위치 직접 조정";
+    }
+    if(positionHint)positionHint.hidden=!positioningEnabled;
+  };
+  togglePosition?.addEventListener("click",()=>setPositioningEnabled(!positioningEnabled));
   if(preview){
     let dragging=false,startX=0,startY=0,startPx=50,startPy=50;
     preview.addEventListener("pointerdown",e=>{
+      if(!positioningEnabled)return;
       const img=$("#backgroundPreviewImage");if(!img||img.hidden)return;
+      e.preventDefault();
       dragging=true;startX=e.clientX;startY=e.clientY;
       startPx=Number($("#backgroundPositionX")?.value||50);startPy=Number($("#backgroundPositionY")?.value||50);
       preview.classList.add("is-positioning");
       try{preview.setPointerCapture(e.pointerId)}catch{}
     });
     preview.addEventListener("pointermove",e=>{
-      if(!dragging)return;
+      if(!dragging||!positioningEnabled)return;
+      e.preventDefault();
       const rect=preview.getBoundingClientRect(),x=$("#backgroundPositionX"),y=$("#backgroundPositionY");
       if(x)x.value=String(Math.max(0,Math.min(100,startPx-((e.clientX-startX)/Math.max(1,rect.width))*100)));
       if(y)y.value=String(Math.max(0,Math.min(100,startPy-((e.clientY-startY)/Math.max(1,rect.height))*100)));
       syncBackgroundEditorPreview();
     });
-    const finish=e=>{if(!dragging)return;dragging=false;preview.classList.remove("is-positioning");try{preview.releasePointerCapture(e.pointerId)}catch{}};
+    const finish=e=>{
+      if(!dragging)return;
+      dragging=false;preview.classList.remove("is-positioning");
+      try{preview.releasePointerCapture(e.pointerId)}catch{}
+    };
     preview.addEventListener("pointerup",finish);preview.addEventListener("pointercancel",finish);
   }
   $("#resetBackgroundFraming")?.addEventListener("click",()=>{
@@ -205,6 +223,7 @@ function bindBackgroundEditor(){
   $("#openBackgroundFullPreview")?.addEventListener("click",openBackgroundFullPreview);
   remove?.addEventListener("click",()=>{
     state.backgroundDraftRemove=true;if(input)input.value="";
+    setPositioningEnabled(false);
     if(backgroundEditorObjectUrl){URL.revokeObjectURL(backgroundEditorObjectUrl);backgroundEditorObjectUrl=""}
     setBackgroundEditorPreview("",backgroundEditorDraftSettings());
   });
@@ -3162,6 +3181,7 @@ function screenLayoutEditor(mode=state.layoutEditorMode||"layout"){
           <div class="background-preview-fab">＋</div>
           <div class="background-preview-bottom"><span>⌂</span><span>⌕</span><span>♢</span><span>▢</span></div>
         </div>
+        <div class="background-position-hint" id="backgroundPositionHint" hidden>사진을 끌어서 위치를 조정하세요</div>
         <div id="backgroundPreviewEmpty" class="background-preview-empty">사진을 선택하면 전체 화면 배치를 바로 확인할 수 있어요.</div>
       </div>
       <input id="backgroundImageInput" type="file" accept="image/*" hidden>
@@ -3170,7 +3190,11 @@ function screenLayoutEditor(mode=state.layoutEditorMode||"layout"){
         <button type="button" class="outline-btn danger-text" id="removeBackgroundImage">배경 삭제</button>
       </div>
       <div class="background-edit-panel">
-        <div class="background-edit-title"><div><b>배경 편집</b><span>미리보기를 보면서 원하는 위치로 맞출 수 있어요.</span></div><button type="button" class="outline-btn" id="resetBackgroundFraming">위치 초기화</button></div>
+        <div class="background-edit-title"><div><b>배경 편집</b><span>평소에는 미리보기 위에서도 그대로 스크롤되고, 위치 조정 모드에서만 사진을 움직일 수 있어요.</span></div></div>
+        <div class="background-position-actions">
+          <button type="button" class="outline-btn" id="toggleBackgroundPositionEdit">사진 위치 직접 조정</button>
+          <button type="button" class="outline-btn" id="resetBackgroundFraming">위치 초기화</button>
+        </div>
         <label class="background-slider-row"><div><b>배경 불투명도</b><span id="backgroundOpacityValue">${cfg.opacity}%</span></div><input id="backgroundOpacity" type="range" min="0" max="100" step="1" value="${cfg.opacity}"></label>
         <label class="background-slider-row"><div><b>확대</b><span id="backgroundZoomValue">${cfg.zoom}%</span></div><input id="backgroundZoom" type="range" min="100" max="220" step="1" value="${cfg.zoom}"></label>
         <label class="background-slider-row"><div><b>가로 위치</b><span id="backgroundPositionXValue">${cfg.x}%</span></div><input id="backgroundPositionX" type="range" min="0" max="100" step="1" value="${cfg.x}"></label>
