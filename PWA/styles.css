@@ -4871,7 +4871,13 @@ img{display:block}
 
 
 /* 2026-09-22 notification true ViewPager */
-.lenton-notify-tabs{position:relative;overflow:hidden}
+.lenton-notify-tabs{
+  position:sticky;
+  top:calc(env(safe-area-inset-top) + var(--android-topbar));
+  z-index:28;
+  overflow:hidden;
+  background:var(--bg);
+}
 .lenton-notify-tabs button::after{display:none!important}
 .notify-tab-indicator{
   position:absolute;
