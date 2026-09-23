@@ -1,10 +1,10 @@
 window.LENTON_ANDROID_SPEC = {
   "schema": 1,
   "generatedFrom": "published-android-apk",
-  "versionCode": 254,
-  "versionName": "0.25.70",
-  "apkUrl": "https://raw.githubusercontent.com/cptu527/lenton-updates/main/Lenton-v0.25.70-test.apk",
-  "apkSha256": "c37b2109523fe2755f90707255ac35a7e885095e50f186d111f30706c0045052",
+  "versionCode": 255,
+  "versionName": "0.25.71",
+  "apkUrl": "https://raw.githubusercontent.com/cptu527/lenton-updates/main/Lenton-v0.25.71-test.apk",
+  "apkSha256": "348b6ebf19346c28f5231d86d94f6ef7ffcd0ed72999fe76657d554bbcfa8a36",
   "decompiledSource": "com/mastoflow/app/MainActivity.java",
   "homeTabs": {
     "chronological": "시간순",
@@ -245,7 +245,7 @@ window.LENTON_ANDROID_SPEC = {
     "draftGuard": true
   },
   "criticalSourceHashes": {
-    "activity": "c3ecc8e81c3d54aa07946f88573277576dcc41ad028010d2caacced2ee1a1cae",
+    "activity": "3e9dc8b6e93abd07f63015f0db2ed63062b0207bd9d780c0508f250664160262",
     "publicFilter": "de8d4cd01e5c5ee6a8080c67b280796c4ec6ca8c6a7ac26f9fe8fc2ec139f16e",
     "publicLoader": null,
     "bottomNav": "c9e5ab25ff7fdc90166f07aa328ceea36fc00948a60aa1b40a7ed01795bde8be",
