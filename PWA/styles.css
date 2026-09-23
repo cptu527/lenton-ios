@@ -5270,3 +5270,131 @@ img{display:block}
     content-visibility:visible;
   }
 }
+
+/* 2026-09-24 iPhone local background theme */
+.lenton-local-background{
+  position:fixed;
+  inset:0;
+  z-index:0;
+  pointer-events:none;
+  background-position:center center;
+  background-size:cover;
+  background-repeat:no-repeat;
+  opacity:0;
+  transform:translateZ(0);
+  will-change:opacity;
+}
+html.has-local-background body,
+html.has-local-background #app{background:transparent!important}
+html.has-local-background #app{position:relative;z-index:1}
+html.has-local-background .app,
+html.has-local-background .main{background:transparent!important}
+html.has-local-background .topbar,
+html.has-local-background .bottom{
+  background:color-mix(in srgb,var(--bg) 88%,transparent)!important;
+  -webkit-backdrop-filter:blur(14px) saturate(125%);
+  backdrop-filter:blur(14px) saturate(125%);
+}
+html.has-local-background .home-tabs,
+html.has-local-background .notify-tabs,
+html.has-local-background .lenton-notify-tabs,
+html.has-local-background .profile-tabs-4,
+html.has-local-background .profile-tabs-2,
+html.has-local-background .status,
+html.has-local-background .row,
+html.has-local-background .android-notify-card,
+html.has-local-background .message-row,
+html.has-local-background .dm-previous-conversation,
+html.has-local-background .notify-status,
+html.has-local-background .notify-simple{
+  background:color-mix(in srgb,var(--bg) 82%,transparent)!important;
+}
+html.has-local-background .android-notify-card.is-new{
+  background:color-mix(in srgb,var(--accent) 10%,color-mix(in srgb,var(--bg) 78%,transparent))!important;
+}
+html.has-local-background .notification-pager,
+html.has-local-background .notification-pager-track,
+html.has-local-background .notification-pager-page,
+html.has-local-background .home-pager,
+html.has-local-background .home-pager-track,
+html.has-local-background .home-pager-page{background:transparent!important}
+html.has-local-background .main-swipe-preview,
+html.has-local-background .home-swipe-preview,
+html.has-local-background .profile-swipe-preview{
+  background:color-mix(in srgb,var(--bg) 76%,transparent)!important;
+}
+html.has-local-background .drawer,
+html.has-local-background .sheet,
+html.has-local-background .modal,
+html.has-local-background .standalone-page{
+  background:color-mix(in srgb,var(--bg) 94%,transparent)!important;
+}
+html.has-local-background .sheet-head,
+html.has-local-background .dm-conversation-page .android-dm-compose{
+  background:color-mix(in srgb,var(--bg) 92%,transparent)!important;
+  -webkit-backdrop-filter:blur(12px);
+  backdrop-filter:blur(12px);
+}
+html.has-local-background .compose-context,
+html.has-local-background .compose-input,
+html.has-local-background .compose-meta-row,
+html.has-local-background .compose-tools,
+html.has-local-background .part{
+  background:color-mix(in srgb,var(--bg) 86%,transparent);
+}
+html.has-local-background .login{background:var(--bg)}
+
+.layout-editor-mode-tabs{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  height:50px;
+  border-bottom:1px solid var(--line);
+  background:var(--bg);
+}
+.layout-editor-mode-tabs button{
+  position:relative;
+  border:0;
+  background:none;
+  color:var(--sub);
+  font-size:15px;
+  font-weight:600;
+  padding:0;
+}
+.layout-editor-mode-tabs button.active{color:var(--fg);font-weight:800}
+.layout-editor-mode-tabs button.active::after{
+  content:"";
+  position:absolute;
+  left:50%;
+  bottom:0;
+  width:48px;
+  height:3px;
+  border-radius:999px;
+  transform:translateX(-50%);
+  background:var(--accent);
+}
+.background-theme-editor{padding-bottom:calc(28px + env(safe-area-inset-bottom))}
+.background-preview{
+  position:relative;
+  height:min(52vw,300px);
+  min-height:210px;
+  margin:18px;
+  border:1px solid var(--line);
+  border-radius:18px;
+  overflow:hidden;
+  display:grid;
+  place-items:center;
+  background:var(--surface);
+}
+.background-preview img{width:100%;height:100%;object-fit:cover;transition:opacity 120ms ease}
+.background-preview-empty{padding:24px;text-align:center;color:var(--sub);font-size:14px;line-height:1.5}
+.background-action-row{display:flex;gap:10px;padding:0 18px 18px}
+.background-action-row button{flex:1;min-height:44px}
+.background-opacity-row{padding:16px 18px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.background-opacity-row>div{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.background-opacity-row b{font-size:16px}
+.background-opacity-row span{color:var(--sub);font-size:14px;font-variant-numeric:tabular-nums}
+.background-opacity-row input[type="range"]{width:100%;accent-color:var(--accent)}
+.background-apply-row{display:flex;justify-content:flex-end;padding:18px}
+.background-apply-row .primary{min-width:112px;height:44px}
+html.has-local-background .layout-editor-mode-tabs{background:color-mix(in srgb,var(--bg) 94%,transparent)}
+html.has-local-background .background-theme-editor{background:color-mix(in srgb,var(--bg) 94%,transparent)}
