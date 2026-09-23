@@ -19,12 +19,16 @@ function backgroundAccountScope(){
 function backgroundConfigKey(scope=backgroundAccountScope()){return "lenton_background_theme_account_"+scope}
 function backgroundBlobStorageKey(scope=backgroundAccountScope()){return BACKGROUND_THEME_KEY+"::"+scope}
 function normalizeBackgroundSettings(raw={}){
+  const fitV2=raw.framing==="fit-v2";
   return {
     enabled:raw.enabled===true,
     opacity:Math.max(0,Math.min(100,Number(raw.opacity??24)||0)),
-    zoom:Math.max(100,Math.min(220,Number(raw.zoom??100)||100)),
+    zoom:Math.max(100,Math.min(fitV2?1600:220,Number(raw.zoom??100)||100)),
     x:Math.max(0,Math.min(100,Number(raw.x??50)||50)),
-    y:Math.max(0,Math.min(100,Number(raw.y??50)||50))
+    y:Math.max(0,Math.min(100,Number(raw.y??50)||50)),
+    framing:fitV2?"fit-v2":"legacy",
+    offsetX:Math.max(-3200,Math.min(3200,Number(raw.offsetX??0)||0)),
+    offsetY:Math.max(-3200,Math.min(3200,Number(raw.offsetY??0)||0))
   };
 }
 function backgroundThemeSettings(){
@@ -96,6 +100,14 @@ function backgroundFrameMetrics(img,cfg){
   const cw=Math.max(1,rect?.width||host?.clientWidth||0),ch=Math.max(1,rect?.height||host?.clientHeight||0);
   const nw=Math.max(1,img?.naturalWidth||0),nh=Math.max(1,img?.naturalHeight||0);
   if(!cw||!ch||!nw||!nh)return null;
+  if(cfg?.framing==="fit-v2"){
+    const zoom=Math.max(1,Math.min(16,Number(cfg?.zoom||100)/100));
+    const fit=Math.min(cw/nw,ch/nh);
+    const width=nw*fit*zoom,height=nh*fit*zoom;
+    const offsetX=cw*Math.max(-3200,Math.min(3200,Number(cfg?.offsetX||0)))/220;
+    const offsetY=ch*Math.max(-3200,Math.min(3200,Number(cfg?.offsetY||0)))/220;
+    return {cw,ch,width,height,maxX:Infinity,maxY:Infinity,offsetX,offsetY};
+  }
   const zoom=Math.max(1,Math.min(2.2,Number(cfg?.zoom||100)/100));
   const cover=Math.max(cw/nw,ch/nh);
   const width=nw*cover*zoom,height=nh*cover*zoom;
