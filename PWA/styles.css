@@ -5257,3 +5257,16 @@ img{display:block}
   width:23px;
   height:23px;
 }
+
+
+/* 2026-09-23 Home/Public native render virtualization.
+   Keep DOM/state intact, but let Safari skip layout/paint for distant timeline cards. */
+@supports (content-visibility:auto){
+  .lenton-view-home .home-pager-page > .status{
+    content-visibility:auto;
+    contain-intrinsic-size:auto 240px;
+  }
+  .lenton-view-home .home-pager-page > .status:focus-within{
+    content-visibility:visible;
+  }
+}
