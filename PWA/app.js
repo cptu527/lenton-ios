@@ -91,11 +91,35 @@ function ensureLocalBackgroundLayer(){
   if(!img){img=document.createElement("img");img.className="lenton-local-background-image";img.alt="";layer.append(img)}
   return {layer,img};
 }
+function backgroundFrameMetrics(img,cfg){
+  const host=img?.parentElement,rect=host?.getBoundingClientRect?.();
+  const cw=Math.max(1,rect?.width||host?.clientWidth||0),ch=Math.max(1,rect?.height||host?.clientHeight||0);
+  const nw=Math.max(1,img?.naturalWidth||0),nh=Math.max(1,img?.naturalHeight||0);
+  if(!cw||!ch||!nw||!nh)return null;
+  const zoom=Math.max(1,Math.min(2.2,Number(cfg?.zoom||100)/100));
+  const cover=Math.max(cw/nw,ch/nh);
+  const width=nw*cover*zoom,height=nh*cover*zoom;
+  const maxX=Math.max(0,(width-cw)/2),maxY=Math.max(0,(height-ch)/2);
+  const x=Math.max(0,Math.min(100,Number(cfg?.x??50))),y=Math.max(0,Math.min(100,Number(cfg?.y??50)));
+  const offsetX=maxX?((50-x)/50)*maxX:0,offsetY=maxY?((50-y)/50)*maxY:0;
+  return {cw,ch,width,height,maxX,maxY,offsetX,offsetY};
+}
 function applyBackgroundImageFraming(img,cfg){
   if(!img)return;
-  img.style.objectPosition=cfg.x+"% "+cfg.y+"%";
-  img.style.transform="scale("+(cfg.zoom/100)+")";
-  img.style.transformOrigin=cfg.x+"% "+cfg.y+"%";
+  if(!(img.naturalWidth>0&&img.naturalHeight>0)){
+    img.addEventListener("load",()=>applyBackgroundImageFraming(img,cfg),{once:true});
+    return;
+  }
+  const m=backgroundFrameMetrics(img,cfg);if(!m)return;
+  img.style.width=m.width+"px";
+  img.style.height=m.height+"px";
+  img.style.left="50%";
+  img.style.top="50%";
+  img.style.right="auto";
+  img.style.bottom="auto";
+  img.style.objectPosition="50% 50%";
+  img.style.transform="translate(-50%,-50%) translate3d("+m.offsetX+"px,"+m.offsetY+"px,0)";
+  img.style.transformOrigin="50% 50%";
 }
 async function applySavedBackgroundTheme(){
   const cfg=backgroundThemeSettings(),parts=ensureLocalBackgroundLayer(),layer=parts.layer,img=parts.img;
@@ -167,6 +191,7 @@ function openBackgroundFullPreview(){
   const clone=source.cloneNode(true);clone.removeAttribute("id");clone.classList.add("background-preview-full");
   clone.querySelectorAll("[id]").forEach(el=>el.removeAttribute("id"));
   shade.append(close,clone);document.body.append(shade);
+  requestAnimationFrame(()=>{const img=clone.querySelector("img");if(img&&!img.hidden)applyBackgroundImageFraming(img,backgroundEditorDraftSettings())});
   const done=()=>shade.remove();close.onclick=done;shade.onclick=e=>{if(e.target===shade)done()};
 }
 function bindBackgroundEditor(){
@@ -180,8 +205,11 @@ function bindBackgroundEditor(){
   ["#backgroundOpacity","#backgroundZoom","#backgroundPositionX","#backgroundPositionY"].forEach(selector=>$(selector)?.addEventListener("input",syncBackgroundEditorPreview));
   const preview=$("#backgroundPreview"),togglePosition=$("#toggleBackgroundPositionEdit"),positionHint=$("#backgroundPositionHint");
   let positioningEnabled=false;
+  const pointers=new Map();
+  let panStart=null,pinchStartDistance=0,pinchStartZoom=100;
   const setPositioningEnabled=enabled=>{
     positioningEnabled=!!enabled;
+    pointers.clear();panStart=null;pinchStartDistance=0;
     preview?.classList.toggle("position-editing",positioningEnabled);
     if(togglePosition){
       togglePosition.classList.toggle("active",positioningEnabled);
@@ -189,30 +217,71 @@ function bindBackgroundEditor(){
     }
     if(positionHint)positionHint.hidden=!positioningEnabled;
   };
+  const cfgToControls=cfg=>{
+    const z=$("#backgroundZoom"),x=$("#backgroundPositionX"),y=$("#backgroundPositionY");
+    if(z)z.value=String(Math.round(cfg.zoom));
+    if(x)x.value=String(Math.max(0,Math.min(100,cfg.x)));
+    if(y)y.value=String(Math.max(0,Math.min(100,cfg.y)));
+  };
+  const rebasePan=()=>{
+    if(pointers.size!==1)return;
+    const img=$("#backgroundPreviewImage"),p=[...pointers.values()][0],cfg=backgroundEditorDraftSettings(),m=backgroundFrameMetrics(img,cfg);
+    if(!m)return;
+    panStart={pointerX:p.x,pointerY:p.y,offsetX:m.offsetX,offsetY:m.offsetY,maxX:m.maxX,maxY:m.maxY,cfg};
+  };
+  const startPinch=()=>{
+    if(pointers.size<2)return;
+    const [a,b]=[...pointers.values()].slice(0,2);
+    pinchStartDistance=Math.max(1,Math.hypot(a.x-b.x,a.y-b.y));
+    pinchStartZoom=backgroundEditorDraftSettings().zoom;
+    panStart=null;
+  };
   togglePosition?.addEventListener("click",()=>setPositioningEnabled(!positioningEnabled));
   if(preview){
-    let dragging=false,startX=0,startY=0,startPx=50,startPy=50;
     preview.addEventListener("pointerdown",e=>{
       if(!positioningEnabled)return;
       const img=$("#backgroundPreviewImage");if(!img||img.hidden)return;
       e.preventDefault();
-      dragging=true;startX=e.clientX;startY=e.clientY;
-      startPx=Number($("#backgroundPositionX")?.value||50);startPy=Number($("#backgroundPositionY")?.value||50);
-      preview.classList.add("is-positioning");
+      pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
       try{preview.setPointerCapture(e.pointerId)}catch{}
+      preview.classList.add("is-positioning");
+      if(pointers.size===1)rebasePan();
+      else if(pointers.size===2)startPinch();
     });
     preview.addEventListener("pointermove",e=>{
-      if(!dragging||!positioningEnabled)return;
+      if(!positioningEnabled||!pointers.has(e.pointerId))return;
       e.preventDefault();
-      const rect=preview.getBoundingClientRect(),x=$("#backgroundPositionX"),y=$("#backgroundPositionY");
-      if(x)x.value=String(Math.max(0,Math.min(100,startPx-((e.clientX-startX)/Math.max(1,rect.width))*100)));
-      if(y)y.value=String(Math.max(0,Math.min(100,startPy-((e.clientY-startY)/Math.max(1,rect.height))*100)));
-      syncBackgroundEditorPreview();
+      pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+      if(pointers.size>=2){
+        const [a,b]=[...pointers.values()].slice(0,2);
+        if(!pinchStartDistance)startPinch();
+        const distance=Math.max(1,Math.hypot(a.x-b.x,a.y-b.y));
+        const zoom=Math.max(100,Math.min(220,pinchStartZoom*(distance/Math.max(1,pinchStartDistance))));
+        const cfg={...backgroundEditorDraftSettings(),zoom};
+        cfgToControls(cfg);syncBackgroundEditorPreview();
+        return;
+      }
+      if(pointers.size===1){
+        if(!panStart)rebasePan();
+        if(!panStart)return;
+        const p=[...pointers.values()][0],img=$("#backgroundPreviewImage"),cfg=backgroundEditorDraftSettings(),m=backgroundFrameMetrics(img,cfg);
+        if(!m)return;
+        const desiredX=Math.max(-m.maxX,Math.min(m.maxX,panStart.offsetX+(p.x-panStart.pointerX)));
+        const desiredY=Math.max(-m.maxY,Math.min(m.maxY,panStart.offsetY+(p.y-panStart.pointerY)));
+        cfg.x=m.maxX>0?50-(desiredX/m.maxX)*50:50;
+        cfg.y=m.maxY>0?50-(desiredY/m.maxY)*50:50;
+        cfgToControls(cfg);syncBackgroundEditorPreview();
+      }
     });
     const finish=e=>{
-      if(!dragging)return;
-      dragging=false;preview.classList.remove("is-positioning");
+      if(!pointers.has(e.pointerId))return;
+      pointers.delete(e.pointerId);
       try{preview.releasePointerCapture(e.pointerId)}catch{}
+      if(pointers.size===0){
+        preview.classList.remove("is-positioning");panStart=null;pinchStartDistance=0;
+      }else if(pointers.size===1){
+        pinchStartDistance=0;rebasePan();
+      }else startPinch();
     };
     preview.addEventListener("pointerup",finish);preview.addEventListener("pointercancel",finish);
   }
@@ -3181,7 +3250,7 @@ function screenLayoutEditor(mode=state.layoutEditorMode||"layout"){
           <div class="background-preview-fab">＋</div>
           <div class="background-preview-bottom"><span>⌂</span><span>⌕</span><span>♢</span><span>▢</span></div>
         </div>
-        <div class="background-position-hint" id="backgroundPositionHint" hidden>사진을 끌어서 위치를 조정하세요</div>
+        <div class="background-position-hint" id="backgroundPositionHint" hidden>한 손가락 이동 · 두 손가락 확대/축소</div>
         <div id="backgroundPreviewEmpty" class="background-preview-empty">사진을 선택하면 전체 화면 배치를 바로 확인할 수 있어요.</div>
       </div>
       <input id="backgroundImageInput" type="file" accept="image/*" hidden>
