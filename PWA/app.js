@@ -96,13 +96,12 @@ function backgroundFrameMetrics(img,cfg){
   const cw=Math.max(1,rect?.width||host?.clientWidth||0),ch=Math.max(1,rect?.height||host?.clientHeight||0);
   const nw=Math.max(1,img?.naturalWidth||0),nh=Math.max(1,img?.naturalHeight||0);
   if(!cw||!ch||!nw||!nh)return null;
-  const zoom=Math.max(1,Math.min(2.2,Number(cfg?.zoom||100)/100));
-  const cover=Math.max(cw/nw,ch/nh);
-  const width=nw*cover*zoom,height=nh*cover*zoom;
-  const maxX=Math.max(0,(width-cw)/2),maxY=Math.max(0,(height-ch)/2);
+  const zoom=Math.max(1,Math.min(6,Number(cfg?.zoom||100)/100));
+  const fit=Math.min(cw/nw,ch/nh);
+  const width=nw*fit*zoom,height=nh*fit*zoom;
   const x=Math.max(0,Math.min(100,Number(cfg?.x??50))),y=Math.max(0,Math.min(100,Number(cfg?.y??50)));
-  const offsetX=maxX?((50-x)/50)*maxX:0,offsetY=maxY?((50-y)/50)*maxY:0;
-  return {cw,ch,width,height,maxX,maxY,offsetX,offsetY};
+  const offsetX=cw*((50-x)*2)/220,offsetY=ch*((50-y)*2)/220;
+  return {cw,ch,width,height,offsetX,offsetY};
 }
 function applyBackgroundImageFraming(img,cfg){
   if(!img)return;
@@ -121,194 +120,184 @@ function applyBackgroundImageFraming(img,cfg){
   img.style.transform="translate(-50%,-50%) translate3d("+m.offsetX+"px,"+m.offsetY+"px,0)";
   img.style.transformOrigin="50% 50%";
 }
-async function applySavedBackgroundTheme(){
-  const cfg=backgroundThemeSettings(),parts=ensureLocalBackgroundLayer(),layer=parts.layer,img=parts.img;
-  let blob=null;
-  if(cfg.enabled){try{blob=await backgroundBlobRead()}catch{blob=null}}
-  if(backgroundActiveObjectUrl){URL.revokeObjectURL(backgroundActiveObjectUrl);backgroundActiveObjectUrl=""}
-  layer.style.backgroundImage="";
-  if(blob){
-    backgroundActiveObjectUrl=URL.createObjectURL(blob);
-    img.src=backgroundActiveObjectUrl;img.hidden=false;applyBackgroundImageFraming(img,cfg);
-    layer.style.opacity=String(cfg.opacity/100);
-    document.documentElement.classList.add("has-local-background");
-  }else{
-    img.removeAttribute("src");img.hidden=true;layer.style.opacity="0";document.documentElement.classList.remove("has-local-background");
-  }
-}
-function setBackgroundEditorPreview(src,cfg){
-  const preview=$("#backgroundPreview"),img=$("#backgroundPreviewImage"),empty=$("#backgroundPreviewEmpty");
-  if(!preview||!img||!empty)return;
-  if(src){
-    img.src=src;img.hidden=false;img.style.opacity=String(cfg.opacity/100);applyBackgroundImageFraming(img,cfg);
-    empty.hidden=true;preview.classList.add("has-image");
-  }else{
-    img.removeAttribute("src");img.hidden=true;empty.hidden=false;preview.classList.remove("has-image");
-  }
-}
 function backgroundEditorDraftSettings(){
   const base=backgroundThemeSettings();
   return normalizeBackgroundSettings({
     enabled:true,
     opacity:Number($("#backgroundOpacity")?.value??base.opacity),
-    zoom:Number($("#backgroundZoom")?.value??base.zoom),
-    x:Number($("#backgroundPositionX")?.value??base.x),
-    y:Number($("#backgroundPositionY")?.value??base.y)
+    zoom:base.zoom,
+    x:base.x,
+    y:base.y
   });
 }
 function refreshBackgroundEditorLabels(cfg){
-  const pairs=[
-    ["#backgroundOpacityValue",cfg.opacity+"%"],
-    ["#backgroundZoomValue",cfg.zoom+"%"],
-    ["#backgroundPositionXValue",cfg.x+"%"],
-    ["#backgroundPositionYValue",cfg.y+"%"]
-  ];
-  for(const [selector,value] of pairs){const el=$(selector);if(el)el.textContent=value}
-}
-function syncBackgroundEditorPreview(){
-  const cfg=backgroundEditorDraftSettings();refreshBackgroundEditorLabels(cfg);
-  const img=$("#backgroundPreviewImage");
-  if(img&&!img.hidden){img.style.opacity=String(cfg.opacity/100);applyBackgroundImageFraming(img,cfg)}
+  const opacity=$("#backgroundOpacityValue");
+  if(opacity)opacity.textContent=cfg.opacity+"%";
 }
 async function hydrateBackgroundEditor(){
   const opacity=$("#backgroundOpacity");if(!opacity)return;
   const cfg=backgroundThemeSettings();
-  opacity.value=String(cfg.opacity);
-  const zoom=$("#backgroundZoom"),x=$("#backgroundPositionX"),y=$("#backgroundPositionY");
-  if(zoom)zoom.value=String(cfg.zoom);if(x)x.value=String(cfg.x);if(y)y.value=String(cfg.y);
-  refreshBackgroundEditorLabels(cfg);
-  if(backgroundEditorObjectUrl){URL.revokeObjectURL(backgroundEditorObjectUrl);backgroundEditorObjectUrl=""}
-  let blob=null;try{blob=await backgroundBlobRead()}catch{}
-  if(blob&&cfg.enabled){backgroundEditorObjectUrl=URL.createObjectURL(blob);setBackgroundEditorPreview(backgroundEditorObjectUrl,cfg)}
-  else setBackgroundEditorPreview("",cfg);
+  opacity.value=String(cfg.opacity);refreshBackgroundEditorLabels(cfg);
   state.backgroundDraftRemove=false;
 }
-function openBackgroundFullPreview(){
-  const source=$("#backgroundPreview");if(!source)return;
-  document.querySelector(".background-full-preview-shade")?.remove();
-  const shade=document.createElement("div");shade.className="background-full-preview-shade";
-  const close=document.createElement("button");close.type="button";close.className="background-full-preview-close";close.textContent="닫기";
-  const clone=source.cloneNode(true);clone.removeAttribute("id");clone.classList.add("background-preview-full");
-  clone.querySelectorAll("[id]").forEach(el=>el.removeAttribute("id"));
-  shade.append(close,clone);document.body.append(shade);
-  requestAnimationFrame(()=>{const img=clone.querySelector("img");if(img&&!img.hidden)applyBackgroundImageFraming(img,backgroundEditorDraftSettings())});
-  const done=()=>shade.remove();close.onclick=done;shade.onclick=e=>{if(e.target===shade)done()};
+function modalBackgroundSettingsToOffset(stage,cfg){
+  const rect=stage.getBoundingClientRect();
+  return {
+    x:rect.width*((50-cfg.x)*2)/220,
+    y:rect.height*((50-cfg.y)*2)/220
+  };
 }
-function bindBackgroundEditor(){
-  const input=$("#backgroundImageInput"),pick=$("#pickBackgroundImage"),remove=$("#removeBackgroundImage"),apply=$("#applyBackgroundTheme");
-  pick?.addEventListener("click",()=>input?.click());
-  input?.addEventListener("change",()=>{
-    const file=input.files?.[0];if(!file)return;state.backgroundDraftRemove=false;
-    if(backgroundEditorObjectUrl){URL.revokeObjectURL(backgroundEditorObjectUrl);backgroundEditorObjectUrl=""}
-    backgroundEditorObjectUrl=URL.createObjectURL(file);setBackgroundEditorPreview(backgroundEditorObjectUrl,backgroundEditorDraftSettings());
+function modalBackgroundOffsetToSettings(stage,draft,offsetX,offsetY){
+  const rect=stage.getBoundingClientRect();
+  return normalizeBackgroundSettings({
+    ...draft,
+    x:rect.width?50-(offsetX*110/rect.width):50,
+    y:rect.height?50-(offsetY*110/rect.height):50
   });
-  ["#backgroundOpacity","#backgroundZoom","#backgroundPositionX","#backgroundPositionY"].forEach(selector=>$(selector)?.addEventListener("input",syncBackgroundEditorPreview));
-  const preview=$("#backgroundPreview"),togglePosition=$("#toggleBackgroundPositionEdit"),positionHint=$("#backgroundPositionHint");
-  let positioningEnabled=false;
+}
+function renderBackgroundModalImage(stage,img,draft){
+  if(!(img.naturalWidth>0&&img.naturalHeight>0))return;
+  const rect=stage.getBoundingClientRect(),fit=Math.min(rect.width/img.naturalWidth,rect.height/img.naturalHeight);
+  const zoom=Math.max(1,Math.min(6,draft.zoom/100));
+  const width=img.naturalWidth*fit*zoom,height=img.naturalHeight*fit*zoom;
+  const off=modalBackgroundSettingsToOffset(stage,draft);
+  img.style.width=width+"px";img.style.height=height+"px";
+  img.style.left="50%";img.style.top="50%";
+  img.style.transform="translate(-50%,-50%) translate3d("+off.x+"px,"+off.y+"px,0)";
+}
+function openAndroidStyleBackgroundEditor(src,{file=null,isNew=false,revokeOnClose=false}={}){
+  if(!src)return;
+  document.querySelector(".background-image-editor-shade")?.remove();
+  const base=backgroundThemeSettings();
+  let draft=normalizeBackgroundSettings({
+    ...base,
+    enabled:true,
+    zoom:isNew?100:base.zoom,
+    x:isNew?50:base.x,
+    y:isNew?50:base.y
+  });
+  const shade=document.createElement("div");shade.className="background-image-editor-shade";
+  const panel=document.createElement("div");panel.className="background-image-editor-panel";
+  panel.innerHTML=`<div class="background-image-editor-title">배경 이미지 위치 맞추기</div>
+    <div class="background-image-editor-hint">화면에 보이는 사진을 한 손가락으로 이동하고 · 두 손가락으로 확대/축소하세요</div>
+    <div class="background-image-editor-stage"><img alt="배경 이미지 편집"></div>
+    <div class="background-image-editor-actions">
+      <button type="button" data-bg-editor-reset>초기화</button>
+      <button type="button" data-bg-editor-cancel>취소</button>
+      <button type="button" class="primary-text" data-bg-editor-apply>적용</button>
+    </div>`;
+  shade.append(panel);document.body.append(shade);
+  const stage=panel.querySelector(".background-image-editor-stage"),img=stage.querySelector("img");
+  const vw=Math.max(1,window.innerWidth||390),vh=Math.max(1,window.innerHeight||844);
+  stage.style.aspectRatio=vw+" / "+vh;
+  img.src=src;
+  const render=()=>renderBackgroundModalImage(stage,img,draft);
+  if(img.complete)requestAnimationFrame(render);else img.addEventListener("load",()=>requestAnimationFrame(render),{once:true});
   const pointers=new Map();
-  let panStart=null,pinchStartDistance=0,pinchStartZoom=100;
-  const setPositioningEnabled=enabled=>{
-    positioningEnabled=!!enabled;
-    pointers.clear();panStart=null;pinchStartDistance=0;
-    preview?.classList.toggle("position-editing",positioningEnabled);
-    if(togglePosition){
-      togglePosition.classList.toggle("active",positioningEnabled);
-      togglePosition.textContent=positioningEnabled?"위치 조정 끝내기":"사진 위치 직접 조정";
-    }
-    if(positionHint)positionHint.hidden=!positioningEnabled;
-  };
-  const cfgToControls=cfg=>{
-    const z=$("#backgroundZoom"),x=$("#backgroundPositionX"),y=$("#backgroundPositionY");
-    if(z)z.value=String(Math.round(cfg.zoom));
-    if(x)x.value=String(Math.max(0,Math.min(100,cfg.x)));
-    if(y)y.value=String(Math.max(0,Math.min(100,cfg.y)));
-  };
-  const rebasePan=()=>{
+  let panStart=null,pinchStart=null;
+  const beginPan=()=>{
     if(pointers.size!==1)return;
-    const img=$("#backgroundPreviewImage"),p=[...pointers.values()][0],cfg=backgroundEditorDraftSettings(),m=backgroundFrameMetrics(img,cfg);
-    if(!m)return;
-    panStart={pointerX:p.x,pointerY:p.y,offsetX:m.offsetX,offsetY:m.offsetY,maxX:m.maxX,maxY:m.maxY,cfg};
+    const p=[...pointers.values()][0],off=modalBackgroundSettingsToOffset(stage,draft);
+    panStart={px:p.x,py:p.y,ox:off.x,oy:off.y};
   };
-  const startPinch=()=>{
+  const beginPinch=()=>{
     if(pointers.size<2)return;
-    const [a,b]=[...pointers.values()].slice(0,2);
-    pinchStartDistance=Math.max(1,Math.hypot(a.x-b.x,a.y-b.y));
-    pinchStartZoom=backgroundEditorDraftSettings().zoom;
+    const [a,b]=[...pointers.values()].slice(0,2),rect=stage.getBoundingClientRect(),off=modalBackgroundSettingsToOffset(stage,draft);
+    pinchStart={
+      distance:Math.max(1,Math.hypot(a.x-b.x,a.y-b.y)),
+      zoom:draft.zoom,
+      centerX:(a.x+b.x)/2-rect.left,
+      centerY:(a.y+b.y)/2-rect.top,
+      ox:off.x,oy:off.y
+    };
     panStart=null;
   };
-  togglePosition?.addEventListener("click",()=>setPositioningEnabled(!positioningEnabled));
-  if(preview){
-    preview.addEventListener("pointerdown",e=>{
-      if(!positioningEnabled)return;
-      const img=$("#backgroundPreviewImage");if(!img||img.hidden)return;
-      e.preventDefault();
-      pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
-      try{preview.setPointerCapture(e.pointerId)}catch{}
-      preview.classList.add("is-positioning");
-      if(pointers.size===1)rebasePan();
-      else if(pointers.size===2)startPinch();
-    });
-    preview.addEventListener("pointermove",e=>{
-      if(!positioningEnabled||!pointers.has(e.pointerId))return;
-      e.preventDefault();
-      pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
-      if(pointers.size>=2){
-        const [a,b]=[...pointers.values()].slice(0,2);
-        if(!pinchStartDistance)startPinch();
-        const distance=Math.max(1,Math.hypot(a.x-b.x,a.y-b.y));
-        const zoom=Math.max(100,Math.min(220,pinchStartZoom*(distance/Math.max(1,pinchStartDistance))));
-        const cfg={...backgroundEditorDraftSettings(),zoom};
-        cfgToControls(cfg);syncBackgroundEditorPreview();
-        return;
-      }
-      if(pointers.size===1){
-        if(!panStart)rebasePan();
-        if(!panStart)return;
-        const p=[...pointers.values()][0],img=$("#backgroundPreviewImage"),cfg=backgroundEditorDraftSettings(),m=backgroundFrameMetrics(img,cfg);
-        if(!m)return;
-        const desiredX=Math.max(-m.maxX,Math.min(m.maxX,panStart.offsetX+(p.x-panStart.pointerX)));
-        const desiredY=Math.max(-m.maxY,Math.min(m.maxY,panStart.offsetY+(p.y-panStart.pointerY)));
-        cfg.x=m.maxX>0?50-(desiredX/m.maxX)*50:50;
-        cfg.y=m.maxY>0?50-(desiredY/m.maxY)*50:50;
-        cfgToControls(cfg);syncBackgroundEditorPreview();
-      }
-    });
-    const finish=e=>{
-      if(!pointers.has(e.pointerId))return;
-      pointers.delete(e.pointerId);
-      try{preview.releasePointerCapture(e.pointerId)}catch{}
-      if(pointers.size===0){
-        preview.classList.remove("is-positioning");panStart=null;pinchStartDistance=0;
-      }else if(pointers.size===1){
-        pinchStartDistance=0;rebasePan();
-      }else startPinch();
-    };
-    preview.addEventListener("pointerup",finish);preview.addEventListener("pointercancel",finish);
-  }
-  $("#resetBackgroundFraming")?.addEventListener("click",()=>{
-    const z=$("#backgroundZoom"),x=$("#backgroundPositionX"),y=$("#backgroundPositionY");
-    if(z)z.value="100";if(x)x.value="50";if(y)y.value="50";syncBackgroundEditorPreview();
+  stage.addEventListener("pointerdown",e=>{
+    e.preventDefault();pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    try{stage.setPointerCapture(e.pointerId)}catch{}
+    stage.classList.add("is-editing");
+    if(pointers.size===1)beginPan();else if(pointers.size===2)beginPinch();
   });
-  $("#openBackgroundFullPreview")?.addEventListener("click",openBackgroundFullPreview);
-  remove?.addEventListener("click",()=>{
-    state.backgroundDraftRemove=true;if(input)input.value="";
-    setPositioningEnabled(false);
-    if(backgroundEditorObjectUrl){URL.revokeObjectURL(backgroundEditorObjectUrl);backgroundEditorObjectUrl=""}
-    setBackgroundEditorPreview("",backgroundEditorDraftSettings());
+  stage.addEventListener("pointermove",e=>{
+    if(!pointers.has(e.pointerId))return;
+    e.preventDefault();pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pointers.size>=2){
+      const [a,b]=[...pointers.values()].slice(0,2),rect=stage.getBoundingClientRect();
+      if(!pinchStart)beginPinch();
+      const distance=Math.max(1,Math.hypot(a.x-b.x,a.y-b.y));
+      const ratio=distance/Math.max(1,pinchStart.distance);
+      const zoom=Math.max(100,Math.min(600,pinchStart.zoom*ratio));
+      const localX=(a.x+b.x)/2-rect.left,localY=(a.y+b.y)/2-rect.top;
+      const scaleRatio=zoom/Math.max(1,pinchStart.zoom);
+      const nextOx=(localX-rect.width/2)-scaleRatio*(pinchStart.centerX-rect.width/2-pinchStart.ox);
+      const nextOy=(localY-rect.height/2)-scaleRatio*(pinchStart.centerY-rect.height/2-pinchStart.oy);
+      draft=modalBackgroundOffsetToSettings(stage,{...draft,zoom},nextOx,nextOy);draft.zoom=zoom;render();return;
+    }
+    if(pointers.size===1){
+      if(!panStart)beginPan();if(!panStart)return;
+      const p=[...pointers.values()][0];
+      draft=modalBackgroundOffsetToSettings(stage,draft,panStart.ox+(p.x-panStart.px),panStart.oy+(p.y-panStart.py));
+      render();
+    }
+  });
+  const endPointer=e=>{
+    if(!pointers.has(e.pointerId))return;
+    pointers.delete(e.pointerId);try{stage.releasePointerCapture(e.pointerId)}catch{}
+    if(pointers.size===0){stage.classList.remove("is-editing");panStart=null;pinchStart=null}
+    else if(pointers.size===1){pinchStart=null;beginPan()}else beginPinch();
+  };
+  stage.addEventListener("pointerup",endPointer);stage.addEventListener("pointercancel",endPointer);
+  const close=()=>{shade.remove();if(revokeOnClose)try{URL.revokeObjectURL(src)}catch{}};
+  panel.querySelector("[data-bg-editor-cancel]").onclick=close;
+  panel.querySelector("[data-bg-editor-reset]").onclick=()=>{draft=normalizeBackgroundSettings({...draft,zoom:100,x:50,y:50});render()};
+  panel.querySelector("[data-bg-editor-apply]").onclick=async()=>{
+    const btn=panel.querySelector("[data-bg-editor-apply]");btn.disabled=true;btn.textContent="적용 중…";
+    try{
+      if(file)await backgroundBlobWrite(file);
+      const opacity=Number($("#backgroundOpacity")?.value??base.opacity);
+      saveBackgroundThemeSettings({...draft,opacity,enabled:true});
+      await applySavedBackgroundTheme();
+      close();screenLayoutEditor("background");toast("배경 이미지 위치를 적용했어요.");
+    }catch(e){btn.disabled=false;btn.textContent="적용";toast(e?.message||"배경 이미지를 적용하지 못했어요.")}
+  };
+}
+function bindBackgroundEditor(){
+  const input=$("#backgroundImageInput"),pick=$("#pickBackgroundImage"),edit=$("#editBackgroundImage"),remove=$("#removeBackgroundImage"),apply=$("#applyBackgroundTheme"),opacity=$("#backgroundOpacity");
+  pick?.addEventListener("click",()=>input?.click());
+  input?.addEventListener("change",()=>{
+    const file=input.files?.[0];if(!file)return;
+    const url=URL.createObjectURL(file);
+    openAndroidStyleBackgroundEditor(url,{file,isNew:true,revokeOnClose:true});
+    input.value="";
+  });
+  edit?.addEventListener("click",async()=>{
+    try{
+      const blob=await backgroundBlobRead();
+      if(!blob){toast("먼저 배경 이미지를 선택해 주세요.");return}
+      const url=URL.createObjectURL(blob);
+      openAndroidStyleBackgroundEditor(url,{file:null,isNew:false,revokeOnClose:true});
+    }catch{toast("배경 이미지를 불러오지 못했어요.")}
+  });
+  remove?.addEventListener("click",async()=>{
+    try{
+      await backgroundBlobDelete();
+      const cfg=backgroundThemeSettings();saveBackgroundThemeSettings({...cfg,enabled:false});
+      await applySavedBackgroundTheme();screenLayoutEditor("background");toast("이 계정의 배경을 삭제했어요.");
+    }catch(e){toast(e?.message||"배경 이미지를 삭제하지 못했어요.")}
+  });
+  opacity?.addEventListener("input",()=>{
+    const n=Math.max(0,Math.min(100,Number(opacity.value)||0));const label=$("#backgroundOpacityValue");if(label)label.textContent=n+"%";
+    const layer=$("#lentonLocalBackground");if(layer&&document.documentElement.classList.contains("has-local-background"))layer.style.opacity=String(n/100);
   });
   apply?.addEventListener("click",()=>applyBackgroundEditorSettings());
 }
 async function applyBackgroundEditorSettings(){
-  const input=$("#backgroundImageInput"),button=$("#applyBackgroundTheme"),settings=backgroundEditorDraftSettings();
+  const button=$("#applyBackgroundTheme"),cfg=backgroundThemeSettings(),opacity=Math.max(0,Math.min(100,Number($("#backgroundOpacity")?.value??cfg.opacity)||0));
   if(button){button.disabled=true;button.textContent="적용 중…"}
   try{
-    const file=input?.files?.[0]||null,removed=state.backgroundDraftRemove===true;
-    if(removed){await backgroundBlobDelete();saveBackgroundThemeSettings({...settings,enabled:false})}
-    else if(file){await backgroundBlobWrite(file);saveBackgroundThemeSettings({...settings,enabled:true})}
-    else{const current=await backgroundBlobRead();saveBackgroundThemeSettings({...settings,enabled:!!current})}
-    state.backgroundDraftRemove=false;await applySavedBackgroundTheme();
-    toast(removed?"이 계정의 배경을 삭제했어요.":"이 계정의 배경 설정을 적용했어요.");
-    await hydrateBackgroundEditor();
+    const blob=await backgroundBlobRead();
+    saveBackgroundThemeSettings({...cfg,opacity,enabled:!!blob&&cfg.enabled!==false});
+    await applySavedBackgroundTheme();toast("이 계정의 배경 설정을 적용했어요.");
   }catch(e){toast(e?.message||"배경 설정을 저장하지 못했어요.")}
   finally{if(button){button.disabled=false;button.textContent="적용"}}
 }
@@ -3219,57 +3208,18 @@ function screenLayoutEditor(mode=state.layoutEditorMode||"layout"){
   let body="";
   if(state.layoutEditorMode==="background"){
     const cfg=backgroundThemeSettings(),acct=state.me?.acct||"현재 계정",avatar=state.me?.avatar_static||state.me?.avatar||"";
-    body=`<div class="background-theme-editor">
+    body=`<div class="background-theme-editor android-style-background-settings">
       <div class="background-account-note">
         ${avatar?'<img src="'+esc(avatar)+'" alt="">':""}
         <div><b>이 계정 전용 배경</b><span>@${esc(acct)} · 다른 계정에는 따로 저장됩니다.</span></div>
       </div>
-      <div class="background-preview-heading">
-        <div><b>전체 화면 미리보기</b><span>실제 홈에서 배경이 어떻게 보이는지 확인하세요.</span></div>
-        <button type="button" class="outline-btn" id="openBackgroundFullPreview">크게 보기</button>
-      </div>
-      <div class="background-preview" id="backgroundPreview">
-        <img id="backgroundPreviewImage" alt="선택한 배경 미리보기" hidden>
-        <div class="background-preview-ui" aria-hidden="true">
-          <div class="background-preview-topbar">
-            <span class="background-preview-self-avatar"></span><b>홈</b><span class="background-preview-more">•••</span>
-          </div>
-          <div class="background-preview-tabs"><b>시간순</b><span>퍼블릭</span></div>
-          <div class="background-preview-post">
-            <span class="background-preview-avatar"></span>
-            <div class="background-preview-copy"><div><b>렌톤 사용자</b><span>@lenton · 지금</span></div><i class="wide"></i><i></i><div class="background-preview-actions"><span>○</span><span>↻</span><span>♡</span><span>▢</span></div></div>
-          </div>
-          <div class="background-preview-post">
-            <span class="background-preview-avatar alt"></span>
-            <div class="background-preview-copy"><div><b>미리보기</b><span>@preview · 3분</span></div><i class="wide"></i><i class="mid"></i><i class="short"></i><div class="background-preview-actions"><span>○</span><span>↻</span><span>♡</span><span>▢</span></div></div>
-          </div>
-          <div class="background-preview-post compact">
-            <span class="background-preview-avatar third"></span>
-            <div class="background-preview-copy"><div><b>배경 확인</b><span>@theme · 7분</span></div><i class="wide"></i><i class="mid"></i><div class="background-preview-actions"><span>○</span><span>↻</span><span>♡</span><span>▢</span></div></div>
-          </div>
-          <div class="background-preview-fab">＋</div>
-          <div class="background-preview-bottom"><span>⌂</span><span>⌕</span><span>♢</span><span>▢</span></div>
-        </div>
-        <div class="background-position-hint" id="backgroundPositionHint" hidden>한 손가락 이동 · 두 손가락 확대/축소</div>
-        <div id="backgroundPreviewEmpty" class="background-preview-empty">사진을 선택하면 전체 화면 배치를 바로 확인할 수 있어요.</div>
-      </div>
+      <div class="layout-guide">안드로이드 렌톤처럼 사진 선택/편집 시 별도 위치 맞추기 창에서 조정합니다.</div>
       <input id="backgroundImageInput" type="file" accept="image/*" hidden>
-      <div class="background-action-row">
-        <button type="button" class="outline-btn" id="pickBackgroundImage">사진 선택 / 변경</button>
-        <button type="button" class="outline-btn danger-text" id="removeBackgroundImage">배경 삭제</button>
-      </div>
-      <div class="background-edit-panel">
-        <div class="background-edit-title"><div><b>배경 편집</b><span>평소에는 미리보기 위에서도 그대로 스크롤되고, 위치 조정 모드에서만 사진을 움직일 수 있어요.</span></div></div>
-        <div class="background-position-actions">
-          <button type="button" class="outline-btn" id="toggleBackgroundPositionEdit">사진 위치 직접 조정</button>
-          <button type="button" class="outline-btn" id="resetBackgroundFraming">위치 초기화</button>
-        </div>
-        <label class="background-slider-row"><div><b>배경 불투명도</b><span id="backgroundOpacityValue">${cfg.opacity}%</span></div><input id="backgroundOpacity" type="range" min="0" max="100" step="1" value="${cfg.opacity}"></label>
-        <label class="background-slider-row"><div><b>확대</b><span id="backgroundZoomValue">${cfg.zoom}%</span></div><input id="backgroundZoom" type="range" min="100" max="220" step="1" value="${cfg.zoom}"></label>
-        <label class="background-slider-row"><div><b>가로 위치</b><span id="backgroundPositionXValue">${cfg.x}%</span></div><input id="backgroundPositionX" type="range" min="0" max="100" step="1" value="${cfg.x}"></label>
-        <label class="background-slider-row"><div><b>세로 위치</b><span id="backgroundPositionYValue">${cfg.y}%</span></div><input id="backgroundPositionY" type="range" min="0" max="100" step="1" value="${cfg.y}"></label>
-      </div>
-      <div class="background-apply-row"><button type="button" class="primary" id="applyBackgroundTheme">이 계정에 적용</button></div>
+      <button type="button" class="background-setting-row" id="pickBackgroundImage"><div><b>배경 이미지 선택</b><span>${cfg.enabled?"이미지 선택됨 · JPG / PNG / WEBP":"선택된 이미지 없음 · JPG / PNG / WEBP"}</span></div><span class="chev">›</span></button>
+      <button type="button" class="background-setting-row" id="editBackgroundImage"><div><b>배경 이미지 편집</b><span>${cfg.enabled?"손가락 이동 · 두 손가락 확대/축소":"먼저 이미지를 선택해 주세요"}</span></div><span class="chev">›</span></button>
+      <button type="button" class="background-setting-row danger-row" id="removeBackgroundImage"><div><b>배경 이미지 제거</b><span>${cfg.enabled?"현재 배경 이미지를 제거합니다":"선택된 이미지 없음"}</span></div><span class="chev">›</span></button>
+      <label class="background-slider-row android-opacity-row"><div><b>배경 불투명도</b><span id="backgroundOpacityValue">${cfg.opacity}%</span></div><input id="backgroundOpacity" type="range" min="0" max="100" step="1" value="${cfg.opacity}"></label>
+      <div class="background-apply-row"><button type="button" class="primary" id="applyBackgroundTheme">적용</button></div>
     </div>`;
   }else{
     const cfg=mainTabLayout();
