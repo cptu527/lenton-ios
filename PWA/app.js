@@ -95,7 +95,18 @@ function applyBackgroundImageFraming(img,cfg){
   if(!img)return;
   img.style.objectPosition=cfg.x+"% "+cfg.y+"%";
   img.style.transform="scale("+(cfg.zoom/100)+")";
-  img.style.transformOrigin=cfg.x+"% "+cfg.y+"%";
+  // Keep the scale origin fixed. Using x/y as both object-position and
+  // transform-origin made the image shift again while zooming or panning.
+  img.style.transformOrigin="50% 50%";
+}
+function syncBackgroundPreviewViewport(){
+  const preview=$("#backgroundPreview");if(!preview)return;
+  // Match the editor canvas to the exact fixed background layer viewport.
+  // This keeps the crop seen while editing identical to the crop after Apply.
+  const layer=ensureLocalBackgroundLayer().layer,rect=layer.getBoundingClientRect();
+  const width=rect.width||document.documentElement.clientWidth||window.innerWidth||390;
+  const height=rect.height||document.documentElement.clientHeight||window.innerHeight||844;
+  if(width>0&&height>0)preview.style.aspectRatio=width+" / "+height;
 }
 async function applySavedBackgroundTheme(){
   const cfg=backgroundThemeSettings(),parts=ensureLocalBackgroundLayer(),layer=parts.layer,img=parts.img;
@@ -146,6 +157,7 @@ function syncBackgroundEditorPreview(){
 }
 async function hydrateBackgroundEditor(){
   const opacity=$("#backgroundOpacity");if(!opacity)return;
+  syncBackgroundPreviewViewport();
   const cfg=backgroundThemeSettings();
   state.backgroundEditorDraft={...cfg};
   opacity.value=String(cfg.opacity);
@@ -179,10 +191,11 @@ function bindBackgroundEditor(){
   let editing=false;
   const pointers=new Map();
   let panStartPoint=null,panStartX=50,panStartY=50,pinchStartDistance=0,pinchStartZoom=100;
+  let pinchStartCenter=null,pinchStartX=50,pinchStartY=50;
   const PAN_SENSITIVITY=.6;
   const setEditing=enabled=>{
     editing=!!enabled;
-    pointers.clear();panStartPoint=null;pinchStartDistance=0;
+    pointers.clear();panStartPoint=null;pinchStartDistance=0;pinchStartCenter=null;
     preview?.classList.toggle("position-editing",editing);
     if(togglePosition){
       togglePosition.classList.toggle("active",editing);
@@ -201,11 +214,14 @@ function bindBackgroundEditor(){
     const [a,b]=[...pointers.values()].slice(0,2),cfg=backgroundEditorDraftSettings();
     pinchStartDistance=Math.max(1,Math.hypot(a.x-b.x,a.y-b.y));
     pinchStartZoom=cfg.zoom;
+    pinchStartCenter={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
+    pinchStartX=cfg.x;pinchStartY=cfg.y;
     panStartPoint=null;
   };
   togglePosition?.addEventListener("click",()=>{if(!editing)setEditing(true)});
   previewDone?.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();setEditing(false)});
   if(preview){
+    syncBackgroundPreviewViewport();
     preview.addEventListener("pointerdown",e=>{
       if(!editing)return;
       const img=$("#backgroundPreviewImage");if(!img||img.hidden)return;
@@ -224,10 +240,19 @@ function bindBackgroundEditor(){
       if(pointers.size>=2){
         const [a,b]=[...pointers.values()].slice(0,2);
         const distance=Math.max(1,Math.hypot(a.x-b.x,a.y-b.y));
-        if(!pinchStartDistance)startPinch();
+        if(!pinchStartDistance||!pinchStartCenter)startPinch();
         const ratio=distance/Math.max(1,pinchStartDistance);
         const zoom=Math.max(100,Math.min(220,pinchStartZoom*Math.pow(ratio,.72)));
-        state.backgroundEditorDraft={...cfg,zoom};
+        const center={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
+        const rect=preview.getBoundingClientRect();
+        const dx=((center.x-pinchStartCenter.x)/Math.max(1,rect.width))*100*PAN_SENSITIVITY;
+        const dy=((center.y-pinchStartCenter.y)/Math.max(1,rect.height))*100*PAN_SENSITIVITY;
+        state.backgroundEditorDraft={
+          ...cfg,
+          zoom,
+          x:Math.max(0,Math.min(100,pinchStartX-dx)),
+          y:Math.max(0,Math.min(100,pinchStartY-dy))
+        };
         syncBackgroundEditorPreview();
         return;
       }
@@ -250,9 +275,9 @@ function bindBackgroundEditor(){
       pointers.delete(e.pointerId);
       try{preview.releasePointerCapture(e.pointerId)}catch{}
       if(pointers.size===0){
-        preview.classList.remove("is-positioning");panStartPoint=null;pinchStartDistance=0;
+        preview.classList.remove("is-positioning");panStartPoint=null;pinchStartDistance=0;pinchStartCenter=null;
       }else if(pointers.size===1){
-        pinchStartDistance=0;rebasePan();
+        pinchStartDistance=0;pinchStartCenter=null;rebasePan();
       }else startPinch();
     };
     preview.addEventListener("pointerup",finishPointer);
