@@ -1522,6 +1522,18 @@ function ensureReplyNeededEmptyState(){
   page.innerHTML='<div class="center reply-needed-empty">답장할 멘션이 없어요.</div>';
   syncNotificationPagerHeight();
 }
+function syncNotificationOwnReplyCounts(statusIds=[]){
+  const ids=new Set((statusIds||[]).map(x=>String(x||"")).filter(Boolean));
+  if(!ids.size)return;
+  document.querySelectorAll(".android-notify-card[data-notify-status]").forEach(card=>{
+    const sid=String(card.dataset.notifyStatus||"");
+    if(!ids.has(sid))return;
+    const count=card.querySelector("[data-notify-reply-count]");
+    if(!count)return;
+    const current=Math.max(0,Number(count.textContent||0));
+    count.textContent=String(Math.max(1,current));
+  });
+}
 function markReplyNeededHandledMany(statusIds,{removeDom=true}={}){
   const handled=replyNeededHandledIds();
   let changed=false;
@@ -1530,6 +1542,7 @@ function markReplyNeededHandledMany(statusIds,{removeDom=true}={}){
     if(!handled.has(id)){handled.add(id);changed=true}
   }
   if(changed)saveReplyNeededHandledIds(handled);
+  syncNotificationOwnReplyCounts(statusIds);
   if(Array.isArray(state.replyNeededItems)&&state.replyNeededItems.length){
     const done=new Set([...handled]);
     state.replyNeededItems=state.replyNeededItems.filter(n=>!done.has(String(n?.status?.id||"")));
@@ -1598,9 +1611,10 @@ function notificationMentionRowHtml(n,isNew=false){
   const a=n?.account||{},st=n?.status||{};
   const reply=!!String(st.in_reply_to_id||"");
   const boostAllowed=st?.rebloggable!==false&&!["private","direct"].includes(String(st?.visibility||""));
-  const replyCount=Number(st.replies_count||0);
+  const answeredByMe=!!String(st.id||"")&&replyNeededHandledIds().has(String(st.id));
+  const replyCount=Math.max(Number(st.replies_count||0),answeredByMe?1:0);
   const actions=st?.id?'<div class="actions lenton-actions notify-mention-actions">'+
-    '<button data-action="reply" data-id="'+esc(st.id)+'" aria-label="답글">'+lentonIcon("reply")+' <span class="count">'+(replyCount>0?replyCount:"")+'</span></button>'+
+    '<button data-action="reply" data-id="'+esc(st.id)+'" aria-label="답글">'+lentonIcon("reply")+' <span class="count" data-notify-reply-count>'+((replyCount>0)?replyCount:"")+'</span></button>'+
     '<button class="boost '+(st.reblogged?"on ":"")+(boostAllowed?"":"unavailable")+'" data-action="boost" data-id="'+esc(st.id)+'" aria-label="'+(boostAllowed?"부스트":"부스트할 수 없는 게시물")+'" '+(boostAllowed?"":"disabled")+'>'+((boostAllowed)?lentonIcon("boost"):'<span class="boost-unavailable-mark">×</span>')+' <span class="count">'+(boostAllowed?(st.reblogs_count||""):"")+'</span></button>'+
     '<button class="fav '+(st.favourited?"on":"")+'" data-action="fav" data-id="'+esc(st.id)+'" aria-label="좋아요">'+lentonIcon(st.favourited?"heartFill":"heart")+' <span class="count">'+(st.favourites_count||"")+'</span></button>'+
     '<button class="bookmark '+(st.bookmarked?"on":"")+'" data-action="bookmark" data-id="'+esc(st.id)+'" aria-label="북마크">'+lentonIcon(st.bookmarked?"bookmarkFill":"bookmark")+'</button>'+
