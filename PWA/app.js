@@ -4696,3 +4696,5 @@ window.addEventListener("beforeunload",e=>{
   if(notificationId&&state.session)setTimeout(()=>openNotificationDeepLink(notificationId),0);
   applyAutomaticUpdate();
 })();
+
+// Lenton public progressive fill sync v0.25.69
