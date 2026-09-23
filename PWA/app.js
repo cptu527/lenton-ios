@@ -12,9 +12,36 @@ const store = {
 };
 const BACKGROUND_THEME_DB="lenton-local-theme-v1",BACKGROUND_THEME_STORE="assets",BACKGROUND_THEME_KEY="background";
 let backgroundActiveObjectUrl="",backgroundEditorObjectUrl="";
+function backgroundAccountScope(){
+  if(state?.session&&state?.me?.id)return String(state.session.host||"")+"|"+String(state.me.id);
+  return "anonymous";
+}
+function backgroundConfigKey(scope=backgroundAccountScope()){return "lenton_background_theme_account_"+scope}
+function backgroundBlobStorageKey(scope=backgroundAccountScope()){return BACKGROUND_THEME_KEY+"::"+scope}
+function normalizeBackgroundSettings(raw={}){
+  return {
+    enabled:raw.enabled===true,
+    opacity:Math.max(0,Math.min(100,Number(raw.opacity??24)||0)),
+    zoom:Math.max(100,Math.min(220,Number(raw.zoom??100)||100)),
+    x:Math.max(0,Math.min(100,Number(raw.x??50)||50)),
+    y:Math.max(0,Math.min(100,Number(raw.y??50)||50))
+  };
+}
 function backgroundThemeSettings(){
-  const raw=store.get("lenton_background_theme",{enabled:false,opacity:24})||{};
-  return {enabled:raw.enabled===true,opacity:Math.max(0,Math.min(100,Number(raw.opacity??24)||0))};
+  const scope=backgroundAccountScope(),key=backgroundConfigKey(scope);
+  let raw=store.get(key,null);
+  if(!raw&&scope!=="anonymous"){
+    const legacy=store.get("lenton_background_theme",null),owner=String(store.get("lenton_background_legacy_owner","")||"");
+    if(legacy&&(!owner||owner===scope)){
+      if(!owner)store.set("lenton_background_legacy_owner",scope);
+      raw={...legacy,_claimLegacy:true};
+      store.set(key,raw);
+    }
+  }
+  return normalizeBackgroundSettings(raw||{});
+}
+function saveBackgroundThemeSettings(settings){
+  store.set(backgroundConfigKey(),normalizeBackgroundSettings(settings||{}));
 }
 function openBackgroundThemeDb(){
   if(!("indexedDB" in window))return Promise.reject(new Error("이 기기에서는 배경 이미지 저장을 사용할 수 없어요."));
@@ -25,73 +52,155 @@ function openBackgroundThemeDb(){
     req.onerror=()=>reject(req.error||new Error("배경 저장소를 열지 못했어요."));
   });
 }
+async function backgroundDbGet(key){
+  const db=await openBackgroundThemeDb();
+  try{return await new Promise((resolve,reject)=>{const req=db.transaction(BACKGROUND_THEME_STORE,"readonly").objectStore(BACKGROUND_THEME_STORE).get(key);req.onsuccess=()=>resolve(req.result||null);req.onerror=()=>reject(req.error)})}finally{db.close()}
+}
+async function backgroundDbPut(key,value){
+  const db=await openBackgroundThemeDb();
+  try{await new Promise((resolve,reject)=>{const tx=db.transaction(BACKGROUND_THEME_STORE,"readwrite");tx.objectStore(BACKGROUND_THEME_STORE).put(value,key);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error("배경 이미지를 저장하지 못했어요."))})}finally{db.close()}
+}
+async function backgroundDbDelete(key){
+  const db=await openBackgroundThemeDb();
+  try{await new Promise((resolve,reject)=>{const tx=db.transaction(BACKGROUND_THEME_STORE,"readwrite");tx.objectStore(BACKGROUND_THEME_STORE).delete(key);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error("배경 이미지를 삭제하지 못했어요."))})}finally{db.close()}
+}
 async function backgroundBlobRead(){
-  const db=await openBackgroundThemeDb();
-  try{return await new Promise((resolve,reject)=>{const req=db.transaction(BACKGROUND_THEME_STORE,"readonly").objectStore(BACKGROUND_THEME_STORE).get(BACKGROUND_THEME_KEY);req.onsuccess=()=>resolve(req.result||null);req.onerror=()=>reject(req.error)})}finally{db.close()}
+  const scope=backgroundAccountScope(),key=backgroundBlobStorageKey(scope);
+  let blob=await backgroundDbGet(key);
+  if(blob||scope==="anonymous")return blob;
+  const configKey=backgroundConfigKey(scope),raw=store.get(configKey,null);
+  if(raw?._claimLegacy){
+    const legacy=await backgroundDbGet(BACKGROUND_THEME_KEY);
+    if(legacy){
+      await backgroundDbPut(key,legacy);
+      blob=legacy;
+    }
+    const next={...raw};delete next._claimLegacy;store.set(configKey,next);
+  }
+  return blob;
 }
-async function backgroundBlobWrite(blob){
-  const db=await openBackgroundThemeDb();
-  try{await new Promise((resolve,reject)=>{const tx=db.transaction(BACKGROUND_THEME_STORE,"readwrite");tx.objectStore(BACKGROUND_THEME_STORE).put(blob,BACKGROUND_THEME_KEY);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error("배경 이미지를 저장하지 못했어요."))})}finally{db.close()}
-}
-async function backgroundBlobDelete(){
-  const db=await openBackgroundThemeDb();
-  try{await new Promise((resolve,reject)=>{const tx=db.transaction(BACKGROUND_THEME_STORE,"readwrite");tx.objectStore(BACKGROUND_THEME_STORE).delete(BACKGROUND_THEME_KEY);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error("배경 이미지를 삭제하지 못했어요."))})}finally{db.close()}
-}
+async function backgroundBlobWrite(blob){await backgroundDbPut(backgroundBlobStorageKey(),blob)}
+async function backgroundBlobDelete(){await backgroundDbDelete(backgroundBlobStorageKey())}
 function ensureLocalBackgroundLayer(){
   let layer=document.getElementById("lentonLocalBackground");
-  if(!layer){layer=document.createElement("div");layer.id="lentonLocalBackground";layer.className="lenton-local-background";layer.setAttribute("aria-hidden","true");document.body.prepend(layer)}
-  return layer;
+  if(!layer){
+    layer=document.createElement("div");layer.id="lentonLocalBackground";layer.className="lenton-local-background";layer.setAttribute("aria-hidden","true");
+    const img=document.createElement("img");img.className="lenton-local-background-image";img.alt="";layer.append(img);document.body.prepend(layer);
+  }
+  let img=layer.querySelector(".lenton-local-background-image");
+  if(!img){img=document.createElement("img");img.className="lenton-local-background-image";img.alt="";layer.append(img)}
+  return {layer,img};
+}
+function applyBackgroundImageFraming(img,cfg){
+  if(!img)return;
+  img.style.objectPosition=cfg.x+"% "+cfg.y+"%";
+  img.style.transform="scale("+(cfg.zoom/100)+")";
+  img.style.transformOrigin=cfg.x+"% "+cfg.y+"%";
 }
 async function applySavedBackgroundTheme(){
-  const cfg=backgroundThemeSettings(),layer=ensureLocalBackgroundLayer();
+  const cfg=backgroundThemeSettings(),parts=ensureLocalBackgroundLayer(),layer=parts.layer,img=parts.img;
   let blob=null;
   if(cfg.enabled){try{blob=await backgroundBlobRead()}catch{blob=null}}
   if(backgroundActiveObjectUrl){URL.revokeObjectURL(backgroundActiveObjectUrl);backgroundActiveObjectUrl=""}
+  layer.style.backgroundImage="";
   if(blob){
     backgroundActiveObjectUrl=URL.createObjectURL(blob);
-    layer.style.backgroundImage="url(\""+backgroundActiveObjectUrl+"\")";
+    img.src=backgroundActiveObjectUrl;img.hidden=false;applyBackgroundImageFraming(img,cfg);
     layer.style.opacity=String(cfg.opacity/100);
     document.documentElement.classList.add("has-local-background");
   }else{
-    layer.style.backgroundImage="";layer.style.opacity="0";document.documentElement.classList.remove("has-local-background");
+    img.removeAttribute("src");img.hidden=true;layer.style.opacity="0";document.documentElement.classList.remove("has-local-background");
   }
 }
-function setBackgroundEditorPreview(src,opacity){
+function setBackgroundEditorPreview(src,cfg){
   const preview=$("#backgroundPreview"),img=$("#backgroundPreviewImage"),empty=$("#backgroundPreviewEmpty");
   if(!preview||!img||!empty)return;
-  if(src){img.src=src;img.hidden=false;img.style.opacity=String(Math.max(0,Math.min(100,Number(opacity)||0))/100);empty.hidden=true;preview.classList.add("has-image")}
-  else{img.removeAttribute("src");img.hidden=true;empty.hidden=false;preview.classList.remove("has-image")}
+  if(src){
+    img.src=src;img.hidden=false;img.style.opacity=String(cfg.opacity/100);applyBackgroundImageFraming(img,cfg);
+    empty.hidden=true;preview.classList.add("has-image");
+  }else{
+    img.removeAttribute("src");img.hidden=true;empty.hidden=false;preview.classList.remove("has-image");
+  }
+}
+function backgroundEditorDraftSettings(){
+  const base=backgroundThemeSettings();
+  return normalizeBackgroundSettings({
+    enabled:true,
+    opacity:Number($("#backgroundOpacity")?.value??base.opacity),
+    zoom:Number($("#backgroundZoom")?.value??base.zoom),
+    x:Number($("#backgroundPositionX")?.value??base.x),
+    y:Number($("#backgroundPositionY")?.value??base.y)
+  });
+}
+function refreshBackgroundEditorLabels(cfg){
+  const pairs=[
+    ["#backgroundOpacityValue",cfg.opacity+"%"],
+    ["#backgroundZoomValue",cfg.zoom+"%"],
+    ["#backgroundPositionXValue",cfg.x+"%"],
+    ["#backgroundPositionYValue",cfg.y+"%"]
+  ];
+  for(const [selector,value] of pairs){const el=$(selector);if(el)el.textContent=value}
+}
+function syncBackgroundEditorPreview(){
+  const cfg=backgroundEditorDraftSettings();refreshBackgroundEditorLabels(cfg);
+  const img=$("#backgroundPreviewImage");
+  if(img&&!img.hidden){img.style.opacity=String(cfg.opacity/100);applyBackgroundImageFraming(img,cfg)}
 }
 async function hydrateBackgroundEditor(){
-  const slider=$("#backgroundOpacity"),value=$("#backgroundOpacityValue");if(!slider)return;
-  const cfg=backgroundThemeSettings();slider.value=String(cfg.opacity);if(value)value.textContent=cfg.opacity+"%";
+  const opacity=$("#backgroundOpacity");if(!opacity)return;
+  const cfg=backgroundThemeSettings();
+  opacity.value=String(cfg.opacity);
+  const zoom=$("#backgroundZoom"),x=$("#backgroundPositionX"),y=$("#backgroundPositionY");
+  if(zoom)zoom.value=String(cfg.zoom);if(x)x.value=String(cfg.x);if(y)y.value=String(cfg.y);
+  refreshBackgroundEditorLabels(cfg);
   if(backgroundEditorObjectUrl){URL.revokeObjectURL(backgroundEditorObjectUrl);backgroundEditorObjectUrl=""}
   let blob=null;try{blob=await backgroundBlobRead()}catch{}
-  if(blob&&cfg.enabled){backgroundEditorObjectUrl=URL.createObjectURL(blob);setBackgroundEditorPreview(backgroundEditorObjectUrl,cfg.opacity)}else setBackgroundEditorPreview("",cfg.opacity);
+  if(blob&&cfg.enabled){backgroundEditorObjectUrl=URL.createObjectURL(blob);setBackgroundEditorPreview(backgroundEditorObjectUrl,cfg)}
+  else setBackgroundEditorPreview("",cfg);
   state.backgroundDraftRemove=false;
 }
+function openBackgroundFullPreview(){
+  const source=$("#backgroundPreview");if(!source)return;
+  document.querySelector(".background-full-preview-shade")?.remove();
+  const shade=document.createElement("div");shade.className="background-full-preview-shade";
+  const close=document.createElement("button");close.type="button";close.className="background-full-preview-close";close.textContent="닫기";
+  const clone=source.cloneNode(true);clone.removeAttribute("id");clone.classList.add("background-preview-full");
+  clone.querySelectorAll("[id]").forEach(el=>el.removeAttribute("id"));
+  shade.append(close,clone);document.body.append(shade);
+  const done=()=>shade.remove();close.onclick=done;shade.onclick=e=>{if(e.target===shade)done()};
+}
 function bindBackgroundEditor(){
-  const input=$("#backgroundImageInput"),pick=$("#pickBackgroundImage"),remove=$("#removeBackgroundImage"),slider=$("#backgroundOpacity"),value=$("#backgroundOpacityValue"),apply=$("#applyBackgroundTheme");
+  const input=$("#backgroundImageInput"),pick=$("#pickBackgroundImage"),remove=$("#removeBackgroundImage"),apply=$("#applyBackgroundTheme");
   pick?.addEventListener("click",()=>input?.click());
   input?.addEventListener("change",()=>{
     const file=input.files?.[0];if(!file)return;state.backgroundDraftRemove=false;
     if(backgroundEditorObjectUrl){URL.revokeObjectURL(backgroundEditorObjectUrl);backgroundEditorObjectUrl=""}
-    backgroundEditorObjectUrl=URL.createObjectURL(file);setBackgroundEditorPreview(backgroundEditorObjectUrl,Number(slider?.value||24));
+    backgroundEditorObjectUrl=URL.createObjectURL(file);setBackgroundEditorPreview(backgroundEditorObjectUrl,backgroundEditorDraftSettings());
   });
-  slider?.addEventListener("input",()=>{const n=Math.max(0,Math.min(100,Number(slider.value)||0));if(value)value.textContent=n+"%";const img=$("#backgroundPreviewImage");if(img&&!img.hidden)img.style.opacity=String(n/100)});
-  remove?.addEventListener("click",()=>{state.backgroundDraftRemove=true;if(input)input.value="";if(backgroundEditorObjectUrl){URL.revokeObjectURL(backgroundEditorObjectUrl);backgroundEditorObjectUrl=""}setBackgroundEditorPreview("",Number(slider?.value||24))});
+  ["#backgroundOpacity","#backgroundZoom","#backgroundPositionX","#backgroundPositionY"].forEach(selector=>$(selector)?.addEventListener("input",syncBackgroundEditorPreview));
+  $("#resetBackgroundFraming")?.addEventListener("click",()=>{
+    const z=$("#backgroundZoom"),x=$("#backgroundPositionX"),y=$("#backgroundPositionY");
+    if(z)z.value="100";if(x)x.value="50";if(y)y.value="50";syncBackgroundEditorPreview();
+  });
+  $("#openBackgroundFullPreview")?.addEventListener("click",openBackgroundFullPreview);
+  remove?.addEventListener("click",()=>{
+    state.backgroundDraftRemove=true;if(input)input.value="";
+    if(backgroundEditorObjectUrl){URL.revokeObjectURL(backgroundEditorObjectUrl);backgroundEditorObjectUrl=""}
+    setBackgroundEditorPreview("",backgroundEditorDraftSettings());
+  });
   apply?.addEventListener("click",()=>applyBackgroundEditorSettings());
 }
 async function applyBackgroundEditorSettings(){
-  const input=$("#backgroundImageInput"),slider=$("#backgroundOpacity"),button=$("#applyBackgroundTheme");
-  const opacity=Math.max(0,Math.min(100,Number(slider?.value||24)||0));
+  const input=$("#backgroundImageInput"),button=$("#applyBackgroundTheme"),settings=backgroundEditorDraftSettings();
   if(button){button.disabled=true;button.textContent="적용 중…"}
   try{
     const file=input?.files?.[0]||null,removed=state.backgroundDraftRemove===true;
-    if(removed){await backgroundBlobDelete();store.set("lenton_background_theme",{enabled:false,opacity})}
-    else if(file){await backgroundBlobWrite(file);store.set("lenton_background_theme",{enabled:true,opacity})}
-    else{const current=await backgroundBlobRead();store.set("lenton_background_theme",{enabled:!!current,opacity})}
-    state.backgroundDraftRemove=false;await applySavedBackgroundTheme();toast(removed?"배경을 삭제했어요.":"배경 설정을 적용했어요.");await hydrateBackgroundEditor();
+    if(removed){await backgroundBlobDelete();saveBackgroundThemeSettings({...settings,enabled:false})}
+    else if(file){await backgroundBlobWrite(file);saveBackgroundThemeSettings({...settings,enabled:true})}
+    else{const current=await backgroundBlobRead();saveBackgroundThemeSettings({...settings,enabled:!!current})}
+    state.backgroundDraftRemove=false;await applySavedBackgroundTheme();
+    toast(removed?"이 계정의 배경을 삭제했어요.":"이 계정의 배경 설정을 적용했어요.");
+    await hydrateBackgroundEditor();
   }catch(e){toast(e?.message||"배경 설정을 저장하지 못했어요.")}
   finally{if(button){button.disabled=false;button.textContent="적용"}}
 }
@@ -264,7 +373,6 @@ function applyAndroidSpecMetrics(){
   root.style.setProperty("--android-message-padding",mp.map(x=>String(scaled(x))+"px").join(" "));
 }
 applyAndroidSpecMetrics();
-applySavedBackgroundTheme().catch(()=>{});
 
 function toast(msg){ state.toast=msg; renderToast(); setTimeout(()=>{state.toast="";renderToast()},2600) }
 function renderToast(){ const old=$(".toast"); if(old) old.remove(); if(state.toast){const x=document.createElement("div");x.className="toast";x.setAttribute("role","status");x.setAttribute("aria-live","polite");x.textContent=state.toast;document.body.append(x)}}
@@ -441,8 +549,8 @@ function resetAccountState(){
 }
 async function switchSavedAccount(index){
   const list=savedAccounts(),entry=list[index];if(!entry?.session)return;
-  rememberScroll();state.session=entry.session;store.set("lenton_session",state.session);resetAccountState();
-  try{state.me=await api("/api/v1/accounts/verify_credentials");state.customEmojis=null;await loadCustomEmojis();await saveCurrentAccount();state.notificationUnread=accountNotificationUnreadFor(entry);state.dmUnread=accountDmUnreadFor(entry);state.view="home";render();refreshNotificationBadgeDom();setTimeout(()=>refreshUnreadNotificationCount(),80);setTimeout(()=>startForegroundRealtime(),120);toast("계정을 전환했어요.")}
+  rememberScroll();state.session=entry.session;store.set("lenton_session",state.session);resetAccountState();state.me=null;
+  try{state.me=await api("/api/v1/accounts/verify_credentials");state.customEmojis=null;await loadCustomEmojis();await saveCurrentAccount();await applySavedBackgroundTheme();state.notificationUnread=accountNotificationUnreadFor(entry);state.dmUnread=accountDmUnreadFor(entry);state.view="home";render();refreshNotificationBadgeDom();setTimeout(()=>refreshUnreadNotificationCount(),80);setTimeout(()=>startForegroundRealtime(),120);toast("계정을 전환했어요.")}
   catch(e){toast("계정 전환 실패: "+e.message)}
 }
 function savedAccountFullHandle(x){
@@ -5068,6 +5176,7 @@ window.addEventListener("beforeunload",e=>{
     if(entry?.session){state.session=entry.session;store.set("lenton_session",state.session);resetAccountState()}
   }
   if(state.session){try{state.me=await api("/api/v1/accounts/verify_credentials")}catch{store.del("lenton_session");state.session=null}}
+  await applySavedBackgroundTheme().catch(()=>{});
   await syncSavedAccountsToPushMeta();
   if(state.session){
     const current={key:currentAccountKey()};
