@@ -1,5 +1,12 @@
 [
   {
+    "title": "iPhone PWA 배경 편집 배포 재게시",
+    "date": "2026-09-24",
+    "changes": [
+      "Android-style 배경 이미지 위치 맞추기 편집창 변경사항을 최신 main 기준으로 다시 배포"
+    ]
+  },
+  {
     "title": "iPhone PWA 안드로이드식 배경 편집",
     "date": "2026-09-24",
     "changes": [
