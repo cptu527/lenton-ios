@@ -726,18 +726,46 @@ function savedAccountFullHandle(x){
   return "@"+acct+(acct.includes("@")?"":("@"+String(x?.host||"")));
 }
 function closeAccountSwitcher(){document.querySelector(".account-switcher-shade")?.remove()}
+async function logoutSavedAccount(index){
+  const list=savedAccounts();
+  if(index<0||index>=list.length)return;
+  const target=list[index],isCurrent=target.key===currentAccountKey();
+  if(!confirm(savedAccountFullHandle(target)+" 계정에서 로그아웃할까요?"))return;
+  try{await cleanupAccountPush(target)}catch{}
+  list.splice(index,1);
+  store.set("lenton_accounts",list);
+  await syncSavedAccountsToPushMeta();
+  closeAccountSwitcher();
+  if(isCurrent){
+    if(list.length){
+      await switchSavedAccount(0);
+      toast("계정에서 로그아웃했어요.");
+    }else{
+      stopForegroundRealtime();
+      store.del("lenton_session");
+      state.session=null;state.me=null;resetAccountState();
+      await applySavedBackgroundTheme().catch(()=>{});
+      render();
+    }
+  }else{
+    refreshNotificationBadgeDom();
+    await openAccountSwitcher();
+    toast("계정에서 로그아웃했어요.");
+  }
+}
 async function openAccountSwitcher(){
   closeAccountSwitcher();
   await syncSavedAccountsToPushMeta();
   const list=savedAccounts(),current=state.session?.host+"|"+(state.me?.id||""),shade=document.createElement("div");
   shade.className="account-switcher-shade";
   shade.innerHTML='<section class="account-switcher-sheet"><header><h2>계정</h2><button type="button" data-account-sheet-close aria-label="닫기">×</button></header>'+
-    '<div class="account-switcher-list">'+list.map((x,i)=>{const unread=accountUnreadFor(x);return '<button type="button" class="account-switcher-row" data-account-sheet-switch="'+i+'"><img src="'+esc(x.avatar||"")+'" alt=""><span><b>'+esc(x.display_name||x.acct||"계정")+'</b><small>'+esc(savedAccountFullHandle(x))+'</small></span><em>'+(unread>0?'<i class="account-unread-badge">'+esc(unread>99?"99+":String(unread))+'</i>':(x.key===current?'<i class="account-current-check">✓</i>':""))+'</em></button>'}).join("")+'</div>'+
+    '<div class="account-switcher-list">'+list.map((x,i)=>{const unread=accountUnreadFor(x);return '<div class="account-switcher-row"><button type="button" class="account-switcher-main" data-account-sheet-switch="'+i+'"><img src="'+esc(x.avatar||"")+'" alt=""><span><b>'+esc(x.display_name||x.acct||"계정")+'</b><small>'+esc(savedAccountFullHandle(x))+'</small></span><em>'+(unread>0?'<i class="account-unread-badge">'+esc(unread>99?"99+":String(unread))+'</i>':(x.key===current?'<i class="account-current-check">✓</i>':""))+'</em></button><button type="button" class="account-switcher-logout" data-account-sheet-logout="'+i+'">로그아웃</button></div>'}).join("")+'</div>'+
     '<button type="button" class="account-existing-add" data-existing-account-add>기존 계정 추가</button></section>';
   document.body.append(shade);
   shade.onclick=e=>{if(e.target===shade)closeAccountSwitcher()};
   shade.querySelector("[data-account-sheet-close]").onclick=closeAccountSwitcher;
   shade.querySelectorAll("[data-account-sheet-switch]").forEach(b=>b.onclick=()=>{const i=Number(b.dataset.accountSheetSwitch);closeAccountSwitcher();switchSavedAccount(i)});
+  shade.querySelectorAll("[data-account-sheet-logout]").forEach(b=>b.onclick=e=>{e.stopPropagation();logoutSavedAccount(Number(b.dataset.accountSheetLogout))});
   shade.querySelector("[data-existing-account-add]").onclick=()=>{closeAccountSwitcher();addAccountFlow()};
 }
 function accountAddScreen(){
@@ -1220,19 +1248,13 @@ async function expandPublicTimelineInBackground(){
   const existingTimes=existing.map(statusCreatedAtMs).filter(x=>Number(x)>0);
   const stopAtCreatedAt=existingTimes.length?Math.min(...existingTimes):0;
   state.publicBackgroundFillPromise=(async()=>{
-    let lastPaint=0;
+    // Fetch older public items silently, then paint once at the end.
+    // Progressive page-by-page paints caused repeated flashing and scroll jumps on iPhone.
     const items=await loadPublicFromHome({
       limit:40,
       stopAtCreatedAt,
       targetVisible:existing.length?0:40,
-      maxPages:24,
-      onPage:all=>{
-        if(Number(state.publicLoadGeneration||0)!==generation)return;
-        const now=Date.now();
-        if(now-lastPaint<120)return;
-        lastPaint=now;
-        updatePublicTimelinePage(mergeTimelineUnlimited(all,existing),{preserveScroll:true});
-      }
+      maxPages:24
     });
     const merged=mergeTimelineUnlimited(items,existing);
     if(Number(state.publicLoadGeneration||0)!==generation)return merged;
@@ -1309,10 +1331,11 @@ function updatePublicTimelinePage(items,{preserveScroll=true}={}){
 async function refreshHomeIncremental(){
   if(state.homeRefreshPromise)return state.homeRefreshPromise;
   state.homeRefreshPromise=(async()=>{
-    const items=await loadChronologicalHome({limit:40,maxScans:1});
-    if(items.length)updateHomeTimelinePage(items,{preserveScroll:true});
-    setTimeout(()=>expandHomeTimelineInBackground().catch(()=>{}),0);
-    return items;
+    const items=await loadChronologicalHome({limit:40,maxScans:3});
+    const current=Array.isArray(state.homePagerData?.home)?state.homePagerData.home:[];
+    const merged=items.length?mergeNewestTimeline(items,current,160):current;
+    if(items.length)updateHomeTimelinePage(merged,{preserveScroll:true});
+    return merged;
   })().finally(()=>{state.homeRefreshPromise=null});
   return state.homeRefreshPromise;
 }
@@ -1345,7 +1368,9 @@ async function refreshPublicLatestPage({fillBackground=false}={}){
   return state.publicRefreshPromise;
 }
 async function refreshPublicTimeline(){
-  return refreshPublicLatestPage({fillBackground:true});
+  // Pull-to-refresh / home reselect must be a single visible refresh.
+  // Older items already stay in the current list and infinite scroll can fetch more.
+  return refreshPublicLatestPage({fillBackground:false});
 }
 async function refreshHomeAfterPost(){
   try{await refreshHomeIncremental()}catch{}
@@ -4838,6 +4863,13 @@ function attachLentonGestures(){
 }
 
 function bind(){
+  // Cached pages/nav snapshots may contain an older bottom-nav layout.
+  // Rebuild it from the current visibility settings every time a screen is bound.
+  document.querySelectorAll(".bottom.lenton-bottom").forEach(bottom=>{
+    const items=visibleNavItems();
+    bottom.style.setProperty("--nav-count",String(Math.max(1,items.length)));
+    bottom.innerHTML=items.map(x=>nav(x.id)).join("");
+  });
   document.querySelectorAll("[data-profile]").forEach(b=>b.onclick=e=>{e.stopPropagation();pushNavSnapshot();openProfile(b.dataset.profile,"posts",true)});
   document.querySelectorAll("[data-connections-kind]").forEach(b=>b.onclick=e=>{e.stopPropagation();pushNavSnapshot();profileConnectionsScreen(b.dataset.connectionsAccount,b.dataset.connectionsKind)});
   document.querySelectorAll("[data-connection-follow]").forEach(b=>b.onclick=e=>{e.stopPropagation();toggleConnectionFollow(b)});
