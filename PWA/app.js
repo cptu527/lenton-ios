@@ -264,56 +264,54 @@ function openAndroidVideoBackgroundEditor(src,{file=null,isNew=false,revokeOnClo
   if(img.complete)requestAnimationFrame(render);
   else img.addEventListener("load",()=>requestAnimationFrame(render),{once:true});
 
-  const pointers=new Map();
-  let dragId=null,lastX=0,lastY=0,pinch=null;
-  const localFocus=()=>{
-    const pts=[...pointers.values()].slice(0,2),rect=stage.getBoundingClientRect();
-    return {x:(pts[0].x+pts[1].x)/2-rect.left,y:(pts[0].y+pts[1].y)/2-rect.top};
+  // Android-like direct manipulation: the image follows the finger 1:1.
+  // Use touch events on phones so Safari pointer capture/coalescing cannot make dragging feel sticky.
+  let gesture=null;
+  const point=(t)=>({x:t.clientX,y:t.clientY});
+  const dist=(a,b)=>Math.max(1,Math.hypot(a.x-b.x,a.y-b.y));
+  const mid=(a,b)=>({x:(a.x+b.x)/2,y:(a.y+b.y)/2});
+  const beginTouches=(touches)=>{
+    if(touches.length>=2){
+      const a=point(touches[0]),b=point(touches[1]),m=mid(a,b);
+      gesture={kind:"pinch",distance:dist(a,b),zoom,tx,ty,mx:m.x,my:m.y};
+    }else if(touches.length===1){
+      const a=point(touches[0]);gesture={kind:"drag",x:a.x,y:a.y};
+    }else gesture=null;
   };
-  const beginPinch=()=>{
-    if(pointers.size<2)return;
-    const pts=[...pointers.values()].slice(0,2),f=localFocus();
-    pinch={
-      distance:Math.max(1,Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y)),
-      zoom,tx,ty,focusX:f.x,focusY:f.y
-    };
-    dragId=null;
-  };
-  stage.addEventListener("pointerdown",e=>{
-    e.preventDefault();pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
-    try{stage.setPointerCapture(e.pointerId)}catch{}
-    if(pointers.size===1){dragId=e.pointerId;lastX=e.clientX;lastY=e.clientY;pinch=null}
-    else if(pointers.size===2)beginPinch();
-  });
-  stage.addEventListener("pointermove",e=>{
-    if(!pointers.has(e.pointerId))return;
-    e.preventDefault();pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
-    if(pointers.size>=2){
-      if(!pinch)beginPinch();
-      const pts=[...pointers.values()].slice(0,2),f=localFocus();
-      const distance=Math.max(1,Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y));
-      const desired=Math.max(100,Math.min(1600,pinch.zoom*(distance/pinch.distance)));
-      const factor=desired/Math.max(1,pinch.zoom);
-      const cx0=stage.clientWidth/2+pinch.tx,cy0=stage.clientHeight/2+pinch.ty;
-      const cx=f.x+factor*(cx0-pinch.focusX),cy=f.y+factor*(cy0-pinch.focusY);
-      zoom=desired;tx=cx-stage.clientWidth/2;ty=cy-stage.clientHeight/2;render();return;
+  stage.addEventListener("touchstart",e=>{e.preventDefault();beginTouches(e.touches)},{passive:false});
+  stage.addEventListener("touchmove",e=>{
+    e.preventDefault();
+    if(e.touches.length>=2){
+      const a=point(e.touches[0]),b=point(e.touches[1]),m=mid(a,b);
+      if(!gesture||gesture.kind!=="pinch"){beginTouches(e.touches);return}
+      const nextZoom=Math.max(100,Math.min(1600,gesture.zoom*dist(a,b)/gesture.distance));
+      const factor=nextZoom/Math.max(1,gesture.zoom);
+      // Keep the content under the fingers anchored while pinching, matching Android photo editors.
+      const rect=stage.getBoundingClientRect();
+      const oldFocusX=gesture.mx-rect.left-stage.clientWidth/2;
+      const oldFocusY=gesture.my-rect.top-stage.clientHeight/2;
+      const newFocusX=m.x-rect.left-stage.clientWidth/2;
+      const newFocusY=m.y-rect.top-stage.clientHeight/2;
+      zoom=nextZoom;
+      tx=newFocusX+(gesture.tx-oldFocusX)*factor;
+      ty=newFocusY+(gesture.ty-oldFocusY)*factor;
+      render();
+    }else if(e.touches.length===1){
+      const a=point(e.touches[0]);
+      if(!gesture||gesture.kind!=="drag"){beginTouches(e.touches);return}
+      tx+=a.x-gesture.x;ty+=a.y-gesture.y;
+      gesture.x=a.x;gesture.y=a.y;
+      render();
     }
-    if(pointers.size===1){
-      const p=[...pointers.entries()][0],id=p[0],pt=p[1];
-      if(dragId!==id){dragId=id;lastX=pt.x;lastY=pt.y;return}
-      const dx=pt.x-lastX,dy=pt.y-lastY;lastX=pt.x;lastY=pt.y;
-      tx+=dx;ty+=dy;render();
-    }
-  });
-  const endPointer=e=>{
-    if(!pointers.has(e.pointerId))return;
-    pointers.delete(e.pointerId);try{stage.releasePointerCapture(e.pointerId)}catch{}
-    if(pointers.size===0){dragId=null;pinch=null}
-    else if(pointers.size===1){
-      const [id,p]=[...pointers.entries()][0];dragId=id;lastX=p.x;lastY=p.y;pinch=null;
-    }else beginPinch();
-  };
-  stage.addEventListener("pointerup",endPointer);stage.addEventListener("pointercancel",endPointer);
+  },{passive:false});
+  stage.addEventListener("touchend",e=>{e.preventDefault();beginTouches(e.touches)},{passive:false});
+  stage.addEventListener("touchcancel",()=>{gesture=null},{passive:false});
+
+  // Mouse/trackpad fallback for desktop testing.
+  let mouseDown=false,lastMouseX=0,lastMouseY=0;
+  stage.addEventListener("mousedown",e=>{e.preventDefault();mouseDown=true;lastMouseX=e.clientX;lastMouseY=e.clientY});
+  window.addEventListener("mousemove",e=>{if(!mouseDown)return;tx+=e.clientX-lastMouseX;ty+=e.clientY-lastMouseY;lastMouseX=e.clientX;lastMouseY=e.clientY;render()});
+  window.addEventListener("mouseup",()=>{mouseDown=false});
 
   const close=()=>{shade.remove();if(revokeOnClose)try{URL.revokeObjectURL(src)}catch{}};
   panel.querySelector("[data-bg-cancel]").onclick=close;
