@@ -358,6 +358,7 @@ function bindBackgroundEditor(){
   opacity?.addEventListener("input",()=>{
     const n=Math.max(0,Math.min(100,Number(opacity.value)||0));
     const label=$("#backgroundOpacityValue");if(label)label.textContent=n+"%";
+    syncBackgroundEditorPreview();
   });
   apply?.addEventListener("click",()=>applyBackgroundEditorSettings());
 }
@@ -3291,6 +3292,10 @@ function screenLayoutEditor(mode=state.layoutEditorMode||"layout"){
       <button type="button" class="android-bg-setting-row" id="pickBackgroundImage"><div><b>배경 이미지 선택</b><span>${cfg.enabled?"이미지 선택됨 · JPG / PNG / WEBP":"선택된 이미지 없음 · JPG / PNG / WEBP"}</span></div><span class="chev">›</span></button>
       <button type="button" class="android-bg-setting-row" id="editBackgroundImage"><div><b>배경 이미지 편집</b><span>${cfg.enabled?"원본 전체에서 위치·확대 조정":"먼저 이미지를 선택해 주세요"}</span></div><span class="chev">›</span></button>
       <button type="button" class="android-bg-setting-row danger-row" id="removeBackgroundImage"><div><b>배경 이미지 제거</b><span>${cfg.enabled?"현재 계정의 배경 이미지를 제거합니다":"선택된 이미지 없음"}</span></div><span class="chev">›</span></button>
+      <div class="background-preview opacity-live-preview" id="backgroundPreview">
+        <img id="backgroundPreviewImage" alt="" hidden>
+        <div id="backgroundPreviewEmpty" class="background-preview-empty">배경 이미지를 선택하면 여기서 불투명도를 미리 볼 수 있어요.</div>
+      </div>
       <label class="background-slider-row android-bg-opacity"><div><b>배경 불투명도</b><span id="backgroundOpacityValue">${cfg.opacity}%</span></div><input id="backgroundOpacity" type="range" min="0" max="100" step="1" value="${cfg.opacity}"></label>
       <div class="background-apply-row"><button type="button" class="primary" id="applyBackgroundTheme">적용</button></div>
     </div>`;
