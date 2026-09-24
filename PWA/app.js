@@ -3242,19 +3242,26 @@ function attachLayoutEditorDrag(){
   const container=document.querySelector(".layout-tab-rows");if(!container||container.dataset.dragReady==="1")return;
   container.dataset.dragReady="1";
   let row=null,startY=0,lastY=0,active=false,touchId=null;
+  const persistOrder=()=>{
+    const cfg=mainTabLayout();
+    const order=[...container.querySelectorAll(".layout-tab-row")].map(x=>x.dataset.layoutId);
+    saveMainTabLayout(order,cfg.hidden);
+  };
   const moveRow=y=>{
     if(!row)return;
+    const before=[...container.querySelectorAll(".layout-tab-row")].map(x=>x.dataset.layoutId).join("|");
     const rows=[...container.querySelectorAll(".layout-tab-row")].filter(x=>x!==row);
     const target=rows.find(x=>y<x.getBoundingClientRect().top+x.getBoundingClientRect().height/2);
     if(target)container.insertBefore(row,target);else container.appendChild(row);
+    const after=[...container.querySelectorAll(".layout-tab-row")].map(x=>x.dataset.layoutId).join("|");
+    if(after!==before)persistOrder();
   };
   const finish=()=>{
     if(!row)return;
     if(active){
       row.classList.remove("dragging");
       row.style.transform="";
-      const cfg=mainTabLayout(),order=[...container.querySelectorAll(".layout-tab-row")].map(x=>x.dataset.layoutId);
-      saveMainTabLayout(order,cfg.hidden);
+      persistOrder();
     }
     row=null;active=false;touchId=null;
   };
