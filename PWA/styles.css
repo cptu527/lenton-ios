@@ -5957,3 +5957,32 @@ html.has-local-background .sheet-head{
   -webkit-backdrop-filter:blur(5px);
   backdrop-filter:blur(5px);
 }
+
+/* 2026-09-24 compose isolation: show saved background, never the page behind the modal */
+html.has-local-background .modal.compose-modal{
+  background:var(--bg)!important;
+  isolation:isolate;
+}
+html.has-local-background .modal.compose-modal::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  z-index:-2;
+  background:var(--bg);
+  pointer-events:none;
+}
+html.has-local-background .modal.compose-modal::after{
+  content:"";
+  position:fixed;
+  inset:0;
+  z-index:-1;
+  pointer-events:none;
+  background-image:var(--lenton-compose-bg-image,none);
+  background-position:center;
+  background-size:cover;
+  background-repeat:no-repeat;
+  opacity:var(--lenton-compose-bg-opacity,0);
+}
+html.has-local-background .modal.compose-modal>.compose-sheet{
+  background:transparent!important;
+}
