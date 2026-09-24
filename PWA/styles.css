@@ -5969,3 +5969,21 @@ html.has-local-background .modal.compose-modal>.compose-sheet{
   z-index:1;
   background:transparent!important;
 }
+
+/* 2026-09-24 reply composer transparency over its isolated saved-background layer */
+html.has-local-background .reply-compose .compose-sheet,
+html.has-local-background .reply-compose #parts,
+html.has-local-background .reply-compose .part,
+html.has-local-background .reply-compose .part-body,
+html.has-local-background .reply-compose .part-fields{
+  background:transparent!important;
+}
+html.has-local-background .reply-compose .compose-reply-summary{
+  background:color-mix(in srgb,var(--bg) 42%,transparent)!important;
+}
+html.has-local-background .reply-compose .reply-visibility-row,
+html.has-local-background .reply-compose .android-compose-tools{
+  background:color-mix(in srgb,var(--bg) 70%,transparent)!important;
+  -webkit-backdrop-filter:blur(5px);
+  backdrop-filter:blur(5px);
+}
