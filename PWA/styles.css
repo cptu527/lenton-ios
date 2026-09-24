@@ -5910,3 +5910,25 @@ html.has-local-background .android-bg-opacity{
   line-height:1.5;
   text-align:center;
 }
+
+/* 2026-09-24 background visibility in thread and reply */
+html.has-local-background .thread-node{
+  background:color-mix(in srgb,var(--bg) 54%,transparent);
+}
+html.has-local-background .thread-node .status{
+  background:transparent;
+}
+html.has-local-background .thread-older,
+html.has-local-background .compose-reply-summary,
+html.has-local-background .reply-compose .reply-visibility-row,
+html.has-local-background .compose-tools{
+  background:color-mix(in srgb,var(--bg) 58%,transparent);
+  -webkit-backdrop-filter:blur(2px);
+  backdrop-filter:blur(2px);
+}
+html.has-local-background .compose-context,
+html.has-local-background .compose-input,
+html.has-local-background .part,
+html.has-local-background .reply-compose{
+  background:color-mix(in srgb,var(--bg) 46%,transparent);
+}
