@@ -2,7 +2,7 @@
   "schema": 1,
   "generatedFrom": "published-android-apk",
   "versionCode": 287,
-  "versionName": "0.26.02",
+  "versionName": "0.26.03",
   "apkUrl": "https://raw.githubusercontent.com/cptu527/lenton-updates/main/Lenton-v0.26.03-test.apk",
   "apkSha256": "d7bd481fca90da72d3fe31de85afe49c98484d7fe3349d3a5a3bb9be2f0ff531",
   "decompiledSource": "com/mastoflow/app/MainActivity.java",
