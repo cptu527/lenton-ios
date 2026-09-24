@@ -5958,30 +5958,18 @@ html.has-local-background .sheet-head{
   backdrop-filter:blur(5px);
 }
 
-/* 2026-09-24 compose isolation: show saved background, never the page behind the modal */
+/* 2026-09-24 reply composer: hide the page behind it without duplicating/cropping the background */
 html.has-local-background .modal.compose-modal{
-  background:var(--bg)!important;
+  background:transparent!important;
   isolation:isolate;
 }
 html.has-local-background .modal.compose-modal::before{
   content:"";
   position:fixed;
   inset:0;
-  z-index:-2;
-  background:var(--bg);
-  pointer-events:none;
-}
-html.has-local-background .modal.compose-modal::after{
-  content:"";
-  position:fixed;
-  inset:0;
   z-index:-1;
+  background:color-mix(in srgb,var(--bg) 38%,transparent);
   pointer-events:none;
-  background-image:var(--lenton-compose-bg-image,none);
-  background-position:center;
-  background-size:cover;
-  background-repeat:no-repeat;
-  opacity:var(--lenton-compose-bg-opacity,0);
 }
 html.has-local-background .modal.compose-modal>.compose-sheet{
   background:transparent!important;
