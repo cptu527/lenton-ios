@@ -4196,6 +4196,12 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
     window.__lentonComposeViewportCleanup?.();
     let old=$(".modal");if(old)old.remove();
     const m=document.createElement("div");m.className="modal compose-modal"+(reply?" reply-compose":"");
+    const localBg=document.querySelector("#lentonLocalBackground .lenton-local-background-image");
+    if(document.documentElement.classList.contains("has-local-background")&&localBg?.src){
+      const bgCfg=backgroundThemeSettings();
+      m.style.setProperty("--lenton-compose-bg-image",'url("'+localBg.src.replace(/"/g,'%22')+'")');
+      m.style.setProperty("--lenton-compose-bg-opacity",String(bgCfg.opacity/100));
+    }
     const ct=ANDROID?.renderer?.compose||{};
     const visOptions=[["public","공개"],["unlisted","조용히 공개"],["private","팔로워만"],["direct","DM"]];
     const showThreadLabels=!reply&&visibility!=="direct"&&parts.length>1;
