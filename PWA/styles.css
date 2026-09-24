@@ -5932,3 +5932,28 @@ html.has-local-background .part,
 html.has-local-background .reply-compose{
   background:color-mix(in srgb,var(--bg) 46%,transparent);
 }
+
+/* 2026-09-24 force local background through thread/detail/reply surfaces */
+html.has-local-background .standalone-page,
+html.has-local-background .sheet{
+  background:color-mix(in srgb,var(--bg) 58%,transparent)!important;
+}
+html.has-local-background .thread-node,
+html.has-local-background .thread-node .status,
+html.has-local-background .thread-current,
+html.has-local-background .compose-context,
+html.has-local-background .compose-input,
+html.has-local-background .compose-meta-row,
+html.has-local-background .compose-tools,
+html.has-local-background .part,
+html.has-local-background .reply-compose,
+html.has-local-background .reply-compose .reply-visibility-row,
+html.has-local-background .compose-reply-summary,
+html.has-local-background .thread-older{
+  background:color-mix(in srgb,var(--bg) 38%,transparent)!important;
+}
+html.has-local-background .sheet-head{
+  background:color-mix(in srgb,var(--bg) 62%,transparent)!important;
+  -webkit-backdrop-filter:blur(5px);
+  backdrop-filter:blur(5px);
+}
