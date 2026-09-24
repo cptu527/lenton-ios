@@ -180,7 +180,9 @@ function refreshBackgroundEditorLabels(cfg){
 function syncBackgroundEditorPreview(){
   const cfg=backgroundEditorDraftSettings();refreshBackgroundEditorLabels(cfg);
   const img=$("#backgroundPreviewImage");
-  if(img&&!img.hidden){img.style.opacity=String(cfg.opacity/100);applyBackgroundImageFraming(img,cfg)}
+  // Opacity preview must never recalculate framing: keep the current preview image
+  // position/zoom completely fixed while the slider is moving.
+  if(img&&!img.hidden)img.style.opacity=String(cfg.opacity/100);
 }
 async function hydrateBackgroundEditor(){
   const opacity=$("#backgroundOpacity");if(!opacity)return;
