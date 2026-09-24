@@ -3241,32 +3241,49 @@ function attachListOrderDrag(){
 function attachLayoutEditorDrag(){
   const container=document.querySelector(".layout-tab-rows");if(!container||container.dataset.dragReady==="1")return;
   container.dataset.dragReady="1";
-  let row=null,timer=null,dragging=false,startY=0;
+  let row=null,startY=0,lastY=0,active=false,touchId=null;
+  const moveRow=y=>{
+    if(!row)return;
+    const rows=[...container.querySelectorAll(".layout-tab-row")].filter(x=>x!==row);
+    const target=rows.find(x=>y<x.getBoundingClientRect().top+x.getBoundingClientRect().height/2);
+    if(target)container.insertBefore(row,target);else container.appendChild(row);
+  };
+  const finish=()=>{
+    if(!row)return;
+    if(active){
+      row.classList.remove("dragging");
+      row.style.transform="";
+      const cfg=mainTabLayout(),order=[...container.querySelectorAll(".layout-tab-row")].map(x=>x.dataset.layoutId);
+      saveMainTabLayout(order,cfg.hidden);
+    }
+    row=null;active=false;touchId=null;
+  };
   container.querySelectorAll(".layout-grip").forEach(grip=>{
-    grip.addEventListener("pointerdown",e=>{
-      row=grip.closest(".layout-tab-row");if(!row)return;startY=e.clientY;dragging=false;
-      try{grip.setPointerCapture(e.pointerId)}catch{}
-      timer=setTimeout(()=>{if(!row)return;dragging=true;row.classList.add("dragging");},220);
-    });
-    grip.addEventListener("pointermove",e=>{
-      if(!row)return;
-      if(!dragging&&Math.abs(e.clientY-startY)>8){clearTimeout(timer);timer=null;row=null;return}
-      if(!dragging)return;
+    grip.addEventListener("touchstart",e=>{
+      const t=e.changedTouches[0];if(!t)return;
+      row=grip.closest(".layout-tab-row");if(!row)return;
+      touchId=t.identifier;startY=lastY=t.clientY;active=true;row.classList.add("dragging");
+      if(navigator.vibrate)try{navigator.vibrate(8)}catch{}
       e.preventDefault();
-      const rows=[...container.querySelectorAll(".layout-tab-row")].filter(x=>x!==row);
-      const target=rows.find(x=>e.clientY<x.getBoundingClientRect().top+x.getBoundingClientRect().height/2);
-      if(target)container.insertBefore(row,target);else container.appendChild(row);
+    },{passive:false});
+    grip.addEventListener("touchmove",e=>{
+      if(!row||!active)return;
+      const t=[...e.touches].find(x=>x.identifier===touchId);if(!t)return;
+      e.preventDefault();
+      lastY=t.clientY;moveRow(lastY);
+    },{passive:false});
+    grip.addEventListener("touchend",e=>{if(row&&active){e.preventDefault();finish()}},{passive:false});
+    grip.addEventListener("touchcancel",finish,{passive:false});
+    grip.addEventListener("pointerdown",e=>{
+      if(e.pointerType==="touch")return;
+      row=grip.closest(".layout-tab-row");if(!row)return;
+      startY=lastY=e.clientY;active=true;row.classList.add("dragging");
+      try{grip.setPointerCapture(e.pointerId)}catch{}
+      e.preventDefault();
     });
-    const finish=()=>{
-      clearTimeout(timer);timer=null;if(!row)return;
-      if(dragging){
-        row.classList.remove("dragging");
-        const cfg=mainTabLayout(),order=[...container.querySelectorAll(".layout-tab-row")].map(x=>x.dataset.layoutId);
-        saveMainTabLayout(order,cfg.hidden);screenLayoutEditor();
-      }
-      row=null;dragging=false;
-    };
-    grip.addEventListener("pointerup",finish);grip.addEventListener("pointercancel",finish);
+    grip.addEventListener("pointermove",e=>{if(!row||!active||e.pointerType==="touch")return;e.preventDefault();lastY=e.clientY;moveRow(lastY)});
+    grip.addEventListener("pointerup",e=>{if(e.pointerType!=="touch")finish()});
+    grip.addEventListener("pointercancel",e=>{if(e.pointerType!=="touch")finish()});
   });
 }
 function screenLayoutEditor(mode=state.layoutEditorMode||"layout"){
@@ -3302,9 +3319,7 @@ function screenLayoutEditor(mode=state.layoutEditorMode||"layout"){
   }else{
     const cfg=mainTabLayout();
     const rows=cfg.order.map((id,i)=>`<div class="layout-tab-row" data-layout-id="${id}">
-      <span class="layout-grip">☰</span><b>${tabLabel(id)}</b>
-      <button data-layout-up="${id}" ${i===0?"disabled":""}>↑</button>
-      <button data-layout-down="${id}" ${i===cfg.order.length-1?"disabled":""}>↓</button>
+      <span class="layout-grip" role="button" aria-label="순서 변경">☰</span><b>${tabLabel(id)}</b>
       <button class="layout-toggle ${cfg.hidden.has(id)?"off":""}" data-layout-toggle="${id}">${cfg.hidden.has(id)?"숨김":"표시"}</button>
     </div>`).join("");
     body=`<div class="layout-guide">하단 탭의 순서와 표시 여부를 편집할 수 있습니다. 숨긴 탭은 화면과 데이터를 지우지 않고 하단 메뉴와 좌우 스와이프 대상에서만 제외됩니다.</div>
