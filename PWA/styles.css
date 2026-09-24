@@ -5987,3 +5987,45 @@ html.has-local-background .reply-compose .android-compose-tools{
   -webkit-backdrop-filter:blur(5px);
   backdrop-filter:blur(5px);
 }
+
+
+/* 2026-09-24 QA 26-30 */
+.lenton-view-home .home-tabs{
+  position:sticky;
+  top:calc(env(safe-area-inset-top) + var(--android-topbar));
+  z-index:27;
+}
+.lenton-notify-tabs{
+  height:calc(50px * var(--lenton-ui-scale));
+  min-height:calc(50px * var(--lenton-ui-scale));
+}
+.account-switcher-row{
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:8px;
+  border-bottom:1px solid var(--line);
+  padding:4px 0;
+}
+.account-switcher-main{
+  min-width:0;
+  min-height:80px;
+  display:grid;
+  grid-template-columns:68px minmax(0,1fr) 42px;
+  align-items:center;
+  gap:14px;
+  border:0;
+  background:transparent;
+  color:var(--fg);
+  text-align:left;
+  padding:8px 4px;
+}
+.account-switcher-logout{
+  min-width:72px;
+  min-height:44px;
+  border:0;
+  border-radius:12px;
+  background:color-mix(in srgb,#e5484d 10%,transparent);
+  color:#d33;
+  font-size:13px;
+  font-weight:700;
+  padding:0 10px;
+}
