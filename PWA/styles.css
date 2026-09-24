@@ -5877,3 +5877,27 @@ html.has-local-background .android-bg-opacity{
   .ios-bg-position-title{padding-top:12px}
   .ios-bg-position-hint{padding-bottom:7px}
 }
+
+/* Live opacity preview in background settings */
+.opacity-live-preview{
+  height:180px;
+  min-height:180px;
+  margin:16px 18px 0;
+  border-radius:14px;
+  background:var(--surface);
+}
+.opacity-live-preview>img{
+  object-fit:cover;
+}
+.background-preview-empty{
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:20px;
+  color:var(--sub);
+  font-size:13px;
+  line-height:1.5;
+  text-align:center;
+}
