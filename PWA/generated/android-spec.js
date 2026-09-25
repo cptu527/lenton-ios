@@ -3,7 +3,7 @@ window.LENTON_ANDROID_SPEC = {
   "generatedFrom": "published-android-apk",
   "versionCode": 297,
   "versionName": "0.27.03",
-  "apkUrl": "https://raw.githubusercontent.com/cptu527/lenton-updates/main/Lenton-v0.27.03-test.apk",
+  "apkUrl": "https://cdn.jsdelivr.net/gh/cptu527/lenton-updates@362ebe96c9189924dca9165136b7bc95461ba469/Lenton-v0.27.03-test.apk",
   "apkSha256": "36b4953a63dadf3658cef243ec439a11055993dd3aed20665304ca93232f77c5",
   "decompiledSource": "com/mastoflow/app/MainActivity.java",
   "homeTabs": {
