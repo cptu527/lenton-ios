@@ -5304,7 +5304,11 @@ html.has-local-background #app{background:transparent!important}
 html.has-local-background #app{position:relative;z-index:1}
 html.has-local-background .app,
 html.has-local-background .main{background:transparent!important}
-html.has-local-background .topbar,
+html.has-local-background .topbar{
+  background:color-mix(in srgb,var(--bg) 28%,transparent)!important;
+  -webkit-backdrop-filter:blur(4px) saturate(108%);
+  backdrop-filter:blur(4px) saturate(108%);
+}
 html.has-local-background .bottom{
   background:color-mix(in srgb,var(--bg) 74%,transparent)!important;
   -webkit-backdrop-filter:blur(14px) saturate(125%);
@@ -5315,7 +5319,9 @@ html.has-local-background .notify-tabs,
 html.has-local-background .lenton-notify-tabs,
 html.has-local-background .profile-tabs-4,
 html.has-local-background .profile-tabs-2{
-  background:color-mix(in srgb,var(--bg) 58%,transparent)!important;
+  background:color-mix(in srgb,var(--bg) 36%,transparent)!important;
+  -webkit-backdrop-filter:blur(3px);
+  backdrop-filter:blur(3px);
 }
 html.has-local-background .status,
 html.has-local-background .row,
@@ -5986,6 +5992,17 @@ html.has-local-background .reply-compose .android-compose-tools{
   background:color-mix(in srgb,var(--bg) 70%,transparent)!important;
   -webkit-backdrop-filter:blur(5px);
   backdrop-filter:blur(5px);
+}
+
+/* 2026-09-26 iPhone reply typing size + profile vertical feed scrolling */
+.reply-compose .part textarea{
+  font-size:16px!important;
+  line-height:1.5!important;
+}
+.profile-pager,
+.profile-pager-track,
+.profile-pager-page{
+  touch-action:pan-y;
 }
 
 
