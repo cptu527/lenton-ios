@@ -49,11 +49,15 @@ jobs:
 
       - name: Download exact published APK
         run: |
-          curl -L --fail --retry 3 \
+          set -euo pipefail
+          APK_SOURCE="https://raw.githubusercontent.com/cptu527/lenton-updates/main/Lenton-v${{ steps.android.outputs.version_name }}-test.apk"
+          curl -L --fail --retry 4 --retry-delay 2 --retry-all-errors \
             -o /tmp/lenton.apk \
-            '${{ steps.android.outputs.apk_url }}'
+            "$APK_SOURCE"
           test -s /tmp/lenton.apk
-          shasum -a 256 /tmp/lenton.apk
+          ACTUAL_SHA="$(shasum -a 256 /tmp/lenton.apk | awk '{print $1}')"
+          echo "APK SHA256=$ACTUAL_SHA"
+          test "$ACTUAL_SHA" = "${{ steps.android.outputs.apk_sha }}"
 
       - name: Install JADX
         run: |
@@ -100,6 +104,9 @@ jobs:
         run: |
           rm -rf dist-pwa
           cp -R PWA dist-pwa
+          mkdir -p dist-pwa/android-updates
+          cp /tmp/lenton.apk dist-pwa/android-updates/Lenton-latest.apk
+          cp /tmp/lenton.apk "dist-pwa/android-updates/Lenton-v${{ steps.android.outputs.version_name }}-test.apk"
           python3 - <<'PY'
           import json, os, re, struct, zipfile
           from pathlib import Path
