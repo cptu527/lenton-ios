@@ -1245,15 +1245,16 @@ async function expandPublicTimelineInBackground(){
   const generation=Number(state.publicLoadGeneration||0)+1;
   state.publicLoadGeneration=generation;
   const existing=Array.isArray(state.homePagerData?.public)?[...state.homePagerData.public]:[];
-  const existingTimes=existing.map(statusCreatedAtMs).filter(x=>Number(x)>0);
-  const stopAtCreatedAt=existingTimes.length?Math.min(...existingTimes):0;
+  // 퍼블릭은 홈 시간순을 계속 페이지 넘기며 답글만 제거해야 한다.
+  // 기존 마지막 표시 시각을 종료 조건으로 쓰면 첫 페이지에 답글이 많을 때
+  // 1시간 전 다음이 곧바로 1일 전처럼 보이는 빈 구간이 생길 수 있다.
+  // 따라서 화면에 실제로 표시할 비답글 게시물 수를 충분히 확보할 때까지 훑는다.
+  const targetVisible=Math.max(80,Math.min(200,existing.length+48));
   state.publicBackgroundFillPromise=(async()=>{
-    // Fetch older public items silently, then paint once at the end.
-    // Progressive page-by-page paints caused repeated flashing and scroll jumps on iPhone.
+    // Fetch silently, then paint once at the end to avoid iPhone flashing/scroll jumps.
     const items=await loadPublicFromHome({
       limit:40,
-      stopAtCreatedAt,
-      targetVisible:existing.length?0:40,
+      targetVisible,
       maxPages:24
     });
     const merged=mergeTimelineUnlimited(items,existing);
@@ -2550,6 +2551,33 @@ function buildProfilePager(mode,data){
     modes.map(m=>'<section class="profile-pager-page" data-profile-page="'+m+'">'+profilePageHtml(data[m]||[],m,data.pinned||[])+'</section>').join("")+
     '</div></div>';
 }
+function syncProfilePagerHeight(){
+  const pager=document.querySelector("[data-profile-pager]");
+  const track=document.querySelector("[data-profile-track]");
+  if(!pager||!track)return;
+  const page=track.querySelector('[data-profile-page="'+(state.profileMode||"posts")+'"]');
+  if(!page)return;
+  const height=Math.max(1,Math.ceil(page.scrollHeight),Math.ceil(page.getBoundingClientRect().height));
+  pager.style.height=height+"px";
+}
+function watchProfilePagerHeight(){
+  const track=document.querySelector("[data-profile-track]");
+  if(!track)return;
+  const page=track.querySelector('[data-profile-page="'+(state.profileMode||"posts")+'"]');
+  if(!page)return;
+  if(state.profilePagerObservedPage===page)return;
+  try{state.profilePagerResizeObserver?.disconnect()}catch{}
+  state.profilePagerObservedPage=page;
+  if("ResizeObserver" in window){
+    state.profilePagerResizeObserver=new ResizeObserver(()=>requestAnimationFrame(syncProfilePagerHeight));
+    state.profilePagerResizeObserver.observe(page);
+  }
+  page.querySelectorAll("img,video").forEach(el=>{
+    if(el.complete)return;
+    el.addEventListener("load",syncProfilePagerHeight,{once:true});
+    el.addEventListener("loadedmetadata",syncProfilePagerHeight,{once:true});
+  });
+}
 function syncProfilePagerUi(mode,animate=true){
   const modes=profileModes(),index=Math.max(0,modes.indexOf(mode));
   const pager=document.querySelector("[data-profile-pager]"),track=document.querySelector("[data-profile-track]"),tabs=document.querySelector("[data-profile-tabs]");
@@ -2560,8 +2588,10 @@ function syncProfilePagerUi(mode,animate=true){
   tabs.querySelectorAll("[data-profile-mode]").forEach(b=>b.classList.toggle("active",b.dataset.profileMode===mode));
   const indicator=tabs.querySelector(".profile-tab-indicator"),tabW=tabs.clientWidth/modes.length;
   if(indicator){indicator.style.transition=animate?"transform 190ms cubic-bezier(.2,.75,.25,1)":"none";indicator.style.transform="translate3d("+(index*tabW+(tabW-36)/2)+"px,0,0)"}
-  const page=track.querySelector('[data-profile-page="'+mode+'"]');
-  if(page)requestAnimationFrame(()=>{pager.style.height=Math.max(1,page.scrollHeight)+"px"});
+  requestAnimationFrame(()=>{
+    syncProfilePagerHeight();
+    watchProfilePagerHeight();
+  });
 }
 function setProfilePagerMode(mode,animate=true){
   mode=normalizeProfileMode(mode);state.profileMode=mode;state.profileReplies=mode==="replies";
