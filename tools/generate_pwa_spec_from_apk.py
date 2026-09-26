@@ -308,7 +308,8 @@ def notification_labels(text: str):
 
 def build_spec(main_text: str, latest: dict, apk_sha: str, source_path: str):
     public_method = extract_method(main_text, "followingPublicOnlyStatus")
-    public_loader = extract_method(main_text, "loadFollowingPublicInitialFilled")
+    public_loader = extract_method(main_text, "loadPublicAutofillFromHomeSync") or extract_method(main_text, "loadFollowingPublicInitialFilled")
+    public_older_loader = extract_method(main_text, "loadOlderFollowingHomePageSync")
     bottom_method = extract_method(main_text, "bottomNav")
     drawer_method = extract_method(main_text, "openDrawer")
     topbar_method = extract_any_method(main_text, "mainTopBar")
@@ -331,8 +332,13 @@ def build_spec(main_text: str, latest: dict, apk_sha: str, source_path: str):
     nav_order=[x["id"] for x in nav_items]
     drawer_rows=parse_drawer(drawer_method)
 
-    target = find_int(r"(?:target|maxTarget)\s*=\s*(\d+)", public_loader, 30)
-    scans = find_int(r"(?:maxScans|maxScan)\s*=\s*(\d+)", public_loader, 6)
+    # Current Android Public autofill is expressed directly in loop conditions
+    # instead of named target/maxScans variables.
+    target = find_int(r'length\(\)\s*<\s*(\d+)', public_loader, 40)
+    scans = find_int(r'while\s*\([^<]*<\s*(\d+)', public_loader, 7)
+    older_target = find_int(r'arrayList\.size\(\)\s*<\s*(\d+)', public_older_loader, 20)
+    older_scans = find_int(r'for\s*\([^;]+;\s*[^<]+<\s*(\d+)', public_older_loader, 6)
+    progressive_scans = 24 if "publicProgressiveFillRunningV02569" in main_text and "i < 24" in main_text else 24
 
     # Current Android palette is recovered from source when obvious; otherwise these
     # values are the verified v0.25.17 palette.
@@ -434,6 +440,9 @@ def build_spec(main_text: str, latest: dict, apk_sha: str, source_path: str):
             "public": {
                 "targetInitialItems": target,
                 "maxHomeScans": scans,
+                "progressiveScans": progressive_scans,
+                "olderTargetItems": older_target,
+                "olderMaxScans": older_scans,
                 "excludeDirect": ("direct" in public_filter_text),
                 "excludeBoosts": ("reblog" in public_filter_text),
                 "excludeReplies": ("in_reply_to_id" in public_filter_text),
