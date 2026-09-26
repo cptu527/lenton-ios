@@ -713,7 +713,7 @@ async function saveCurrentAccount(){
 function resetAccountState(){
   stopForegroundRealtime();
   state.realtimeStreamingHost="";state.realtimeStreamingBase="";state.realtimeAuthMode="protocol";
-  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.listOrderDirty=false;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];state.searchResults=null;state.searchQuery="";state.searchMode="posts";state.searchFollowingIds=null;state.notificationUnread=0;state.notificationUnreadOverflow=false;state.dmUnread=0;state.notificationMode="all";state.notificationAllItems=[];state.replyNeededItems=[];
+  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.listOrderDirty=false;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];state.searchResults=null;state.searchQuery="";state.searchMode="posts";state.searchFollowingIds=null;state.notificationUnread=0;state.notificationUnreadOverflow=false;state.dmUnread=0;state.notificationMode="all";state.notificationAllItems=[];state.replyNeededItems=[];state.publicRawCursor="";state.publicRawExhausted=false;state.publicBridgeTargetAt=0;state.publicFilledAt=0;
 }
 async function switchSavedAccount(index){
   const list=savedAccounts(),entry=list[index];if(!entry?.session)return;
@@ -1202,41 +1202,101 @@ function mergeTimelineUnlimited(fresh=[],existing=[]){
 function androidPublicTimelinePolicy(){
   const spec=ANDROID?.timeline?.public||{};
   return {
-    targetInitialItems:Math.max(1,Number(spec.targetInitialItems)||30),
-    maxHomeScans:Math.max(1,Number(spec.maxHomeScans)||6)
+    targetInitialItems:Math.max(1,Number(spec.targetInitialItems)||40),
+    maxHomeScans:Math.max(1,Number(spec.maxHomeScans)||7),
+    progressiveScans:Math.max(1,Number(spec.progressiveScans)||24),
+    olderTargetItems:Math.max(1,Number(spec.olderTargetItems)||20),
+    olderMaxScans:Math.max(1,Number(spec.olderMaxScans)||6)
   };
 }
+function rawTimelineLastId(items=[]){
+  for(let i=(Array.isArray(items)?items.length:0)-1;i>=0;i--){
+    const id=String(items[i]?.id||statusId(items[i])||"");
+    if(id)return id;
+  }
+  return "";
+}
+function oldestTimelineMs(items=[]){
+  const times=(Array.isArray(items)?items:[]).map(statusCreatedAtMs).filter(x=>Number(x)>0);
+  return times.length?Math.min(...times):0;
+}
 async function loadPublicFromHome({maxId="",limit=40,onPage=null,targetVisible=0,stopAtCreatedAt=0,maxPages=0}={}){
-  let cursor=maxId||"",items=[],scan=0;
+  let cursor=maxId||"",items=[],scan=0,exhausted=false;
   const policy=androidPublicTimelinePolicy();
   const scanLimit=Math.max(1,Number(maxPages)||policy.maxHomeScans);
   for(;scan<scanLimit;){
     const query={limit:String(limit)};
     if(cursor)query.max_id=cursor;
-
     const page=await api("/api/v1/timelines/home",{query});
-    if(!Array.isArray(page)||!page.length)break;
+    if(!Array.isArray(page)||!page.length){exhausted=true;break}
     scan++;
 
     const visible=page.filter(publicHomeStatus);
     items=mergeTimelineUnlimited(visible,items);
-
     if(typeof onPage==="function"){
       try{onPage(items,visible,page)}catch{}
     }
 
-    const times=page.map(statusCreatedAtMs).filter(x=>Number(x)>0);
-    const pageOldest=times.length?Math.min(...times):0;
+    const pageOldest=oldestTimelineMs(page);
     if(Number(stopAtCreatedAt)>0&&pageOldest>0&&pageOldest<=Number(stopAtCreatedAt))break;
     if(Number(targetVisible)>0&&items.length>=Number(targetVisible))break;
 
-    const next=String(page[page.length-1]?.id||"");
-    if(!next||next===cursor)break;
-    // Mastodon servers are allowed to return fewer than the requested limit.
-    // Android keeps paging in that case; stopping on page.length < limit causes
-    // reply-heavy feeds to jump from recent posts straight to much older cache.
+    const next=rawTimelineLastId(page);
+    if(!next||next===cursor){exhausted=true;break}
     cursor=next;
   }
+  state.publicRawCursor=cursor;
+  state.publicRawExhausted=exhausted;
+  return items;
+}
+async function loadAndroidPublicInitial(){
+  const policy=androidPublicTimelinePolicy();
+  let home=Array.isArray(state.homePagerData?.home)?state.homePagerData.home:[];
+  if(!home.length){
+    const first=await api("/api/v1/timelines/home",{query:{limit:"40"}});
+    home=Array.isArray(first)?first:[];
+    if(home.length){
+      state.homePagerData=state.homePagerData||{home:[],public:[]};
+      state.homePagerData.home=home;
+      homeSnapshotWrite(state.homePagerData);
+    }
+  }
+
+  let visible=publicFromHome(home);
+  let cursor=rawTimelineLastId(home);
+  let scans=0,exhausted=false;
+  while(scans<policy.maxHomeScans&&visible.length<policy.targetInitialItems&&cursor){
+    const page=await api("/api/v1/timelines/home",{query:{limit:"40",max_id:cursor}});
+    if(!Array.isArray(page)||!page.length){exhausted=true;break}
+    visible=mergeTimelineUnlimited(page.filter(publicHomeStatus),visible);
+    const next=rawTimelineLastId(page);
+    if(!next||next===cursor){exhausted=true;break}
+    cursor=next;
+    scans++;
+  }
+  state.publicRawCursor=cursor;
+  state.publicRawExhausted=exhausted;
+  return visible;
+}
+async function loadOlderPublicAndroid(){
+  const policy=androidPublicTimelinePolicy();
+  let cursor=String(state.publicRawCursor||"");
+  if(!cursor){
+    const home=Array.isArray(state.homePagerData?.home)?state.homePagerData.home:[];
+    cursor=rawTimelineLastId(home)||rawTimelineLastId(state.homePagerData?.public||[]);
+  }
+  if(!cursor||state.publicRawExhausted)return [];
+  let items=[],scans=0;
+  while(scans<policy.olderMaxScans&&items.length<policy.olderTargetItems){
+    const page=await api("/api/v1/timelines/home",{query:{limit:"40",max_id:cursor}});
+    if(!Array.isArray(page)||!page.length){state.publicRawExhausted=true;break}
+    items=mergeTimelineUnlimited(page.filter(publicHomeStatus),items);
+    const next=rawTimelineLastId(page);
+    if(!next||next===cursor){state.publicRawExhausted=true;break}
+    cursor=next;
+    scans++;
+  }
+  state.publicRawCursor=cursor;
   return items;
 }
 async function expandHomeTimelineInBackground(){
@@ -1253,23 +1313,32 @@ async function expandHomeTimelineInBackground(){
 async function expandPublicTimelineInBackground(){
   if(state.publicRefreshPromise)return state.publicRefreshPromise;
   if(state.publicBackgroundFillPromise)return state.publicBackgroundFillPromise;
-  const generation=Number(state.publicLoadGeneration||0)+1;
-  state.publicLoadGeneration=generation;
-  const existing=Array.isArray(state.homePagerData?.public)?[...state.homePagerData.public]:[];
+  const generation=Number(state.publicLoadGeneration||0);
   const policy=androidPublicTimelinePolicy();
-  const targetVisible=Math.max(policy.targetInitialItems,Math.min(120,existing.length+policy.targetInitialItems));
+  let merged=Array.isArray(state.homePagerData?.public)?[...state.homePagerData.public]:[];
+  let cursor=String(state.publicRawCursor||"");
+  const stopAt=Number(state.publicBridgeTargetAt||0);
+
   state.publicBackgroundFillPromise=(async()=>{
-    // Android parity: scan Home up to maxHomeScans pages and keep only non-replies.
-    // Paint once after the scan so iPhone does not flash/jump between each page.
-    const items=await loadPublicFromHome({
-      limit:40,
-      targetVisible,
-      maxPages:policy.maxHomeScans
-    });
-    const merged=mergeTimelineUnlimited(items,existing);
+    if(!cursor||state.publicRawExhausted)return merged;
+    for(let scan=0;scan<policy.progressiveScans;scan++){
+      const page=await api("/api/v1/timelines/home",{query:{limit:"40",max_id:cursor}});
+      if(!Array.isArray(page)||!page.length){state.publicRawExhausted=true;break}
+      merged=mergeTimelineUnlimited(page.filter(publicHomeStatus),merged);
+      const next=rawTimelineLastId(page);
+      if(!next||next===cursor){state.publicRawExhausted=true;break}
+      cursor=next;
+      state.publicRawCursor=cursor;
+
+      const pageOldest=oldestTimelineMs(page);
+      if((stopAt>0&&pageOldest>0&&pageOldest<=stopAt)||(stopAt<=0&&merged.length>=policy.targetInitialItems))break;
+      // Current Android progressive fill stops when the server returns a short page.
+      if(page.length<40){state.publicRawExhausted=true;break}
+    }
     if(Number(state.publicLoadGeneration||0)!==generation)return merged;
     updatePublicTimelinePage(merged,{preserveScroll:true});
     state.publicFilledAt=Date.now();
+    state.publicBridgeTargetAt=0;
     return merged;
   })().finally(()=>{state.publicBackgroundFillPromise=null});
   return state.publicBackgroundFillPromise;
@@ -1381,22 +1450,26 @@ async function refreshPublicTimeline(){
   if(state.publicRefreshPromise)return state.publicRefreshPromise;
   const generation=Number(state.publicLoadGeneration||0)+1;
   state.publicLoadGeneration=generation;
-  const policy=androidPublicTimelinePolicy();
-  const existing=Array.isArray(state.homePagerData?.public)?state.homePagerData.public:[];
-  state.publicRefreshPromise=(async()=>{
-    // Match Android: fill the current Public window from Home, scanning up to
-    // maxHomeScans pages until targetInitialItems non-reply statuses are found.
-    const fresh=await loadPublicFromHome({
-      limit:40,
-      targetVisible:policy.targetInitialItems,
-      maxPages:policy.maxHomeScans
-    });
-    if(Number(state.publicLoadGeneration||0)!==generation)return existing;
-    const items=mergeTimelineUnlimited(fresh,existing);
-    updatePublicTimelinePage(items,{preserveScroll:true});
+  const previous=Array.isArray(state.homePagerData?.public)?state.homePagerData.public:[];
+  const inheritedBridge=Number(state.publicBridgeTargetAt||0);
+  state.publicBridgeTargetAt=inheritedBridge>0?inheritedBridge:oldestTimelineMs(previous);
+  state.publicRawExhausted=false;
+
+  const run=(async()=>{
+    const fresh=await loadAndroidPublicInitial();
+    if(Number(state.publicLoadGeneration||0)!==generation)return previous;
+    // Do not merge the old sparse Public cache here. Android fills the missing
+    // interval from the raw Home cursor first; merging stale cache is what caused
+    // visible jumps such as 7 hours -> 2 days on iPhone.
+    updatePublicTimelinePage(fresh,{preserveScroll:true});
     state.publicFilledAt=Date.now();
-    return items;
-  })().finally(()=>{state.publicRefreshPromise=null});
+    return fresh;
+  })();
+
+  state.publicRefreshPromise=run.finally(()=>{
+    state.publicRefreshPromise=null;
+    setTimeout(()=>expandPublicTimelineInBackground().catch(()=>{}),0);
+  });
   return state.publicRefreshPromise;
 }
 async function refreshHomeAfterPost(){
@@ -1468,12 +1541,12 @@ function setHomePagerMode(mode,animate=true){
   syncHomePagerUi(mode,animate);
   requestAnimationFrame(()=>attachHomeInfiniteScroll());
   if(mode==="public"&&changed){
-    const immediate=publicFromHome(state.homePagerData?.home||[]);
     const existing=Array.isArray(state.homePagerData?.public)?state.homePagerData.public:[];
-    const visible=existing.length?mergeTimelineUnlimited(immediate,existing):immediate;
-    state.homePagerData.public=visible;
-    state.timelineItems=visible;
-    updatePublicTimelinePage(visible,{preserveScroll:true});
+    state.publicBridgeTargetAt=oldestTimelineMs(existing);
+    const immediate=publicFromHome(state.homePagerData?.home||[]);
+    state.homePagerData.public=immediate;
+    state.timelineItems=immediate;
+    updatePublicTimelinePage(immediate,{preserveScroll:true});
     setTimeout(()=>refreshPublicTimeline().catch(()=>{}),0);
   }
 }
@@ -1570,9 +1643,7 @@ async function loadMoreHome({automatic=false}={}){
     if(state.listId){
       more=await api(`/api/v1/timelines/list/${state.listId}`,{query:{limit:"40",max_id:maxId}});
     }else if(state.homeMode==="public"){
-      // 자동 스크롤에서는 작은 묶음을 빨리 붙이고 곧바로 다음 묶음을 이어 받는다.
-      const targetVisible=automatic?12:24;
-      more=await loadPublicFromHome({maxId,limit:40,targetVisible});
+      more=await loadOlderPublicAndroid();
     }else{
       more=await loadChronologicalHome({maxId,limit:40,maxScans:2});
     }
