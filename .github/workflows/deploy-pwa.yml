@@ -80,6 +80,30 @@ jobs:
           echo "Decompiled Java files: $COUNT (jadx exit=$JADX_EXIT)"
           test "$COUNT" -gt 0
 
+      - name: Inspect Android Public timeline source
+        run: |
+          SRC="/tmp/lenton-jadx/sources/com/mastoflow/app/MainActivity.java"
+          test -f "$SRC"
+          echo "===== PUBLIC TIMELINE SYMBOLS ====="
+          grep -n -E 'followingPublicOnlyStatus|loadFollowingPublic|filterFollowingPublic|timelines/home|in_reply_to_id|maxScans|maxScan|targetInitial|targetVisible|퍼블릭' "$SRC" | head -n 240 || true
+          echo "===== CONTEXT AROUND PUBLIC METHODS ====="
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("/tmp/lenton-jadx/sources/com/mastoflow/app/MainActivity.java")
+          lines=p.read_text(encoding="utf-8",errors="replace").splitlines()
+          needles=("followingPublicOnlyStatus","loadFollowingPublic","filterFollowingPublic","timelines/home","in_reply_to_id")
+          hits=sorted({i for i,line in enumerate(lines) if any(n in line for n in needles)})
+          shown=set()
+          for i in hits:
+              a=max(0,i-12); b=min(len(lines),i+45)
+              key=(a,b)
+              if key in shown: continue
+              shown.add(key)
+              print(f"--- lines {a+1}-{b} ---")
+              for j in range(a,b):
+                  print(f"{j+1}: {lines[j]}")
+          PY
+
       - name: Generate PWA spec from final Android code
         run: |
           python3 tools/generate_pwa_spec_from_apk.py \
