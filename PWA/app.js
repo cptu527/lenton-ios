@@ -1199,9 +1199,18 @@ function mergeTimelineUnlimited(fresh=[],existing=[]){
   out.sort((a,b)=>statusCreatedAtMs(b)-statusCreatedAtMs(a));
   return out;
 }
+function androidPublicTimelinePolicy(){
+  const spec=ANDROID?.timeline?.public||{};
+  return {
+    targetInitialItems:Math.max(1,Number(spec.targetInitialItems)||30),
+    maxHomeScans:Math.max(1,Number(spec.maxHomeScans)||6)
+  };
+}
 async function loadPublicFromHome({maxId="",limit=40,onPage=null,targetVisible=0,stopAtCreatedAt=0,maxPages=0}={}){
   let cursor=maxId||"",items=[],scan=0;
-  for(;;){
+  const policy=androidPublicTimelinePolicy();
+  const scanLimit=Math.max(1,Number(maxPages)||policy.maxHomeScans);
+  for(;scan<scanLimit;){
     const query={limit:String(limit)};
     if(cursor)query.max_id=cursor;
 
@@ -1220,10 +1229,12 @@ async function loadPublicFromHome({maxId="",limit=40,onPage=null,targetVisible=0
     const pageOldest=times.length?Math.min(...times):0;
     if(Number(stopAtCreatedAt)>0&&pageOldest>0&&pageOldest<=Number(stopAtCreatedAt))break;
     if(Number(targetVisible)>0&&items.length>=Number(targetVisible))break;
-    if(Number(maxPages)>0&&scan>=Number(maxPages))break;
 
     const next=String(page[page.length-1]?.id||"");
-    if(!next||next===cursor||page.length<Number(limit))break;
+    if(!next||next===cursor)break;
+    // Mastodon servers are allowed to return fewer than the requested limit.
+    // Android keeps paging in that case; stopping on page.length < limit causes
+    // reply-heavy feeds to jump from recent posts straight to much older cache.
     cursor=next;
   }
   return items;
@@ -1245,17 +1256,15 @@ async function expandPublicTimelineInBackground(){
   const generation=Number(state.publicLoadGeneration||0)+1;
   state.publicLoadGeneration=generation;
   const existing=Array.isArray(state.homePagerData?.public)?[...state.homePagerData.public]:[];
-  // 퍼블릭은 홈 시간순을 계속 페이지 넘기며 답글만 제거해야 한다.
-  // 기존 마지막 표시 시각을 종료 조건으로 쓰면 첫 페이지에 답글이 많을 때
-  // 1시간 전 다음이 곧바로 1일 전처럼 보이는 빈 구간이 생길 수 있다.
-  // 따라서 화면에 실제로 표시할 비답글 게시물 수를 충분히 확보할 때까지 훑는다.
-  const targetVisible=Math.max(80,Math.min(200,existing.length+48));
+  const policy=androidPublicTimelinePolicy();
+  const targetVisible=Math.max(policy.targetInitialItems,Math.min(120,existing.length+policy.targetInitialItems));
   state.publicBackgroundFillPromise=(async()=>{
-    // Fetch silently, then paint once at the end to avoid iPhone flashing/scroll jumps.
+    // Android parity: scan Home up to maxHomeScans pages and keep only non-replies.
+    // Paint once after the scan so iPhone does not flash/jump between each page.
     const items=await loadPublicFromHome({
       limit:40,
       targetVisible,
-      maxPages:24
+      maxPages:policy.maxHomeScans
     });
     const merged=mergeTimelineUnlimited(items,existing);
     if(Number(state.publicLoadGeneration||0)!==generation)return merged;
@@ -1369,9 +1378,26 @@ async function refreshPublicLatestPage({fillBackground=false}={}){
   return state.publicRefreshPromise;
 }
 async function refreshPublicTimeline(){
-  // Pull-to-refresh / home reselect must be a single visible refresh.
-  // Older items already stay in the current list and infinite scroll can fetch more.
-  return refreshPublicLatestPage({fillBackground:false});
+  if(state.publicRefreshPromise)return state.publicRefreshPromise;
+  const generation=Number(state.publicLoadGeneration||0)+1;
+  state.publicLoadGeneration=generation;
+  const policy=androidPublicTimelinePolicy();
+  const existing=Array.isArray(state.homePagerData?.public)?state.homePagerData.public:[];
+  state.publicRefreshPromise=(async()=>{
+    // Match Android: fill the current Public window from Home, scanning up to
+    // maxHomeScans pages until targetInitialItems non-reply statuses are found.
+    const fresh=await loadPublicFromHome({
+      limit:40,
+      targetVisible:policy.targetInitialItems,
+      maxPages:policy.maxHomeScans
+    });
+    if(Number(state.publicLoadGeneration||0)!==generation)return existing;
+    const items=mergeTimelineUnlimited(fresh,existing);
+    updatePublicTimelinePage(items,{preserveScroll:true});
+    state.publicFilledAt=Date.now();
+    return items;
+  })().finally(()=>{state.publicRefreshPromise=null});
+  return state.publicRefreshPromise;
 }
 async function refreshHomeAfterPost(){
   try{await refreshHomeIncremental()}catch{}
@@ -1448,7 +1474,7 @@ function setHomePagerMode(mode,animate=true){
     state.homePagerData.public=visible;
     state.timelineItems=visible;
     updatePublicTimelinePage(visible,{preserveScroll:true});
-    setTimeout(()=>refreshPublicLatestPage({fillBackground:true}).catch(()=>{}),0);
+    setTimeout(()=>refreshPublicTimeline().catch(()=>{}),0);
   }
 }
 async function homeView({silent=false,forceFresh=false}={}){
