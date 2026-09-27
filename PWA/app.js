@@ -713,7 +713,7 @@ async function saveCurrentAccount(){
 function resetAccountState(){
   stopForegroundRealtime();
   state.realtimeStreamingHost="";state.realtimeStreamingBase="";state.realtimeAuthMode="protocol";
-  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.listOrderDirty=false;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];state.searchResults=null;state.searchQuery="";state.searchMode="posts";state.searchFollowingIds=null;state.notificationUnread=0;state.notificationUnreadOverflow=false;state.dmUnread=0;state.notificationMode="all";state.notificationAllItems=[];state.replyNeededItems=[];state.publicRawCursor="";state.publicRawExhausted=false;state.publicBridgeTargetAt=0;state.publicFilledAt=0;state.homeLoadGeneration=0;
+  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.listOrderDirty=false;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];state.searchResults=null;state.searchQuery="";state.searchMode="posts";state.searchFollowingIds=null;state.notificationUnread=0;state.notificationUnreadOverflow=false;state.dmUnread=0;state.notificationMode="all";state.notificationAllItems=[];state.replyNeededItems=[];state.publicRawCursor="";state.publicRawExhausted=false;state.publicOlderExhausted=false;state.publicBridgeTargetAt=0;state.publicFilledAt=0;state.homeLoadGeneration=0;
 }
 async function switchSavedAccount(index){
   const list=savedAccounts(),entry=list[index];if(!entry?.session)return;
@@ -1278,25 +1278,46 @@ async function loadAndroidPublicInitial(){
   state.publicRawExhausted=exhausted;
   return visible;
 }
-async function loadOlderPublicAndroid(){
+async function loadOlderPublicAndroid({maxId=""}={}){
   const policy=androidPublicTimelinePolicy();
-  let cursor=String(state.publicRawCursor||"");
+  const existing=Array.isArray(state.homePagerData?.public)?state.homePagerData.public:[];
+  const seen=new Set(existing.map(x=>String(statusId(x)||"")).filter(Boolean));
+  let cursor=String(state.publicRawCursor||maxId||rawTimelineLastId(existing)||"");
   if(!cursor){
     const home=Array.isArray(state.homePagerData?.home)?state.homePagerData.home:[];
-    cursor=rawTimelineLastId(home)||rawTimelineLastId(state.homePagerData?.public||[]);
+    cursor=rawTimelineLastId(home);
   }
-  if(!cursor||state.publicRawExhausted)return [];
+  if(!cursor||state.publicOlderExhausted)return [];
+
   let items=[],scans=0;
-  while(scans<policy.olderMaxScans&&items.length<policy.olderTargetItems){
+  // A reply-heavy stretch can contain no visible Public items for several Home pages.
+  // Keep walking the raw Home cursor instead of treating an empty filtered batch as EOF.
+  const scanLimit=Math.max(policy.olderMaxScans,policy.progressiveScans,24);
+  while(scans<scanLimit&&items.length<policy.olderTargetItems){
     const page=await api("/api/v1/timelines/home",{query:{limit:"40",max_id:cursor}});
-    if(!Array.isArray(page)||!page.length){state.publicRawExhausted=true;break}
-    items=mergeTimelineUnlimited(page.filter(publicHomeStatus),items);
+    if(!Array.isArray(page)||!page.length){
+      state.publicOlderExhausted=true;
+      break;
+    }
+
+    for(const raw of page){
+      if(!publicHomeStatus(raw))continue;
+      const id=String(statusId(raw)||"");
+      if(id&&seen.has(id))continue;
+      if(id)seen.add(id);
+      items.push(raw);
+    }
+    items.sort((a,b)=>statusCreatedAtMs(b)-statusCreatedAtMs(a));
+
     const next=rawTimelineLastId(page);
-    if(!next||next===cursor){state.publicRawExhausted=true;break}
+    if(!next||next===cursor){
+      state.publicOlderExhausted=true;
+      break;
+    }
     cursor=next;
+    state.publicRawCursor=cursor;
     scans++;
   }
-  state.publicRawCursor=cursor;
   return items;
 }
 async function expandHomeTimelineInBackground(){
@@ -1457,6 +1478,7 @@ async function refreshPublicTimeline({fillBackground=true}={}){
   const inheritedBridge=Number(state.publicBridgeTargetAt||0);
   state.publicBridgeTargetAt=inheritedBridge>0?inheritedBridge:oldestTimelineMs(previous);
   state.publicRawExhausted=false;
+  state.publicOlderExhausted=false;
 
   const run=(async()=>{
     const fresh=await loadAndroidPublicInitial();
@@ -1646,7 +1668,7 @@ async function loadMoreHome({automatic=false}={}){
     if(state.listId){
       more=await api(`/api/v1/timelines/list/${state.listId}`,{query:{limit:"40",max_id:maxId}});
     }else if(state.homeMode==="public"){
-      more=await loadOlderPublicAndroid();
+      more=await loadOlderPublicAndroid({maxId});
     }else{
       more=await loadChronologicalHome({maxId,limit:40,maxScans:2});
     }
@@ -1660,8 +1682,13 @@ async function loadMoreHome({automatic=false}={}){
     if(!more.length){
       if(btn){
         btn.disabled=false;
-        btn.dataset.exhausted="1";
-        btn.textContent="더 불러올 게시물이 없어요.";
+        if(state.homeMode==="public"&&!state.listId&&!state.publicOlderExhausted){
+          delete btn.dataset.exhausted;
+          btn.textContent="더 불러오기";
+        }else{
+          btn.dataset.exhausted="1";
+          btn.textContent="더 불러올 게시물이 없어요.";
+        }
       }
       return;
     }
