@@ -6046,3 +6046,114 @@ html.has-local-background .reply-compose .android-compose-tools{
   font-weight:700;
   padding:0 10px;
 }
+
+
+/* 2026-09-27 QA 31: manual dismissal from Reply-needed mentions */
+.reply-needed-dismiss{
+  flex:0 0 auto;
+  min-width:44px;
+  height:26px;
+  margin-left:auto;
+  padding:0 8px;
+  border:1px solid var(--line);
+  border-radius:999px;
+  background:transparent;
+  color:var(--sub);
+  font-size:11px;
+  line-height:24px;
+  font-weight:650;
+}
+.reply-needed-dismiss:active{
+  background:var(--surface);
+}
+
+/* 2026-09-27 QA 32: notification top header/tabs use one material */
+.lenton-view-notifications .topbar,
+.lenton-view-notifications .lenton-notify-tabs{
+  background:color-mix(in srgb,var(--bg) 94%,transparent)!important;
+  -webkit-backdrop-filter:blur(18px) saturate(150%)!important;
+  backdrop-filter:blur(18px) saturate(150%)!important;
+}
+html.has-local-background .lenton-view-notifications .topbar,
+html.has-local-background .lenton-view-notifications .lenton-notify-tabs{
+  background:color-mix(in srgb,var(--bg) 36%,transparent)!important;
+  -webkit-backdrop-filter:blur(3px) saturate(108%)!important;
+  backdrop-filter:blur(3px) saturate(108%)!important;
+}
+
+/* 2026-09-27 QA 33: profile timeline density follows Home UI scale */
+.profile-pager-page .lenton-status{
+  padding:
+    calc(8px * var(--lenton-ui-scale,1))
+    calc(12px * var(--lenton-ui-scale,1))
+    calc(4px * var(--lenton-ui-scale,1));
+}
+.profile-pager-page .lenton-status .status-head{
+  gap:calc(9px * var(--lenton-ui-scale,1));
+}
+.profile-pager-page .lenton-status .avatar{
+  width:calc(44px * var(--lenton-ui-scale,1));
+  height:calc(44px * var(--lenton-ui-scale,1));
+  flex-basis:calc(44px * var(--lenton-ui-scale,1));
+}
+.profile-pager-page .lenton-status-top{
+  gap:calc(5px * var(--lenton-ui-scale,1));
+  min-height:calc(24px * var(--lenton-ui-scale,1));
+}
+.profile-pager-page .lenton-status .author-line{
+  height:calc(24px * var(--lenton-ui-scale,1));
+}
+.profile-pager-page .lenton-status .name,
+.profile-pager-page .lenton-status .acctline{
+  font-size:calc(14px * var(--lenton-ui-scale,1));
+}
+.profile-pager-page .lenton-status .status-more{
+  width:calc(30px * var(--lenton-ui-scale,1));
+  height:calc(30px * var(--lenton-ui-scale,1));
+}
+.profile-pager-page .lenton-status .status-more .lenton-icon{
+  width:calc(21px * var(--lenton-ui-scale,1));
+  height:calc(21px * var(--lenton-ui-scale,1));
+}
+.profile-pager-page .lenton-status .content{
+  padding:0 0 calc(3px * var(--lenton-ui-scale,1));
+  font-size:calc(15px * var(--lenton-ui-scale,1));
+  line-height:1.38;
+}
+.profile-pager-page .lenton-status .boosted{
+  min-height:0;
+  padding:0 0 calc(3px * var(--lenton-ui-scale,1)) calc(53px * var(--lenton-ui-scale,1));
+  font-size:calc(11px * var(--lenton-ui-scale,1));
+}
+.profile-pager-page .lenton-status .media{
+  margin:calc(5px * var(--lenton-ui-scale,1)) 0 calc(3px * var(--lenton-ui-scale,1));
+}
+.profile-pager-page .lenton-actions{
+  height:calc(36px * var(--lenton-ui-scale,1));
+  margin-top:calc(2px * var(--lenton-ui-scale,1));
+}
+.profile-pager-page .lenton-actions button{
+  height:calc(34px * var(--lenton-ui-scale,1));
+  min-height:0;
+  font-size:calc(20px * var(--lenton-ui-scale,1));
+}
+.profile-pager-page .lenton-actions .lenton-icon{
+  width:calc(21px * var(--lenton-ui-scale,1));
+  height:calc(21px * var(--lenton-ui-scale,1));
+}
+.profile-pager-page .lenton-actions .count{
+  margin-left:calc(2px * var(--lenton-ui-scale,1));
+  font-size:calc(11px * var(--lenton-ui-scale,1));
+}
+.profile-pager-page .lenton-status .cw{
+  margin:calc(2px * var(--lenton-ui-scale,1)) 0 calc(4px * var(--lenton-ui-scale,1));
+  padding:calc(6px * var(--lenton-ui-scale,1)) calc(8px * var(--lenton-ui-scale,1));
+}
+
+/* 2026-09-27 QA 34: DM mentions stay legible on accent-colour bubbles */
+.dm-chat-bubble .inline-mention{
+  color:inherit!important;
+  text-decoration:underline;
+  text-decoration-thickness:1px;
+  text-underline-offset:2px;
+}
