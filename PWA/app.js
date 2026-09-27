@@ -713,7 +713,7 @@ async function saveCurrentAccount(){
 function resetAccountState(){
   stopForegroundRealtime();
   state.realtimeStreamingHost="";state.realtimeStreamingBase="";state.realtimeAuthMode="protocol";
-  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.listOrderDirty=false;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];state.searchResults=null;state.searchQuery="";state.searchMode="posts";state.searchFollowingIds=null;state.notificationUnread=0;state.notificationUnreadOverflow=false;state.dmUnread=0;state.notificationMode="all";state.notificationAllItems=[];state.replyNeededItems=[];state.publicRawCursor="";state.publicRawExhausted=false;state.publicBridgeTargetAt=0;state.publicFilledAt=0;
+  state.lists=[];state.timelineItems=[];state.pageCache={};state.homeCache={};state.profileAccount=null;state.profileRelationship=null;state.profileMode="posts";state.profileReplies=false;state.currentConversation=null;state.customEmojis=null;state.listId=null;state.listOrderDirty=false;state.homeMode="home";state.scrolls={};state.navStack=[];state.dmDraftRecipients=[];state.searchResults=null;state.searchQuery="";state.searchMode="posts";state.searchFollowingIds=null;state.notificationUnread=0;state.notificationUnreadOverflow=false;state.dmUnread=0;state.notificationMode="all";state.notificationAllItems=[];state.replyNeededItems=[];state.publicRawCursor="";state.publicRawExhausted=false;state.publicBridgeTargetAt=0;state.publicFilledAt=0;state.homeLoadGeneration=0;
 }
 async function switchSavedAccount(index){
   const list=savedAccounts(),entry=list[index];if(!entry?.session)return;
@@ -1301,9 +1301,10 @@ async function loadOlderPublicAndroid(){
 }
 async function expandHomeTimelineInBackground(){
   if(state.homeBackgroundFillPromise)return state.homeBackgroundFillPromise;
+  const generation=Number(state.homeLoadGeneration||0);
   state.homeBackgroundFillPromise=(async()=>{
     const items=await loadChronologicalHome({limit:40,maxScans:3});
-    if(!items.length)return;
+    if(!items.length||Number(state.homeLoadGeneration||0)!==generation)return;
     const current=state.homePagerData?.home||[];
     const merged=mergeNewestTimeline(items,current,160);
     updateHomeTimelinePage(merged,{preserveScroll:true});
@@ -1409,11 +1410,13 @@ function updatePublicTimelinePage(items,{preserveScroll=true}={}){
 }
 async function refreshHomeIncremental(){
   if(state.homeRefreshPromise)return state.homeRefreshPromise;
+  const generation=Number(state.homeLoadGeneration||0)+1;
+  state.homeLoadGeneration=generation;
   state.homeRefreshPromise=(async()=>{
     const items=await loadChronologicalHome({limit:40,maxScans:3});
     const current=Array.isArray(state.homePagerData?.home)?state.homePagerData.home:[];
     const merged=items.length?mergeNewestTimeline(items,current,160):current;
-    if(items.length)updateHomeTimelinePage(merged,{preserveScroll:true});
+    if(items.length&&Number(state.homeLoadGeneration||0)===generation)updateHomeTimelinePage(merged,{preserveScroll:true});
     return merged;
   })().finally(()=>{state.homeRefreshPromise=null});
   return state.homeRefreshPromise;
@@ -1446,7 +1449,7 @@ async function refreshPublicLatestPage({fillBackground=false}={}){
   })().finally(()=>{state.publicRefreshPromise=null});
   return state.publicRefreshPromise;
 }
-async function refreshPublicTimeline(){
+async function refreshPublicTimeline({fillBackground=true}={}){
   if(state.publicRefreshPromise)return state.publicRefreshPromise;
   const generation=Number(state.publicLoadGeneration||0)+1;
   state.publicLoadGeneration=generation;
@@ -1468,7 +1471,7 @@ async function refreshPublicTimeline(){
 
   state.publicRefreshPromise=run.finally(()=>{
     state.publicRefreshPromise=null;
-    setTimeout(()=>expandPublicTimelineInBackground().catch(()=>{}),0);
+    if(fillBackground)setTimeout(()=>expandPublicTimelineInBackground().catch(()=>{}),0);
   });
   return state.publicRefreshPromise;
 }
@@ -2096,12 +2099,13 @@ async function reconcileReplyNeededAcrossClients(pending=[]){
   if(answered.size)markReplyNeededHandledMany([...answered],{removeDom:false});
   return pending.filter(n=>!answered.has(String(n?.status?.id||"")));
 }
-function notificationMentionRowHtml(n,isNew=false){
+function notificationMentionRowHtml(n,isNew=false,replyNeededMode=false){
   const a=n?.account||{},st=n?.status||{};
   const reply=!!String(st.in_reply_to_id||"");
   const boostAllowed=st?.rebloggable!==false&&!["private","direct"].includes(String(st?.visibility||""));
   const answeredByMe=!!String(st.id||"")&&replyNeededHandledIds().has(String(st.id));
   const replyCount=Math.max(Number(st.replies_count||0),answeredByMe?1:0);
+  const dismiss=replyNeededMode&&st?.id?'<button type="button" class="reply-needed-dismiss" data-reply-needed-dismiss="'+esc(st.id)+'" aria-label="답장할 멘션에서 지우기">지우기</button>':"";
   const actions=st?.id?'<div class="actions lenton-actions notify-mention-actions">'+
     '<button data-action="reply" data-id="'+esc(st.id)+'" aria-label="답글">'+lentonIcon("reply")+' <span class="count" data-notify-reply-count>'+((replyCount>0)?replyCount:"")+'</span></button>'+
     '<button class="boost '+(st.reblogged?"on ":"")+(boostAllowed?"":"unavailable")+'" data-action="boost" data-id="'+esc(st.id)+'" aria-label="'+(boostAllowed?"부스트":"부스트할 수 없는 게시물")+'" '+(boostAllowed?"":"disabled")+'>'+((boostAllowed)?lentonIcon("boost"):'<span class="boost-unavailable-mark">×</span>')+' <span class="count">'+(boostAllowed?(st.reblogs_count||""):"")+'</span></button>'+
@@ -2111,7 +2115,7 @@ function notificationMentionRowHtml(n,isNew=false){
   return '<article class="android-notify-card notify-mention mention-post-card '+(isNew?"is-new ":"")+'has-status" data-notify-status="'+esc(st.id||"")+'">'+
     '<button type="button" class="mention-card-avatar" data-profile="'+esc(a.id||"")+'" aria-label="프로필 열기"><img src="'+esc(a.avatar_static||a.avatar||"")+'" alt=""></button>'+
     '<div class="android-notify-main mention-card-main">'+
-      '<div class="mention-card-author"><b>'+renderEmojiText(a.display_name||a.username||"알림",a.emojis||[])+'</b><span>@'+esc(a.acct||a.username||"")+' · '+esc(fmtTime(st.created_at))+'</span>'+(isNew?'<i class="notify-new-dot" aria-label="새 알림"></i>':"")+'</div>'+
+      '<div class="mention-card-author"><b>'+renderEmojiText(a.display_name||a.username||"알림",a.emojis||[])+'</b><span>@'+esc(a.acct||a.username||"")+' · '+esc(fmtTime(st.created_at))+'</span>'+(isNew?'<i class="notify-new-dot" aria-label="새 알림"></i>':"")+dismiss+'</div>'+
       '<div class="mention-card-kind">'+(reply?"↳ 답글을 보냈어요":"@ 나를 멘션했어요")+'</div>'+
       '<div class="notify-content">'+renderRichText(st.content||"")+'</div>'+
       actions+
@@ -2125,7 +2129,7 @@ function notificationRowsHtml(items=[],replyNeededMode=false){
   return items.map(n=>{
     const a=n.account||{},st=n.status||null,type=n.type||"";
     const isNew=state.notificationNewIds instanceof Set&&state.notificationNewIds.has(String(n?.id||""));
-    if(type==="mention"&&st)return notificationMentionRowHtml(n,isNew);
+    if(type==="mention"&&st)return notificationMentionRowHtml(n,isNew,replyNeededMode);
     const label=labels[type]||type||"새 알림",glyph=glyphs[type]||glyphs.default||"♢";
     const body=st?'<div class="notify-content">'+renderRichText(st.content||"")+'</div>':"";
     const tone=type==="status"?"notify-passive":"notify-neutral";
@@ -4865,8 +4869,8 @@ function attachHomePullToRefresh(){
     if(should){
       if(indicator)indicator.classList.add("loading");
       try{
-        if(state.homeMode==="public"&&!state.listId)await refreshPublicTimeline();
-        else await homeView({silent:true,forceFresh:true});
+        if(state.homeMode==="public"&&!state.listId)await refreshPublicTimeline({fillBackground:false});
+        else await refreshHomeIncremental();
       }finally{setTimeout(cleanup,120)}
     }else setTimeout(cleanup,170);
   },{passive:true});
@@ -5020,8 +5024,8 @@ function bind(){
       if(target==="home"){
         setTimeout(async()=>{
           try{
-            if(state.homeMode==="public")await refreshPublicTimeline();
-            else await homeView({silent:true,forceFresh:true});
+            if(state.homeMode==="public")await refreshPublicTimeline({fillBackground:false});
+            else await refreshHomeIncremental();
           }finally{
             scrollMainViewToTop("home");
             state.scrolls[scrollKey()]=0;
@@ -5037,7 +5041,10 @@ function bind(){
       clearGestureBindingMarks($("#app"));
       bind();
       requestAnimationFrame(()=>attachLentonGestures());
-      if(target==="home")setTimeout(()=>homeView({silent:true,forceFresh:true}),0);
+      if(target==="home")setTimeout(()=>{
+        if(state.homeMode==="public")refreshPublicTimeline({fillBackground:false}).catch(()=>{});
+        else refreshHomeIncremental().catch(()=>{});
+      },0);
       else if(target==="notifications")setTimeout(()=>notificationsView(false,true),0);
       else if(target==="dm")setTimeout(()=>dmView(true),0);
       return;
@@ -5141,7 +5148,13 @@ function bind(){
   document.querySelectorAll(".status[data-status-id]").forEach(card=>card.onclick=e=>{if(e.target.closest("button,a,video,audio"))return;pushNavSnapshot();openThread(card.dataset.statusId)});
   document.querySelectorAll("[data-thread-older]").forEach(b=>b.onclick=()=>openThread(b.dataset.threadOlder,true));
   document.querySelectorAll("[data-notify]").forEach(b=>b.onclick=()=>setNotificationPagerMode(b.dataset.notify==="mention"?"replyNeeded":"all",true));
-  document.querySelectorAll("[data-notify-status]").forEach(card=>card.onclick=e=>{if(e.target.closest("[data-profile]"))return;pushNavSnapshot();openThread(card.dataset.notifyStatus)});
+  document.querySelectorAll("[data-reply-needed-dismiss]").forEach(b=>b.onclick=e=>{
+    e.preventDefault();e.stopPropagation();
+    const id=String(b.dataset.replyNeededDismiss||"");if(!id)return;
+    markReplyNeededHandledMany([id],{removeDom:true});
+    toast("답장할 멘션에서 지웠어요.");
+  });
+  document.querySelectorAll("[data-notify-status]").forEach(card=>card.onclick=e=>{if(e.target.closest("[data-profile],[data-reply-needed-dismiss]"))return;pushNavSnapshot();openThread(card.dataset.notifyStatus)});
   document.querySelectorAll("[data-follow-accept]").forEach(b=>b.onclick=()=>decideFollowRequest(b.dataset.followAccept,true));
   document.querySelectorAll("[data-follow-reject]").forEach(b=>b.onclick=()=>decideFollowRequest(b.dataset.followReject,false));
   document.querySelectorAll("[data-account-switch]").forEach(b=>b.onclick=()=>switchSavedAccount(Number(b.dataset.accountSwitch)));
