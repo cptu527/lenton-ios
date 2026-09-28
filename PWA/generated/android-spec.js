@@ -1,10 +1,10 @@
 window.LENTON_ANDROID_SPEC = {
   "schema": 1,
   "generatedFrom": "published-android-apk",
-  "versionCode": 307,
-  "versionName": "0.28.03",
-  "apkUrl": "https://raw.githubusercontent.com/cptu527/lenton-updates/main/Lenton-v0.28.03-test.apk",
-  "apkSha256": "1c9655ef45c0d0c42088ffc9198fb9e4315c80a36237a46b81dd077704c75846",
+  "versionCode": 308,
+  "versionName": "0.28.04",
+  "apkUrl": "https://raw.githubusercontent.com/cptu527/lenton-updates/main/Lenton-v0.28.04-test.apk",
+  "apkSha256": "33c7e23629d474937dfc08475e19f2987a6f51d68f303d64a263fab27d8425da",
   "decompiledSource": "com/mastoflow/app/MainActivity.java",
   "homeTabs": {
     "chronological": "시간순",
@@ -256,17 +256,17 @@ window.LENTON_ANDROID_SPEC = {
     "draftGuard": true
   },
   "criticalSourceHashes": {
-    "activity": "b90f8ddb46fa1b8a0a2c100383c3e5388cb476a4c57681df6943c9ad07b979ef",
+    "activity": "3ede8daaf4a9558c5a96c1f3a1f85f313bca38642c498e1512af79f67c576f4e",
     "publicFilter": "de8d4cd01e5c5ee6a8080c67b280796c4ec6ca8c6a7ac26f9fe8fc2ec139f16e",
     "publicLoader": null,
-    "bottomNav": "f6a455453e0a7cad308c5584567db76aa7bc10efb450062541772e1c28dfd105",
-    "drawer": "2f43e2dadc7f2fae8c62eaf487b58d018d6ae0076a7c4448440e4fc6385cf64d",
+    "bottomNav": "25a91ac73be62629f73cc934959879d48def777177ff19a16022fb47977e279c",
+    "drawer": "c637a00547324e412dba3406acd3bb7afc63d17faebd6cc1399bdcf7b6675dc0",
     "composer": "90e01f3b6ba3a012dda437c110b94d484006ce57cf1e8d084a384aafaaa95f2c",
-    "topBar": "f3e8bafb6be137008db1c7e39f986ac90dd6c31db4aa338e070185973df8860c",
+    "topBar": "e5bba3573d260ee09683162d2f90ebd3c461567b1c243d000de14f2a2b1f9468",
     "status": null,
-    "profile": "f3553dda3df731fb97504cfd1e888002ee502bfff730843b65a4cb7662075945",
+    "profile": "8caf477fecfff37e41e117f12dee876d532e5620485d5e1bd60122d7a62589d8",
     "notification": null,
-    "conversation": "f19d17a7e57e22282a8a5d2e18d4d0652e1136b9fa70ead6b53234a3171b3b07"
+    "conversation": "b4fa1188809c9a1c86ef02fc75361bea1ac830fec9394795ca81edc59c5c359e"
   },
   "apkMarkerPresence": {
     "시간순": true,
