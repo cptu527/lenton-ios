@@ -902,6 +902,7 @@ function lentonIcon(name,cls=""){
   if(name==="photo")return `<svg ${c}><rect x="3.5" y="5" width="17" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="9" cy="10" r="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="m5.5 17 4.2-4 3.1 3 2.3-2.2 3.4 3.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   if(name==="camera")return `<svg ${c}><path d="M4 8h3l1.5-2.5h7L17 8h3v11H4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13.5" r="3.2" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
   if(name==="smile")return `<svg ${c}><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="9" cy="10" r="1" fill="currentColor"/><circle cx="15" cy="10" r="1" fill="currentColor"/><path d="M8.5 14c1 1.5 2.1 2.2 3.5 2.2s2.5-.7 3.5-2.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+  if(name==="clock")return `<svg ${c}><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3.4 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   return "";
 }
 function navIcon(v){return lentonIcon(v,"nav-icon")}
@@ -3038,8 +3039,63 @@ async function bookmarksView(){
   }catch(e){toast(e.message)}
 }
 
+function scheduledDateLabel(value){
+  const d=new Date(value||"");
+  if(!Number.isFinite(d.getTime()))return String(value||"");
+  try{
+    return new Intl.DateTimeFormat("ko-KR",{year:"numeric",month:"long",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false}).format(d);
+  }catch{return d.toLocaleString("ko-KR")}
+}
+function announcementRowHtml(a){
+  const reactions=Array.isArray(a?.reactions)?a.reactions:[];
+  const reactionHtml=reactions.length?'<div class="announcement-reactions">'+reactions.map(r=>{
+    const name=String(r?.name||""),img=r?.static_url||r?.url||"";
+    const face=img?'<img src="'+esc(img)+'" alt=":'+esc(name)+':">':esc(name);
+    return '<button type="button" class="announcement-reaction '+(r?.me?"on":"")+'" data-announcement-reaction="'+esc(name)+'" data-announcement-id="'+esc(a?.id||"")+'" data-announcement-me="'+(r?.me?"1":"0")+'">'+face+' <span>'+Number(r?.count||0)+'</span></button>';
+  }).join("")+'</div>':"";
+  const when=a?.updated_at||a?.published_at||"";
+  return '<article class="announcement-card"><div class="announcement-content">'+renderRichText(a?.content||"")+'</div>'+reactionHtml+(when?'<time>'+esc(scheduledDateLabel(when))+'</time>':"")+'</article>';
+}
+async function announcementsScreen(){
+  closeDrawer();
+  $("#app").innerHTML=standaloneShell("공지사항",'<div class="center">불러오는 중…</div>');bind();
+  try{
+    const items=await api("/api/v1/announcements");
+    const list=Array.isArray(items)?items:[];
+    $("#app").innerHTML=standaloneShell("공지사항",list.length?'<div class="announcement-list">'+list.map(announcementRowHtml).join("")+'</div>':'<div class="center">공지사항이 없어요.</div>');
+    bind();
+    document.querySelectorAll("[data-announcement-reaction]").forEach(b=>b.onclick=async e=>{
+      e.preventDefault();e.stopPropagation();
+      const id=String(b.dataset.announcementId||""),name=String(b.dataset.announcementReaction||"");
+      if(!id||!name)return;
+      b.disabled=true;
+      try{
+        await api("/api/v1/announcements/"+encodeURIComponent(id)+"/reactions/"+encodeURIComponent(name),{method:b.dataset.announcementMe==="1"?"DELETE":"PUT",form:{}});
+        await announcementsScreen();
+      }catch(err){toast(err.message);b.disabled=false}
+    });
+  }catch(e){
+    $("#app").innerHTML=standaloneShell("공지사항",'<div class="center">공지사항 표시 실패<br><small>'+esc(e.message)+'</small></div>');bind();
+  }
+}
+async function scheduledPostsScreen(){
+  closeDrawer();
+  $("#app").innerHTML=standaloneShell("예약 게시물",'<div class="center">불러오는 중…</div>');bind();
+  try{
+    const items=await api("/api/v1/scheduled_statuses",{query:{limit:"30"}});
+    const list=Array.isArray(items)?items:[];
+    const body=list.length?'<div class="scheduled-post-list">'+list.map(x=>{
+      const p=x?.params||{},text=plain(p?.text||"")||"예약 게시물";
+      return '<article class="scheduled-post-row"><b>'+esc(text)+'</b><time>'+esc(scheduledDateLabel(x?.scheduled_at||""))+'</time></article>';
+    }).join("")+'</div>':'<div class="center">예약 게시물이 없어요.</div>';
+    $("#app").innerHTML=standaloneShell("예약 게시물",body);bind();
+  }catch(e){
+    $("#app").innerHTML=standaloneShell("예약 게시물",'<div class="center">예약 게시물 표시 실패<br><small>'+esc(e.message)+'</small></div>');bind();
+  }
+}
+
 function drawerMenuRows(){
-  const iconMap={profile:"profile",profileedit:"edit",favourites:"heart",bookmarks:"bookmark",followrequests:"personAdd",layoutedit:"edit",lists:"list",settings:"settings",theme:"settings"};
+  const iconMap={profile:"profile",profileedit:"edit",favourites:"heart",bookmarks:"bookmark",followrequests:"personAdd","공지사항":"notifications","예약 게시물":"edit",layoutedit:"edit",lists:"list",settings:"settings",theme:"settings"};
   const fallback=[
     {id:"profile",label:"프로필"},{id:"profileedit",label:"프로필 편집"},{id:"favourites",label:"좋아요"},
     {id:"bookmarks",label:"북마크"},{id:"followrequests",label:"팔로우 요청"},{id:"layoutedit",label:"화면 구성 편집"},
@@ -3102,6 +3158,8 @@ function buildDrawerElement(){
     else if(v==="bookmarks"){pushNavSnapshot();bookmarksView()}
     else if(v==="favourites"){pushNavSnapshot();favouritesView()}
     else if(v==="followrequests"){pushNavSnapshot();closeDrawer();followRequestsScreen()}
+    else if(v==="공지사항"||v==="announcements"){pushNavSnapshot();closeDrawer();announcementsScreen()}
+    else if(v==="예약 게시물"||v==="scheduled"){pushNavSnapshot();closeDrawer();scheduledPostsScreen()}
     else if(v==="lists"){pushNavSnapshot();closeDrawer();listsScreen()}
     else if(v==="settings"){pushNavSnapshot();closeDrawer();state.view="settings";render()}
     else if(v==="profileedit"){pushNavSnapshot();closeDrawer();profileEditScreen()}
@@ -4257,7 +4315,7 @@ async function uploadComposerFile(file){
   catch{return await apiMultipart("/api/v1/media",fd)}
 }
 function composeToolMarkup(ct={},replyMode=false){
-  const configured=replyMode?["photo","camera","cw","emoji","plus"]:(Array.isArray(ct.toolOrder)&&ct.toolOrder.length?[...ct.toolOrder]:["photo","camera","emoji","poll","cw","plus"]);
+  const configured=replyMode?["photo","camera","cw","emoji","schedule","plus"]:(Array.isArray(ct.toolOrder)&&ct.toolOrder.length?[...ct.toolOrder]:["photo","camera","emoji","schedule","poll","cw","plus"]);
   if(!configured.includes("emoji")){
     const gifIndex=configured.indexOf("gif");
     if(gifIndex>=0)configured.splice(gifIndex,1,"emoji");
@@ -4266,10 +4324,14 @@ function composeToolMarkup(ct={},replyMode=false){
       configured.splice(cameraIndex>=0?cameraIndex+1:Math.min(2,configured.length),0,"emoji");
     }
   }
+  if(!configured.includes("schedule")){
+    const emojiIndex=configured.indexOf("emoji");
+    configured.splice(emojiIndex>=0?emojiIndex+1:configured.length,0,"schedule");
+  }
   const order=[...configured.filter((x,i)=>x!=="plus"&&configured.indexOf(x)===i),"plus"];
   const enabled={
     photo:ct.hasPhoto!==false,camera:ct.hasCamera!==false,gif:ct.hasGif!==false,
-    poll:ct.hasPoll!==false,cw:ct.cw!==""&&ct.cw!==false,plus:ct.hasThread!==false
+    poll:ct.hasPoll!==false,cw:ct.cw!==""&&ct.cw!==false,schedule:true,plus:ct.hasThread!==false
   };
   const html={
     photo:'<button type="button" id="composeAttach" aria-label="사진">'+lentonIcon("photo")+'</button>',
@@ -4278,7 +4340,8 @@ function composeToolMarkup(ct={},replyMode=false){
     poll:'<button type="button" id="composePoll" aria-label="투표">☷</button>',
     cw:'<button type="button" class="compose-cw-toggle" id="composeCW" aria-label="CW">CW</button>',
     plus:'<button type="button" class="part-add" id="addPart" aria-label="타래 추가">＋</button>',
-    emoji:'<button type="button" id="composeEmoji" class="compose-emoji-secondary" aria-label="서버 이모지">'+lentonIcon("smile")+'</button>'
+    emoji:'<button type="button" id="composeEmoji" class="compose-emoji-secondary" aria-label="서버 이모지">'+lentonIcon("smile")+'</button>',
+    schedule:'<button type="button" id="composeSchedule" class="compose-schedule-tool" aria-label="예약 게시물">'+lentonIcon("clock")+'</button>'
   };
   enabled.emoji=true;
   return order.filter(x=>enabled[x]&&html[x]).map(x=>html[x]).join("");
@@ -4343,7 +4406,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
   window.__lentonComposeLayoutHeight=Math.max(window.innerHeight||0,document.documentElement.clientHeight||0,window.visualViewport?.height||0);
   window.__lentonComposeLayoutWidth=Math.round(window.visualViewport?.width||window.innerWidth||0);
   let parts=[{text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[],poll:null}];
-  let visibility=composeDefaultVisibility(reply,forcedVisibility),activePart=0,uploading=false;
+  let visibility=composeDefaultVisibility(reply,forcedVisibility),activePart=0,uploading=false,scheduledAt=0;
   const recips=[];
   const addRecipient=a=>{if(a&&a.id!==state.me?.id&&!recips.some(x=>String(x.id)===String(a.id)))recips.push({...a,on:true})};
   for(const a of initialRecipients||[])addRecipient(a);
@@ -4351,7 +4414,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
     addRecipient(reply.account);(reply.mentions||[]).forEach(addRecipient);
     for(const st of replyContext||[]){addRecipient(st.account);(st.mentions||[]).forEach(addRecipient)}
   }
-  const dirty=()=>parts.some(p=>p.text.trim()||p.spoiler.trim()||p.media.length||p.poll?.options?.some(x=>x.trim()));
+  const dirty=()=>scheduledAt>0||parts.some(p=>p.text.trim()||p.spoiler.trim()||p.media.length||p.poll?.options?.some(x=>x.trim()));
   const replyContextRows=()=>{
     if(!reply)return "";
     const uniq=new Map();for(const st of [...(replyContext||[]),reply])if(st?.id)uniq.set(String(st.id),st);
@@ -4375,6 +4438,29 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
     }
     draw(false);
   };
+  const scheduleLabel=()=>scheduledAt>0?new Intl.DateTimeFormat("ko-KR",{month:"long",day:"numeric",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(scheduledAt))+" 예약":"";
+  const localDateTimeValue=ms=>{
+    const d=new Date(ms),pad=n=>String(n).padStart(2,"0");
+    return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())+"T"+pad(d.getHours())+":"+pad(d.getMinutes());
+  };
+  const openSchedulePicker=()=>{
+    if(parts.length>1){toast("예약 게시물은 한 번에 한 게시물만 등록할 수 있어요");return}
+    if(visibility==="direct"){toast("DM은 예약 발행을 지원하지 않아요");return}
+    const minMs=Date.now()+5*60*1000;
+    const initial=scheduledAt>0?scheduledAt:minMs+5*60*1000;
+    const shade=document.createElement("div");shade.className="schedule-picker-shade";
+    shade.innerHTML='<section class="schedule-picker-dialog"><h3>예약 게시물</h3><p>예약 날짜와 시간을 선택하세요.</p><input type="datetime-local" id="composeScheduleAt" min="'+esc(localDateTimeValue(minMs))+'" value="'+esc(localDateTimeValue(initial))+'"><div class="schedule-picker-actions">'+(scheduledAt>0?'<button type="button" class="danger-text" data-schedule-clear>예약 취소</button>':'<span></span>')+'<button type="button" data-schedule-close>닫기</button><button type="button" class="primary" data-schedule-apply>적용</button></div></section>';
+    document.body.append(shade);
+    const close=()=>shade.remove();
+    shade.onclick=e=>{if(e.target===shade)close()};
+    shade.querySelector("[data-schedule-close]").onclick=close;
+    shade.querySelector("[data-schedule-clear]")?.addEventListener("click",()=>{scheduledAt=0;close();draw(false)});
+    shade.querySelector("[data-schedule-apply]").onclick=()=>{
+      const raw=shade.querySelector("#composeScheduleAt")?.value||"",ms=new Date(raw).getTime();
+      if(!Number.isFinite(ms)||ms<Date.now()+5*60*1000){toast("예약 시간은 지금부터 5분 이후로 선택해 주세요");return}
+      scheduledAt=ms;close();draw(false);
+    };
+  };
   const draw=(refocus=true)=>{
     window.__lentonComposeViewportCleanup?.();
     let old=$(".modal");if(old)old.remove();
@@ -4393,7 +4479,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
     const visOptions=[["public","공개"],["unlisted","조용히 공개"],["private","팔로워만"],["direct","DM"]];
     const showThreadLabels=!reply&&visibility!=="direct"&&parts.length>1;
     m.innerHTML=`<div class="sheet compose-sheet">
-      <div class="sheet-head"><button class="iconbtn" id="closeCompose">×</button><h2>${reply?(ct.replyTitle||"답글"):(visibility==="direct"?"새 DM":(ct.newTitle||"새 게시물"))}</h2><button class="primary" id="sendCompose">${reply?(ct.replyButton||"답글"):(visibility==="direct"?"보내기":(ct.postButton||"게시"))}</button></div>
+      <div class="sheet-head"><button class="iconbtn" id="closeCompose">×</button><h2>${reply?(ct.replyTitle||"답글"):(visibility==="direct"?"새 DM":(ct.newTitle||"새 게시물"))}</h2><button class="primary" id="sendCompose">${scheduledAt>0?"예약":(reply?(ct.replyButton||"답글"):(visibility==="direct"?"보내기":(ct.postButton||"게시")))}</button></div>
       ${reply?replyContextRows()+`<button type="button" class="compose-reply-summary" id="replyRecipientPicker">${esc(replySummaryText())}</button>`:""}
       ${!reply&&visibility==="direct"&&recips.length?`<div class="compose-direct-recipient">${esc(directRecipientText())}</div>`:""}
       ${!reply&&visibility!=="direct"&&recips.length?`<div class="recips">${recips.map((r,i)=>`<button data-r="${i}" class="${r.on?"":"off"}">${r.avatar?`<img src="${esc(r.avatar)}" alt="">`:""}<span>@${esc(r.acct)}</span></button>`).join("")}</div>`:""}
@@ -4415,6 +4501,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
       </div>`).join("")}</div>
       <div class="compose-bottom-dock">
         <div class="compose-meta-row compose-visibility-row"><span id="composeVisibilityLabel" class="compose-visibility-label">${esc((visOptions.find(x=>x[0]===visibility)||visOptions[0])[1])}</span><span class="compose-visibility-chevron" aria-hidden="true"></span><select id="composeVisibility" class="compose-visibility" aria-label="공개 범위">${visOptions.map(x=>`<option value="${x[0]}" ${visibility===x[0]?"selected":""}>${x[1]}</option>`).join("")}</select></div>
+        ${scheduledAt>0?`<button type="button" id="composeScheduleSummary" class="compose-schedule-summary">${esc(scheduleLabel())}<span>변경</span></button>`:""}
         <div class="compose-tools android-compose-tools">
           ${composeToolMarkup(ct,!!reply)}
           <input id="composeFile" type="file" accept="image/*,video/*" multiple hidden>
@@ -4451,8 +4538,12 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
     m.querySelectorAll("[data-poll-remove]").forEach(x=>x.onclick=e=>{const [pi,oi]=e.currentTarget.dataset.pollRemove.split(":").map(Number);if(parts[pi].poll&&parts[pi].poll.options.length>2)parts[pi].poll.options.splice(oi,1);activePart=pi;draw(false)});
     m.querySelectorAll("[data-poll-expire]").forEach(x=>x.onchange=e=>{const pi=+e.currentTarget.dataset.pollExpire;if(parts[pi].poll)parts[pi].poll.expires=+e.currentTarget.value});
     m.querySelectorAll("[data-poll-multiple]").forEach(x=>x.onchange=e=>{const pi=+e.currentTarget.dataset.pollMultiple;if(parts[pi].poll)parts[pi].poll.multiple=e.currentTarget.checked});
-    $("#composeVisibility",m).onchange=e=>{visibility=e.target.value;const label=$("#composeVisibilityLabel",m),opt=e.target.selectedOptions?.[0];if(label)label.textContent=opt?.textContent||visibility};
-    $("#addPart",m)?.addEventListener("click",()=>{parts.push({text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[],poll:null});activePart=parts.length-1;draw()});
+    $("#composeVisibility",m).onchange=e=>{
+      visibility=e.target.value;
+      if(visibility==="direct"&&scheduledAt>0){scheduledAt=0;toast("DM은 예약 발행을 지원하지 않아요");draw(false);return}
+      const label=$("#composeVisibilityLabel",m),opt=e.target.selectedOptions?.[0];if(label)label.textContent=opt?.textContent||visibility
+    };
+    $("#addPart",m)?.addEventListener("click",()=>{if(scheduledAt>0){toast("예약 게시물은 한 번에 한 게시물만 등록할 수 있어요");return}parts.push({text:"",cw:!!reply?.spoiler_text,spoiler:reply?.spoiler_text||"",media:[],poll:null});activePart=parts.length-1;draw()});
     m.querySelectorAll("[data-remove-part]").forEach(x=>x.onclick=e=>{const pi=Number(e.currentTarget.dataset.removePart);if(pi<=0||pi>=parts.length)return;parts.splice(pi,1);activePart=Math.max(0,Math.min(activePart,parts.length-1));draw(false)});
     $("#composeCW",m)?.addEventListener("click",()=>{parts[activePart].cw=!parts[activePart].cw;if(parts[activePart].cw&&!parts[activePart].spoiler&&reply?.spoiler_text)parts[activePart].spoiler=reply.spoiler_text;draw()});
     $("#closeCompose",m).onclick=()=>{if(!confirmClose())return;if(historyPushed){window.__lentonComposeBypass=true;history.back()}else window.__lentonComposeClose?.()};
@@ -4511,11 +4602,20 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
       emojiButton.addEventListener("click",e=>{e.preventDefault();e.stopPropagation()});
       emojiButton.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();renderEmojiPicker()}});
     }
+    const scheduleButton=$("#composeSchedule",m);
+    if(scheduleButton){
+      scheduleButton.classList.toggle("on",scheduledAt>0);
+      scheduleButton.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();closeEmojiPicker(false);openSchedulePicker()});
+    }
+    $("#composeScheduleSummary",m)?.addEventListener("click",e=>{e.preventDefault();openSchedulePicker()});
     $("#parts",m)?.addEventListener("pointerdown",()=>{if(emojiBox&&!emojiBox.hidden)closeEmojiPicker(false)},{passive:true});
     $("#sendCompose",m).onclick=async()=>{
       if(uploading){toast("미디어 업로드가 끝날 때까지 기다려주세요.");return}
       const valid=parts.filter(p=>p.text.trim()||p.media.length||p.poll?.options?.some(x=>x.trim()));if(!valid.length){toast("내용을 입력해주세요.");return}
-      const btn=$("#sendCompose",m);btn.disabled=true;btn.textContent="게시 중…";
+      if(scheduledAt>0&&valid.length>1){toast("예약 게시물은 한 번에 한 게시물만 등록할 수 있어요");return}
+      if(scheduledAt>0&&visibility==="direct"){toast("DM은 예약 발행을 지원하지 않아요");return}
+      if(scheduledAt>0&&scheduledAt<Date.now()+5*60*1000){toast("예약 시간이 너무 가까워요. 5분 이후로 다시 선택해 주세요");return}
+      const btn=$("#sendCompose",m);btn.disabled=true;btn.textContent=scheduledAt>0?"예약 중…":"게시 중…";
       try{
         let replyId=reply?.id||null,prefix=recips.filter(x=>x.on).map(x=>"@"+x.acct).join(" ");
         for(let i=0;i<valid.length;i++){
@@ -4526,6 +4626,7 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
           const defaultLanguage=accountSource().language||"";if(defaultLanguage)form.append("language",defaultLanguage);
           if(accountSource().sensitive===true)form.append("sensitive","true");
           if(replyId)form.append("in_reply_to_id",replyId);
+          if(i===0&&scheduledAt>0)form.append("scheduled_at",new Date(scheduledAt).toISOString());
           for(const media of p.media)if(media.id)form.append("media_ids[]",media.id);
           if(p.poll){
             const opts=p.poll.options.map(x=>x.trim()).filter(Boolean);
@@ -4535,14 +4636,17 @@ function compose(reply=null,forcedVisibility=null,initialRecipients=[],replyCont
             form.append("poll[multiple]",p.poll.multiple?"true":"false");
           }
           const posted=await api("/api/v1/statuses",{method:"POST",form});
-          if(i===0&&reply){
+          if(i===0&&reply&&scheduledAt<=0){
             const directParent=String(posted?.in_reply_to_id||reply?.id||"");
             if(directParent)markReplyNeededHandledMany([directParent],{removeDom:true});
           }
-          replyId=posted.id;
+          replyId=posted?.id||replyId;
         }
-        window.__lentonComposeClose?.();if(historyPushed){window.__lentonComposeBypass=true;history.back()}toast(visibility==="direct"?"DM을 보냈어요.":"게시했어요.");if(visibility==="direct"){state.dmDraftRecipients=[];if(state.currentConversation?.id)openConversation(state.currentConversation.id);else{state.view="dm";render()}}else{setTimeout(()=>refreshHomeAfterPost(),120)}
-      }catch(e){toast(e.message);btn.disabled=false;btn.textContent=reply?"답글":"게시"}
+        const wasScheduled=scheduledAt>0;
+        window.__lentonComposeClose?.();if(historyPushed){window.__lentonComposeBypass=true;history.back()}
+        if(wasScheduled){toast("예약 게시물을 등록했어요");return}
+        toast(visibility==="direct"?"DM을 보냈어요.":"게시했어요.");if(visibility==="direct"){state.dmDraftRecipients=[];if(state.currentConversation?.id)openConversation(state.currentConversation.id);else{state.view="dm";render()}}else{setTimeout(()=>refreshHomeAfterPost(),120)}
+      }catch(e){toast(e.message);btn.disabled=false;btn.textContent=scheduledAt>0?"예약":(reply?"답글":"게시")}
     };
   };
   draw();
