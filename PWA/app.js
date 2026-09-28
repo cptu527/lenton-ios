@@ -3039,6 +3039,7 @@ async function bookmarksView(){
   }catch(e){toast(e.message)}
 }
 
+// Android v0.28.04 parity: server announcements and Mastodon scheduled statuses.
 function scheduledDateLabel(value){
   const d=new Date(value||"");
   if(!Number.isFinite(d.getTime()))return String(value||"");
