@@ -6157,3 +6157,170 @@ html.has-local-background .lenton-view-notifications .lenton-notify-tabs{
   text-decoration-thickness:1px;
   text-underline-offset:2px;
 }
+
+
+/* 2026-09-28 Android parity: announcements + scheduled posts */
+.announcement-list,
+.scheduled-post-list{
+  width:100%;
+}
+.announcement-card{
+  padding:14px 18px 12px;
+  border-bottom:1px solid var(--line);
+}
+.announcement-content{
+  font-size:15px;
+  line-height:1.55;
+  color:var(--fg);
+  overflow-wrap:anywhere;
+}
+.announcement-card time{
+  display:block;
+  margin-top:5px;
+  color:var(--sub);
+  font-size:11.5px;
+}
+.announcement-reactions{
+  display:flex;
+  gap:7px;
+  overflow-x:auto;
+  padding:10px 0 3px;
+  scrollbar-width:none;
+}
+.announcement-reactions::-webkit-scrollbar{display:none}
+.announcement-reaction{
+  flex:0 0 auto;
+  min-height:38px;
+  display:flex;
+  align-items:center;
+  gap:5px;
+  padding:0 10px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:var(--surface);
+  color:var(--fg);
+  font:inherit;
+}
+.announcement-reaction.on{
+  border-color:var(--accent);
+  background:color-mix(in srgb,var(--accent) 9%,var(--surface));
+  color:var(--accent);
+}
+.announcement-reaction img{
+  width:24px;
+  height:24px;
+  object-fit:contain;
+}
+.scheduled-post-row{
+  padding:13px 18px 12px;
+  border-bottom:1px solid var(--line);
+}
+.scheduled-post-row b{
+  display:block;
+  font-size:16px;
+  line-height:1.4;
+  color:var(--fg);
+  overflow-wrap:anywhere;
+}
+.scheduled-post-row time{
+  display:block;
+  margin-top:5px;
+  color:var(--sub);
+  font-size:13px;
+}
+
+/* Composer schedule clock immediately after server emoji */
+.compose-schedule-tool.on{
+  color:var(--accent)!important;
+}
+.compose-schedule-summary{
+  width:100%;
+  min-height:38px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:7px 14px;
+  border:0;
+  border-top:1px solid var(--line);
+  background:color-mix(in srgb,var(--accent) 7%,var(--bg));
+  color:var(--accent);
+  font-size:13px;
+  font-weight:700;
+  text-align:left;
+}
+.compose-schedule-summary span{
+  color:var(--sub);
+  font-size:12px;
+  font-weight:500;
+}
+.schedule-picker-shade{
+  position:fixed;
+  inset:0;
+  z-index:180;
+  display:flex;
+  align-items:flex-end;
+  justify-content:center;
+  padding:16px;
+  padding-bottom:calc(16px + env(safe-area-inset-bottom));
+  background:rgba(0,0,0,.38);
+}
+.schedule-picker-dialog{
+  width:min(100%,520px);
+  padding:18px;
+  border-radius:18px;
+  background:var(--bg);
+  color:var(--fg);
+  box-shadow:0 14px 42px rgba(0,0,0,.24);
+}
+.schedule-picker-dialog h3{
+  margin:0 0 6px;
+  font-size:19px;
+}
+.schedule-picker-dialog p{
+  margin:0 0 14px;
+  color:var(--sub);
+  font-size:13px;
+}
+.schedule-picker-dialog input[type="datetime-local"]{
+  width:100%;
+  min-height:50px;
+  box-sizing:border-box;
+  padding:0 12px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:var(--surface);
+  color:var(--fg);
+  font-size:16px;
+}
+.schedule-picker-actions{
+  display:grid;
+  grid-template-columns:1fr auto auto;
+  gap:8px;
+  align-items:center;
+  margin-top:14px;
+}
+.schedule-picker-actions button{
+  min-height:42px;
+  padding:0 14px;
+  border:0;
+  border-radius:12px;
+  background:var(--surface);
+  color:var(--fg);
+  font-weight:700;
+}
+.schedule-picker-actions .primary{
+  background:var(--accent);
+  color:#fff;
+}
+.schedule-picker-actions .danger-text{
+  justify-self:start;
+  padding-left:0;
+  background:transparent;
+  color:#d33;
+}
+
+html.has-local-background .announcement-card,
+html.has-local-background .scheduled-post-row{
+  background:color-mix(in srgb,var(--bg) 18%,transparent);
+}
