@@ -84,18 +84,18 @@ jobs:
         run: |
           SRC="/tmp/lenton-jadx/sources/com/mastoflow/app/MainActivity.java"
           test -f "$SRC"
-          echo "===== NOTICE / SCHEDULE SYMBOLS ====="
-          grep -n -E '공지사항|예약 게시물|scheduled_status|scheduled_at|scheduledStatuses|showScheduled|showNotice|notice|announcement|announcements|clock|schedule|예약' "$SRC" | head -n 400 || true
-          echo "===== CONTEXT ====="
+          echo "===== NOTICE / SCHEDULE / ICON SYMBOLS ====="
+          grep -n -E '공지사항|예약 게시물|scheduled_status|scheduled_at|announcements|private void drawerRow|class ComposerToolView|ComposerToolView\(|onDraw\(Canvas' "$SRC" | head -n 500 || true
+          echo "===== TARGETED CONTEXT ====="
           python3 - <<'PY'
           from pathlib import Path
           p=Path("/tmp/lenton-jadx/sources/com/mastoflow/app/MainActivity.java")
           lines=p.read_text(encoding="utf-8",errors="replace").splitlines()
-          needles=("공지사항","예약 게시물","scheduled_status","scheduled_at","announcements","announcement","showScheduled","showNotice","예약")
+          needles=("private void drawerRow","class ComposerToolView","ComposerToolView(","공지사항","예약 게시물","scheduled_status","scheduled_at","announcements")
           hits=sorted({i for i,line in enumerate(lines) if any(n in line for n in needles)})
           shown=[]
           for i in hits:
-              a=max(0,i-18); b=min(len(lines),i+60)
+              a=max(0,i-35); b=min(len(lines),i+120)
               if any(not (b<s or a>e) for s,e in shown): continue
               shown.append((a,b))
               print(f"--- lines {a+1}-{b} ---")
