@@ -1,0 +1,8 @@
+{
+  "source": "lenton-ios-pwa",
+  "pwaRevision": "8205555000",
+  "cacheToken": "pwa-8205555000-android-310-512a980f9bb1",
+  "androidSpecVersionCode": 310,
+  "androidSpecVersionName": "0.28.06",
+  "androidSpecSha256": "512a980f9bb11769f270e2b01a162742d6156b1453008e4c598294cf5b583e1a"
+}
