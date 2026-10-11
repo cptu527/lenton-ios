@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "generatedFrom": "published-android-apk",
-  "versionCode": 320,
-  "versionName": "0.29.04",
-  "apkUrl": "https://github.com/cptu527/lenton-updates/releases/download/v0.29.04/Lenton-v0.29.04-test.apk",
-  "apkSha256": "80fc80c8fe58b5d868b335e965cd7be38f0707411c0235a6f1af6ef4402e0ca1",
+  "versionCode": 321,
+  "versionName": "0.29.05",
+  "apkUrl": "https://github.com/cptu527/lenton-updates/releases/download/v0.29.05/Lenton-v0.29.05-test.apk",
+  "apkSha256": "5285a3cd18a7a66dd96c1fc06167c40bdf29441541d5052b5a842a6cc90bb84a",
   "decompiledSource": "com/mastoflow/app/MainActivity.java",
   "homeTabs": {
     "chronological": "시간순",
@@ -256,17 +256,17 @@
     "draftGuard": true
   },
   "criticalSourceHashes": {
-    "activity": "8fe23b60a68dd01b757076a2bec8536087849c2ffe7273aba16e5ed18a3a9bc3",
+    "activity": "aa4e176216706f1da0919a20d3b1f64c1bb2ac88105fb0dadcea7268e727867c",
     "publicFilter": "de8d4cd01e5c5ee6a8080c67b280796c4ec6ca8c6a7ac26f9fe8fc2ec139f16e",
     "publicLoader": null,
-    "bottomNav": "90a3d2e54e78c2b4211428576e80ddc216fd49393ad9e40968e97c8a1873914f",
-    "drawer": "12f5249210e514e6af2a17fa9cf948ac62f23b3e957493c45485366a3fddb130",
+    "bottomNav": "c34afc3188004d896e81fe397c054b3cb19fa1125f01a50a698b9e375b85aaad",
+    "drawer": "c8753372197720ceeccbbdbf080c21e8117337708b9860aa65b6ec44f13a3976",
     "composer": "90e01f3b6ba3a012dda437c110b94d484006ce57cf1e8d084a384aafaaa95f2c",
-    "topBar": "1350846e23085d3e1e4ae3ac2fc45e2bc280c62e352adffc7b4c2dd3637a5e77",
+    "topBar": "eef06099593677bcc66810e7432988370eb3acb8c632a041dbd487098e5819fa",
     "status": null,
-    "profile": "47cb3b9bc13cd486ec131b251d9b14d53280a5f42df092b4567e4f75ffd57027",
+    "profile": "c4511aebac155530477a8b7f882ff69a98482d87c77b5c12652db008e9163aef",
     "notification": null,
-    "conversation": "f36a075d3de4a783531c6cb0af472064a4797349d16186fb84dc0ac2a475c665"
+    "conversation": "ce99ea547e068507446faa681cd335e61d7aef1fcb742d67be0b87d3bb55d11d"
   },
   "apkMarkerPresence": {
     "시간순": true,
